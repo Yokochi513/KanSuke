@@ -1,0 +1,55 @@
+# ---- 秘密情報 / 認証ファイル（絶対にコミットしない）----
+google-services.json
+GoogleService-Info.plist
+ios/Runner/GoogleService-Info.plist
+android/app/google-services.json
+lib/firebase_options.dart
+.firebaserc
+*.keystore
+*.jks
+*.p8
+key.properties
+.env
+.env.*
+
+# ---- Flutter / Dart ----
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/doc/api/
+coverage/
+
+# ---- iOS ----
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/ephemeral/
+*.xcworkspace/xcuserdata/
+
+# ---- Android ----
+android/.gradle/
+android/local.properties
+android/.idea/
+android/captures/
+
+# ---- Cloud Functions ----
+functions/node_modules/
+functions/lib/
+node_modules/
+
+# ---- Firebase ----
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# ---- エディタ / OS ----
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
