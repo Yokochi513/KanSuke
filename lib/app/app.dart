@@ -15,16 +15,20 @@ class KanSukeApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authStatus = ref.watch(authStateProvider);
+    final authState = ref.watch(authStateProvider);
 
     return MaterialApp(
       title: 'KanSuke',
       debugShowCheckedModeBanner: false,
       theme: buildKanSukeTheme(),
-      home: switch (authStatus) {
-        AuthStatus.signedOut => const SignInScreen(),
-        AuthStatus.signedIn => const CalendarScreen(),
-      },
+      home: authState.when(
+        loading: () => const _AuthLoadingScreen(),
+        error: (_, _) => const SignInScreen(
+          initialErrorMessage: '認証状態を確認できませんでした。もう一度お試しください。',
+        ),
+        data: (session) =>
+            session == null ? const SignInScreen() : const CalendarScreen(),
+      ),
       routes: {
         AppRoutes.calendar: (_) => const CalendarScreen(),
         AppRoutes.dayEvents: (_) => const DayEventsScreen(),
@@ -32,5 +36,14 @@ class KanSukeApp extends ConsumerWidget {
         AppRoutes.settings: (_) => const SettingsScreen(),
       },
     );
+  }
+}
+
+class _AuthLoadingScreen extends StatelessWidget {
+  const _AuthLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

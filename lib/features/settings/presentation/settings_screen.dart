@@ -12,11 +12,11 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('設定')),
       body: Center(
         child: OutlinedButton(
-          onPressed: () {
+          onPressed: () async {
             Navigator.popUntil(context, (route) => route.isFirst);
-            ref.read(authStateProvider.notifier).signOutForPreview();
+            await ref.read(authActionControllerProvider.notifier).signOut();
           },
-          child: const Text('仮ログアウト'),
+          child: const Text('サインアウト'),
         ),
       ),
     );
