@@ -1,4 +1,23 @@
-# kansuke
+# KanSuke
+
+## Firebase のローカル設定
+
+このリポジトリの Firebase 構成値はプレースホルダーです。実機または
+エミュレーターで起動する前に、対象の Firebase プロジェクトへログインし、
+リポジトリのルートで次を実行してください。
+
+```bash
+firebase use <project-id>
+flutterfire configure --project=<project-id> --platforms=android,ios
+flutter run
+```
+
+起動時に `Firebase.initializeApp()` が完了して KanSuke のホーム画面が表示されれば、
+初期化成功です。生成される `lib/firebase_options.dart` と `.firebaserc` の差分には
+プロジェクト固有値が含まれるため、そのままコミットしないでください。
+
+`google-services.json`、`GoogleService-Info.plist`、APNs 鍵などの秘密ファイルは
+`.gitignore` の対象です。
 
 A new Flutter project.
 
