@@ -34,3 +34,19 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+## Firestore 構成の検証
+
+ルールテストは Firestore エミュレータを自動起動して実行します。
+
+```bash
+npm --prefix functions ci
+npm --prefix functions run lint
+npm --prefix functions test
+```
+
+デプロイ前は対象の Firebase プロジェクトを指定し、Rules とインデックスの
+dry-run を実行します。
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes --dry-run --project <project-id>
+```
