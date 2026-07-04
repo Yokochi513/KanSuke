@@ -34,7 +34,7 @@ void main() {
 
   setUp(() {
     firestore = FakeFirebaseFirestore();
-    repository = EventRepository(firestore: firestore, currentUid: 'me');
+    repository = EventRepository(firestore: firestore);
   });
 
   Future<Map<String, dynamic>> readRaw(String id) async {
@@ -48,7 +48,7 @@ void main() {
       startAt: DateTime.utc(2026, 7, 10, 9),
     );
 
-    await repository.create(event);
+    await repository.create(event, updatedBy: 'me');
 
     final raw = await readRaw('evt-1');
     expect(raw['title'], '打ち合わせ');
@@ -62,9 +62,12 @@ void main() {
       id: 'evt-1',
       startAt: DateTime.utc(2026, 7, 10, 9),
     );
-    await repository.create(event);
+    await repository.create(event, updatedBy: 'me');
 
-    await repository.update(event.copyWith(title: '変更後', ownerId: 'owner-2'));
+    await repository.update(
+      event.copyWith(title: '変更後', ownerId: 'owner-2'),
+      updatedBy: 'me',
+    );
 
     final raw = await readRaw('evt-1');
     expect(raw['title'], '変更後');
@@ -77,9 +80,9 @@ void main() {
       id: 'evt-1',
       startAt: DateTime.utc(2026, 7, 10, 9),
     );
-    await repository.create(event);
+    await repository.create(event, updatedBy: 'me');
 
-    await repository.setType('evt-1', EventType.confirmed);
+    await repository.setType('evt-1', EventType.confirmed, updatedBy: 'me');
 
     final raw = await readRaw('evt-1');
     expect(raw['type'], 'confirmed');
@@ -91,9 +94,9 @@ void main() {
       id: 'evt-1',
       startAt: DateTime.utc(2026, 7, 10, 9),
     );
-    await repository.create(event);
+    await repository.create(event, updatedBy: 'me');
 
-    await repository.softDelete('evt-1');
+    await repository.softDelete('evt-1', updatedBy: 'me');
 
     expect((await readRaw('evt-1'))['deleted'], true);
     final visible = await repository
@@ -108,17 +111,21 @@ void main() {
   test('watchRange は期間内の未削除予定のみを startAt 昇順で返す', () async {
     await repository.create(
       _buildEvent(id: 'in-2', startAt: DateTime.utc(2026, 7, 20, 9)),
+      updatedBy: 'me',
     );
     await repository.create(
       _buildEvent(id: 'in-1', startAt: DateTime.utc(2026, 7, 5, 9)),
+      updatedBy: 'me',
     );
     await repository.create(
       _buildEvent(id: 'out', startAt: DateTime.utc(2026, 8, 2, 9)),
+      updatedBy: 'me',
     );
     await repository.create(
       _buildEvent(id: 'deleted', startAt: DateTime.utc(2026, 7, 6, 9)),
+      updatedBy: 'me',
     );
-    await repository.softDelete('deleted');
+    await repository.softDelete('deleted', updatedBy: 'me');
 
     final events = await repository
         .watchRange(
