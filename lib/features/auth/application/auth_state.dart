@@ -13,6 +13,13 @@ final authStateProvider = StreamProvider<AuthSession?>(
   (ref) => ref.watch(authRepositoryProvider).authStateChanges(),
 );
 
+/// サインイン中のユーザー uid。未認証なら null。
+///
+/// 予定の `updatedBy` 付与など、書き込みの本人特定に用いる。
+final currentUidProvider = Provider<String?>(
+  (ref) => ref.watch(authStateProvider).asData?.value?.uid,
+);
+
 final appleSignInAvailableProvider = Provider<bool>(
   (ref) => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS,
 );

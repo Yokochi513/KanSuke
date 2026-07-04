@@ -1,0 +1,132 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:kansuke/features/events/data/event_repository.dart';
+import 'package:kansuke/models/models.dart';
+
+Event _buildEvent({
+  required String id,
+  required DateTime startAt,
+  EventType type = EventType.tentative,
+  String ownerId = 'owner-1',
+  String title = '打ち合わせ',
+}) {
+  return Event(
+    id: id,
+    title: title,
+    ownerId: ownerId,
+    startAt: startAt,
+    endAt: startAt.add(const Duration(hours: 1)),
+    allDay: false,
+    type: type,
+    memo: '',
+    reminderOffsets: const [60],
+    updatedBy: ownerId,
+    createdAt: startAt,
+    updatedAt: startAt,
+    deleted: false,
+  );
+}
+
+void main() {
+  late FakeFirebaseFirestore firestore;
+  late EventRepository repository;
+
+  setUp(() {
+    firestore = FakeFirebaseFirestore();
+    repository = EventRepository(firestore: firestore, currentUid: 'me');
+  });
+
+  Future<Map<String, dynamic>> readRaw(String id) async {
+    final doc = await firestore.collection('events').doc(id).get();
+    return doc.data()!;
+  }
+
+  test('create はクライアント UUID を ID にして書き込み updatedBy を本人にする', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+    );
+
+    await repository.create(event);
+
+    final raw = await readRaw('evt-1');
+    expect(raw['title'], '打ち合わせ');
+    expect(raw['updatedBy'], 'me');
+    expect(raw['deleted'], false);
+    expect(raw['updatedAt'], isA<Timestamp>());
+  });
+
+  test('update はフィールドを差し替え updatedBy を本人にする', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+    );
+    await repository.create(event);
+
+    await repository.update(event.copyWith(title: '変更後', ownerId: 'owner-2'));
+
+    final raw = await readRaw('evt-1');
+    expect(raw['title'], '変更後');
+    expect(raw['ownerId'], 'owner-2');
+    expect(raw['updatedBy'], 'me');
+  });
+
+  test('setType は仮↔確定を type 更新だけで切り替える', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+    );
+    await repository.create(event);
+
+    await repository.setType('evt-1', EventType.confirmed);
+
+    final raw = await readRaw('evt-1');
+    expect(raw['type'], 'confirmed');
+    expect(raw['updatedBy'], 'me');
+  });
+
+  test('softDelete は deleted=true にし watchRange から除外される', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+    );
+    await repository.create(event);
+
+    await repository.softDelete('evt-1');
+
+    expect((await readRaw('evt-1'))['deleted'], true);
+    final visible = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+        )
+        .first;
+    expect(visible, isEmpty);
+  });
+
+  test('watchRange は期間内の未削除予定のみを startAt 昇順で返す', () async {
+    await repository.create(
+      _buildEvent(id: 'in-2', startAt: DateTime.utc(2026, 7, 20, 9)),
+    );
+    await repository.create(
+      _buildEvent(id: 'in-1', startAt: DateTime.utc(2026, 7, 5, 9)),
+    );
+    await repository.create(
+      _buildEvent(id: 'out', startAt: DateTime.utc(2026, 8, 2, 9)),
+    );
+    await repository.create(
+      _buildEvent(id: 'deleted', startAt: DateTime.utc(2026, 7, 6, 9)),
+    );
+    await repository.softDelete('deleted');
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+        )
+        .first;
+
+    expect(events.map((e) => e.id), ['in-1', 'in-2']);
+  });
+}
