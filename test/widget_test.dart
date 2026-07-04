@@ -73,10 +73,10 @@ void main() {
 
     expect(find.text('カレンダー'), findsOneWidget);
 
-    // カレンダーの日付タップで日別一覧（プレースホルダ）へ遷移する。
+    // カレンダーの日付タップで日別一覧へ遷移する（予定なしなので空状態）。
     await tester.tap(find.text('${DateTime.now().day}').first);
     await tester.pumpAndSettle();
-    expect(find.text('選択日の予定を表示します'), findsOneWidget);
+    expect(find.text('予定はありません'), findsOneWidget);
   });
 }
 
