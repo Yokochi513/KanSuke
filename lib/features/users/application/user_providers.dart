@@ -2,10 +2,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/firebase_providers.dart';
 import '../../../models/models.dart';
+import '../../auth/application/auth_state.dart';
 import '../data/user_repository.dart';
 
 final userRepositoryProvider = Provider<UserRepository>((ref) {
   return UserRepository(firestore: ref.watch(firestoreProvider));
+});
+
+/// サインイン中の自分のユーザードキュメント（FR-2 の識別色など）。
+final currentUserProvider = StreamProvider<User?>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) {
+    return Stream.value(null);
+  }
+  return ref.watch(userRepositoryProvider).watchUser(uid);
 });
 
 /// 家族メンバー一覧（FR-2 の色・名前）。予定表示のマスタとして購読する。

@@ -30,4 +30,14 @@ class UserRepository {
         .snapshots()
         .map((doc) => doc.exists ? User.fromFirestore(doc) : null);
   }
+
+  /// 自分の識別色を更新する（FR-2）。
+  ///
+  /// 基本設計 §2.2 の Security Rules 上、本人（uid==自分）のみ更新可。
+  Future<void> updateColor(String uid, String color) {
+    return _users.doc(uid).update({
+      'color': color,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }
