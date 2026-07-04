@@ -1,0 +1,4 @@
+interface:
+  display_name: "KanSuke Issue Implementation"
+  short_description: "Implement a KanSuke GitHub Issue end to end"
+  default_prompt: "Use $implement-kansuke-issue to implement a KanSuke GitHub Issue from acceptance criteria through validation and commit."
