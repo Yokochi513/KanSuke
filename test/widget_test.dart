@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/app/app.dart';
+import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/auth/data/auth_repository.dart';
 
@@ -71,15 +73,10 @@ void main() {
 
     expect(find.text('カレンダー'), findsOneWidget);
 
-    await tester.tap(find.text('日別予定一覧'));
+    // カレンダーの日付タップで日別一覧へ遷移する（予定なしなので空状態）。
+    await tester.tap(find.text('${DateTime.now().day}').first);
     await tester.pumpAndSettle();
-    expect(find.text('選択日の予定を表示します'), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('予定を編集'));
-    await tester.pumpAndSettle();
-    expect(find.text('予定を作成・編集します'), findsOneWidget);
+    expect(find.text('予定はありません'), findsOneWidget);
   });
 }
 
@@ -91,6 +88,8 @@ Widget _testApp(
     overrides: [
       authRepositoryProvider.overrideWithValue(repository),
       appleSignInAvailableProvider.overrideWithValue(appleSignInAvailable),
+      // カレンダーが購読する Firestore はテスト用の fake に差し替える。
+      firestoreProvider.overrideWithValue(FakeFirebaseFirestore()),
     ],
     child: const KanSukeApp(),
   );
