@@ -6,49 +6,52 @@ import '../../../models/models.dart';
 ///
 /// FR-1（予定の登録・閲覧）/ FR-6（同期）/ 基本設計 §3.2・§4。
 /// - ドキュメント ID はクライアント生成 UUID（[Event.create]）。
-/// - `updatedBy` は本人 uid、`updatedAt` は `serverTimestamp()` を付与する。
+/// - `updatedBy` は書き込み時に呼び出し側（本人 uid）から受け取る。
+///   認証状態に依存しない購読グラフにして、サインアウト時のテアダウン中に
+///   購読が dirty 化して再描画がビルド中に走るのを避ける。
+/// - `updatedAt` は `serverTimestamp()` を付与する。
 /// - 削除はソフト削除（`deleted=true`）として LWW で伝播させる（§4.2）。
 class EventRepository {
-  EventRepository({
-    required FirebaseFirestore firestore,
-    required String currentUid,
-  }) : _firestore = firestore,
-       _currentUid = currentUid;
+  EventRepository({required FirebaseFirestore firestore})
+    : _firestore = firestore;
 
   final FirebaseFirestore _firestore;
-  final String _currentUid;
 
   CollectionReference<Map<String, dynamic>> get _events =>
       _firestore.collection('events');
 
   /// 予定を作成する（ドキュメント ID は [event] の UUID）。
   ///
-  /// `updatedBy` を本人に上書きし、`updatedAt` は serverTimestamp とする。
-  Future<void> create(Event event) {
-    final data = event.copyWith(updatedBy: _currentUid).toFirestore();
+  /// `updatedBy` を [updatedBy] に上書きし、`updatedAt` は serverTimestamp とする。
+  Future<void> create(Event event, {required String updatedBy}) {
+    final data = event.copyWith(updatedBy: updatedBy).toFirestore();
     return _events.doc(event.id).set(data);
   }
 
   /// 既存予定を全フィールド更新する。`updatedBy`/`updatedAt` を更新する。
-  Future<void> update(Event event) {
-    final data = event.copyWith(updatedBy: _currentUid).toFirestore();
+  Future<void> update(Event event, {required String updatedBy}) {
+    final data = event.copyWith(updatedBy: updatedBy).toFirestore();
     return _events.doc(event.id).set(data);
   }
 
   /// 仮↔確定の切替（FR-3）。`type` 更新のみで完結させる。
-  Future<void> setType(String eventId, EventType type) {
+  Future<void> setType(
+    String eventId,
+    EventType type, {
+    required String updatedBy,
+  }) {
     return _events.doc(eventId).update({
       'type': type.name,
-      'updatedBy': _currentUid,
+      'updatedBy': updatedBy,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
   /// ソフト削除（§4.2）。物理削除はサーバ側の定期パージに委ねる。
-  Future<void> softDelete(String eventId) {
+  Future<void> softDelete(String eventId, {required String updatedBy}) {
     return _events.doc(eventId).update({
       'deleted': true,
-      'updatedBy': _currentUid,
+      'updatedBy': updatedBy,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
