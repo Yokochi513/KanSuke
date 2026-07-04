@@ -3,6 +3,16 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+  "functions": {
+    "source": "functions",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "*.log",
+      "test",
+      "scripts"
+    ]
+  },
   "emulators": {
     "firestore": {
       "port": 8080
