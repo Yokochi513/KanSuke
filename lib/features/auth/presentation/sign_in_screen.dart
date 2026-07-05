@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/auth_state.dart';
+import 'google_sign_in_button.dart';
 
 class SignInScreen extends ConsumerWidget {
   const SignInScreen({super.key, this.initialErrorMessage});
@@ -49,13 +50,7 @@ class SignInScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  FilledButton.icon(
-                    onPressed: actionState.isLoading
-                        ? null
-                        : actions.signInWithGoogle,
-                    icon: const Icon(Icons.login),
-                    label: const Text('Googleで続行'),
-                  ),
+                  const GoogleSignInButton(),
                   if (ref.watch(appleSignInAvailableProvider)) ...[
                     const SizedBox(height: 12),
                     OutlinedButton.icon(

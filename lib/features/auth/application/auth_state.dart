@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/auth_repository.dart';
 import '../data/firebase_auth_repository.dart';
 
-final authRepositoryProvider = Provider<AuthRepository>(
-  (ref) => FirebaseAuthRepository(),
-);
+final authRepositoryProvider = Provider<AuthRepository>((ref) {
+  final repository = FirebaseAuthRepository();
+  ref.onDispose(repository.dispose);
+  return repository;
+});
 
 // NFR-4: Firebase Authentication の状態を画面出し分けの唯一の情報源にする。
 final authStateProvider = StreamProvider<AuthSession?>(
@@ -37,11 +41,38 @@ class AuthActionState {
 }
 
 class AuthActionController extends Notifier<AuthActionState> {
+  StreamSubscription<AuthException?>? _webResultsSubscription;
+
   @override
-  AuthActionState build() => const AuthActionState();
+  AuthActionState build() {
+    ref.onDispose(() => _webResultsSubscription?.cancel());
+    return const AuthActionState();
+  }
 
   Future<void> signInWithGoogle() {
     return _run(ref.read(authRepositoryProvider).signInWithGoogle);
+  }
+
+  /// Web の GIS ボタン描画前に呼ぶ。Google サインインを初期化し、
+  /// ボタン経由で完了するサインイン結果の購読を開始する。
+  Future<void> initializeGoogleWebSignIn() {
+    final repository = ref.read(authRepositoryProvider);
+    _webResultsSubscription ??= repository.googleWebSignInResults.listen(
+      _onGoogleWebSignInResult,
+    );
+    return repository.initializeGoogleSignIn();
+  }
+
+  void _onGoogleWebSignInResult(AuthException? error) {
+    if (error == null) {
+      state = const AuthActionState();
+    } else if (error is AuthAccessDeniedException) {
+      state = const AuthActionState(errorMessage: '利用権限がありません');
+    } else {
+      state = const AuthActionState(
+        errorMessage: 'サインインに失敗しました。しばらくしてから、もう一度お試しください。',
+      );
+    }
   }
 
   Future<void> signInWithApple() {

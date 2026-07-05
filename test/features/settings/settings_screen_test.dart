@@ -120,5 +120,12 @@ class _FakeAuthRepository implements AuthRepository {
   Future<void> signInWithGoogle() async {}
 
   @override
+  Future<void> initializeGoogleSignIn() async {}
+
+  @override
+  Stream<AuthException?> get googleWebSignInResults =>
+      const Stream<AuthException?>.empty();
+
+  @override
   Future<void> signOut() async => signOutCount++;
 }
