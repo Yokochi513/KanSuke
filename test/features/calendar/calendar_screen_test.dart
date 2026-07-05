@@ -39,6 +39,47 @@ Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
   return firestore;
 }
 
+/// 同じ日に複数メンバー・多数の予定を投入する（マス目表示の検証用）。
+Future<FakeFirebaseFirestore> _seedManyOnOneDay({
+  required DateTime today,
+}) async {
+  final firestore = FakeFirebaseFirestore();
+  for (final (id, name, color) in const [
+    ('me', 'ぱぱ', '#1565C0'),
+    ('mama', 'まま', '#D84315'),
+  ]) {
+    await firestore.collection('users').doc(id).set({
+      'name': name,
+      'email': '$id@example.com',
+      'color': color,
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
+  // 1 マスに収まりきらない本数を同日に作る（「+N」省略を発生させる）。
+  for (var i = 0; i < 8; i++) {
+    final start = DateTime(today.year, today.month, today.day, 8 + i);
+    final owner = i.isEven ? 'me' : 'mama';
+    final event = Event.create(
+      title: '予定${i + 1}',
+      ownerId: owner,
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: i.isEven ? EventType.confirmed : EventType.tentative,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: owner,
+      now: start,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+  }
+  return firestore;
+}
+
 Widget _wrap(FakeFirebaseFirestore firestore) {
   return ProviderScope(
     overrides: [
@@ -81,14 +122,37 @@ void main() {
     expect(find.text('DAY_LIST_SCREEN'), findsOneWidget);
   });
 
-  testWidgets('EventDot は確定=塗り・仮=枠付きで種別を区別する', (tester) async {
+  testWidgets('同日に複数予定があるとマスにバーと「+N」を表示する', (tester) async {
+    final today = DateTime.now();
+    final firestore = await _seedManyOnOneDay(today: today);
+
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    // マス目に予定バー（タイトル）が並ぶ。
+    expect(find.byType(EventBar), findsWidgets);
+    expect(find.text('予定1'), findsOneWidget);
+    // マスに収まらない分は「+N」で省略される（オーバーフローしない）。
+    expect(find.textContaining('+'), findsWidgets);
+  });
+
+  testWidgets('EventBar は確定=塗り・仮=枠付きで種別を区別する', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: Row(
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              EventDot(color: Color(0xFF1565C0), type: EventType.confirmed),
-              EventDot(color: Color(0xFF1565C0), type: EventType.tentative),
+              EventBar(
+                title: '会議',
+                color: Color(0xFF1565C0),
+                type: EventType.confirmed,
+              ),
+              EventBar(
+                title: '会議',
+                color: Color(0xFF1565C0),
+                type: EventType.tentative,
+              ),
             ],
           ),
         ),
