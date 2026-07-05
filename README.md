@@ -8,13 +8,25 @@
 
 ```bash
 firebase use <project-id>
-flutterfire configure --project=<project-id> --platforms=android,ios
-flutter run
+flutterfire configure --project=<project-id> --platforms=android,ios,web
+flutter run                 # 実機/エミュレーター
+flutter run -d chrome       # Web（ブラウザ）
 ```
 
 起動時に `Firebase.initializeApp()` が完了して KanSuke のホーム画面が表示されれば、
 初期化成功です。生成される `lib/firebase_options.dart` と `.firebaserc` の差分には
 プロジェクト固有値が含まれるため、そのままコミットしないでください。
+
+### 対応プラットフォーム
+
+iOS / Android / Web に対応しています（`web/` は `flutter create` で構成済み）。
+Web は `lib/firebase_options.dart` の `web` 設定を使用し、Firestore の
+オフライン永続化は IndexedDB による単一タブ永続化として有効化されます（NFR-3）。
+
+Web で Google サインインを本実装する際は、OAuth Web クライアント ID を
+`web/index.html` の meta タグに設定する必要があります（詳細は同ファイルの
+コメント参照）。`sign_in_with_apple` の Apple ボタンは iOS 実機のみ表示され、
+Web では非表示です。
 
 `google-services.json`、`GoogleService-Info.plist`、APNs 鍵などの秘密ファイルは
 `.gitignore` の対象です。

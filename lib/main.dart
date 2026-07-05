@@ -10,7 +10,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // NFR-3: モバイルで既定有効のオフライン永続化を構成として明示する。
+  // NFR-3: オフライン永続化を全プラットフォームで明示的に有効化する。
+  // モバイルでは既定で有効だが、Web では既定無効のため設定が必須
+  // （Web は IndexedDB による単一タブ永続化として構成される）。
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
   );
