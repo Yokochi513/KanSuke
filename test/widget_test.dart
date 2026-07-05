@@ -127,6 +127,13 @@ class FakeAuthRepository implements AuthRepository {
     await _signIn();
   }
 
+  @override
+  Future<void> initializeGoogleSignIn() async {}
+
+  @override
+  Stream<AuthException?> get googleWebSignInResults =>
+      const Stream<AuthException?>.empty();
+
   Future<void> _signIn() async {
     if (signInError case final error?) {
       throw error;

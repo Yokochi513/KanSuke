@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -22,6 +24,9 @@ class FirebaseAuthRepository implements AuthRepository {
   final FirebaseFirestore _firestore;
   final GoogleSignIn _googleSignIn;
   Future<void>? _googleInitialization;
+  final StreamController<AuthException?> _webSignInResults =
+      StreamController<AuthException?>.broadcast();
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _googleEventSubscription;
 
   @override
   Stream<AuthSession?> authStateChanges() {
@@ -31,9 +36,53 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<void> initializeGoogleSignIn() {
+    return _googleInitialization ??= _initializeGoogleSignIn();
+  }
+
+  Future<void> _initializeGoogleSignIn() async {
+    await _googleSignIn.initialize();
+    if (kIsWeb) {
+      // Web はプログラム的な authenticate() を持たないため、GIS ボタン
+      // （renderButton）からのサインインを authenticationEvents 経由で受け取り、
+      // Firebase 認証へ橋渡しする。
+      _googleEventSubscription = _googleSignIn.authenticationEvents.listen(
+        _handleGoogleAuthenticationEvent,
+        onError: (Object _) => _webSignInResults.add(const AuthException()),
+      );
+    }
+  }
+
+  @override
+  Stream<AuthException?> get googleWebSignInResults => _webSignInResults.stream;
+
+  Future<void> _handleGoogleAuthenticationEvent(
+    GoogleSignInAuthenticationEvent event,
+  ) async {
+    if (event is! GoogleSignInAuthenticationEventSignIn) {
+      return;
+    }
+    try {
+      final googleAuth = event.user.authentication;
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+      );
+      final result = await _auth.signInWithCredential(credential);
+      await _verifyUserDocument(result.user);
+      _webSignInResults.add(null);
+    } on AuthException catch (error) {
+      _webSignInResults.add(error);
+    } on FirebaseAuthException catch (error) {
+      _webSignInResults.add(_mapFirebaseException(error));
+    } on FirebaseException catch (error) {
+      _webSignInResults.add(_mapFirebaseException(error));
+    }
+  }
+
+  @override
   Future<void> signInWithGoogle() async {
     try {
-      await (_googleInitialization ??= _googleSignIn.initialize());
+      await initializeGoogleSignIn();
       final googleUser = await _googleSignIn.authenticate();
       final googleAuth = googleUser.authentication;
       final credential = GoogleAuthProvider.credential(
@@ -98,11 +147,17 @@ class FirebaseAuthRepository implements AuthRepository {
   Future<void> signOut() async {
     await _auth.signOut();
     try {
-      await (_googleInitialization ??= _googleSignIn.initialize());
+      await initializeGoogleSignIn();
       await _googleSignIn.signOut();
     } on GoogleSignInException {
       // Firebase のセッションは既に破棄済み。Google 側の未接続は無視できる。
     }
+  }
+
+  /// リポジトリ破棄時に Web 用のイベント購読とストリームを解放する。
+  void dispose() {
+    unawaited(_googleEventSubscription?.cancel());
+    unawaited(_webSignInResults.close());
   }
 
   Future<void> _verifyUserDocument(User? user) async {
