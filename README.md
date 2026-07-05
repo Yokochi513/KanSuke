@@ -14,8 +14,26 @@ flutter run -d chrome       # Web（ブラウザ）
 ```
 
 起動時に `Firebase.initializeApp()` が完了して KanSuke のホーム画面が表示されれば、
-初期化成功です。生成される `lib/firebase_options.dart` と `.firebaserc` の差分には
-プロジェクト固有値が含まれるため、そのままコミットしないでください。
+初期化成功です。
+
+### 設定ファイルのコミット方針
+
+`lib/firebase_options.dart` / `firebase.json` / `android/**/build.gradle.kts` などに
+含まれる Firebase の apiKey・appId・projectId は、クライアントに埋め込んで公開する
+前提の設定値（真の秘密ではなく、アクセス制御は allowlist Blocking Function と
+Firestore ルールが担う）です。ビルド・起動に必須のため、**実値のままコミットします**。
+
+一方 `.firebaserc` は Firebase CLI（`deploy` / `use`）専用でアプリは実行時に読まないため、
+リポジトリにはプレースホルダー値を残し、実プロジェクト ID はローカルにのみ置きます。
+別マシンで clone したら、そのマシンで一度だけ次を実行してください。
+
+```bash
+git update-index --skip-worktree .firebaserc   # 以後 .firebaserc のローカル変更を追跡しない
+# その後 .firebaserc の "default" を対象の project-id に書き換える
+```
+
+これで `firebase` CLI はローカルの実プロジェクトを解決しつつ、リポジトリ側は
+プレースホルダーのまま保たれます（差分がコミットに紛れ込みません）。
 
 ### 対応プラットフォーム
 

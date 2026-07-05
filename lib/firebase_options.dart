@@ -20,28 +20,28 @@ abstract final class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'replace-with-web-api-key',
-    appId: '1:000000000000:web:replace-with-app-id',
-    messagingSenderId: '000000000000',
-    projectId: 'replace-with-firebase-project-id',
-    authDomain: 'replace-with-firebase-project-id.firebaseapp.com',
-    storageBucket: 'replace-with-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyCbAvaNVhpAVnvmXg3z_4Pe34E9iuaOqpw',
+    appId: '1:271795308120:web:928229a89d3836ff3f2c2d',
+    messagingSenderId: '271795308120',
+    projectId: 'kansuke-b6d32',
+    authDomain: 'kansuke-b6d32.firebaseapp.com',
+    storageBucket: 'kansuke-b6d32.firebasestorage.app',
+    measurementId: 'G-1JSREWMNB1',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'replace-with-android-api-key',
-    appId: '1:000000000000:android:replace-with-app-id',
-    messagingSenderId: '000000000000',
-    projectId: 'replace-with-firebase-project-id',
-    storageBucket: 'replace-with-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyAYG7mJYYBOwZmPG6WJHoSalXu4gcJesPA',
+    appId: '1:271795308120:android:73f60bfb4faf5b3a3f2c2d',
+    messagingSenderId: '271795308120',
+    projectId: 'kansuke-b6d32',
+    storageBucket: 'kansuke-b6d32.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'replace-with-ios-api-key',
-    appId: '1:000000000000:ios:replace-with-app-id',
-    messagingSenderId: '000000000000',
-    projectId: 'replace-with-firebase-project-id',
-    storageBucket: 'replace-with-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyDS6eXW2cQ504y1urjwlK3oK3cRggxyyGM',
+    appId: '1:271795308120:ios:f5adb95971a78d623f2c2d',
+    messagingSenderId: '271795308120',
+    projectId: 'kansuke-b6d32',
+    storageBucket: 'kansuke-b6d32.firebasestorage.app',
     iosBundleId: 'com.kansuke.kansuke',
   );
 }
