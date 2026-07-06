@@ -109,13 +109,30 @@ void main() {
     expect(find.text('ぱぱ'), findsOneWidget); // 凡例
   });
 
-  testWidgets('日付タップで日別一覧へ遷移する', (tester) async {
+  testWidgets('日付のシングルタップでは遷移しない', (tester) async {
     final today = DateTime.now();
     final firestore = await _seed(today: today);
 
     await tester.pumpWidget(_wrap(firestore));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('${today.day}').first);
+    await tester.pumpAndSettle();
+
+    // 誤操作防止のため、シングルタップは選択のみで遷移しない。
+    expect(find.text('DAY_LIST_SCREEN'), findsNothing);
+  });
+
+  testWidgets('日付のダブルタップで日別一覧へ遷移する', (tester) async {
+    final today = DateTime.now();
+    final firestore = await _seed(today: today);
+
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    // 同じ日を短時間に 2 回タップする（自前ダブルタップ判定）。
+    await tester.tap(find.text('${today.day}').first);
+    await tester.pump();
     await tester.tap(find.text('${today.day}').first);
     await tester.pumpAndSettle();
 

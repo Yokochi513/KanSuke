@@ -73,8 +73,11 @@ void main() {
 
     expect(find.text('カレンダー'), findsOneWidget);
 
-    // カレンダーの日付タップで日別一覧へ遷移する（予定なしなので空状態）。
-    await tester.tap(find.text('${DateTime.now().day}').first);
+    // カレンダーの日付ダブルタップで日別一覧へ遷移する（予定なしなので空状態）。
+    final today = find.text('${DateTime.now().day}').first;
+    await tester.tap(today);
+    await tester.pump();
+    await tester.tap(today);
     await tester.pumpAndSettle();
     expect(find.text('予定はありません'), findsOneWidget);
   });
