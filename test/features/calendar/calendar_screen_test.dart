@@ -22,7 +22,7 @@ Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
   final start = DateTime(today.year, today.month, today.day, 9);
   final event = Event.create(
     title: '会議',
-    ownerId: 'me',
+    creatorId: 'me',
     startAt: start,
     endAt: start.add(const Duration(hours: 1)),
     allDay: false,
@@ -59,17 +59,17 @@ Future<FakeFirebaseFirestore> _seedManyOnOneDay({
   // 1 マスに収まりきらない本数を同日に作る（「+N」省略を発生させる）。
   for (var i = 0; i < 8; i++) {
     final start = DateTime(today.year, today.month, today.day, 8 + i);
-    final owner = i.isEven ? 'me' : 'mama';
+    final creator = i.isEven ? 'me' : 'mama';
     final event = Event.create(
       title: '予定${i + 1}',
-      ownerId: owner,
+      creatorId: creator,
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
       type: i.isEven ? EventType.confirmed : EventType.tentative,
       memo: '',
       reminderOffsets: const [],
-      updatedBy: owner,
+      updatedBy: creator,
       now: start,
     );
     await firestore
@@ -162,12 +162,12 @@ void main() {
             children: [
               EventBar(
                 title: '会議',
-                color: Color(0xFF1565C0),
+                colors: [Color(0xFF1565C0)],
                 type: EventType.confirmed,
               ),
               EventBar(
                 title: '会議',
-                color: Color(0xFF1565C0),
+                colors: [Color(0xFF1565C0)],
                 type: EventType.tentative,
               ),
             ],
@@ -186,5 +186,81 @@ void main() {
 
     expect(confirmed.border, isNull);
     expect(tentative.border, isNotNull);
+  });
+
+  testWidgets('EventBarは参加メンバー数だけ色を分割して表示する', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: EventBar(
+            title: '家族会議',
+            colors: [Color(0xFF1565C0), Color(0xFFD84315), Color(0xFF2E7D32)],
+            type: EventType.confirmed,
+          ),
+        ),
+      ),
+    );
+
+    final segments = tester
+        .widgetList<ColoredBox>(
+          find.descendant(
+            of: find.byType(EventBar),
+            matching: find.byType(ColoredBox),
+          ),
+        )
+        .map((box) => box.color)
+        .toList();
+
+    expect(segments, [
+      const Color(0xFF1565C0),
+      const Color(0xFFD84315),
+      const Color(0xFF2E7D32),
+    ]);
+  });
+
+  testWidgets('参加者がいる予定はマス目のバーもメンバー数だけ分割される', (tester) async {
+    final today = DateTime.now();
+    final firestore = FakeFirebaseFirestore();
+    for (final (id, name, color) in const [
+      ('me', 'ぱぱ', '#1565C0'),
+      ('mama', 'まま', '#D84315'),
+    ]) {
+      await firestore.collection('users').doc(id).set({
+        'name': name,
+        'email': '$id@example.com',
+        'color': color,
+        'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+        'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      });
+    }
+    final start = DateTime(today.year, today.month, today.day, 9);
+    final sharedEvent = Event.create(
+      title: '家族の予定',
+      creatorId: 'me',
+      participantIds: const ['me', 'mama'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: 'me',
+      now: start,
+    );
+    await firestore
+        .collection('events')
+        .doc(sharedEvent.id)
+        .set(sharedEvent.toFirestore(useServerTimestamp: false));
+
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    final bar = tester.widget<EventBar>(
+      find.byWidgetPredicate(
+        (widget) => widget is EventBar && widget.title == '家族の予定',
+      ),
+    );
+
+    expect(bar.colors, [const Color(0xFF1565C0), const Color(0xFFD84315)]);
   });
 }

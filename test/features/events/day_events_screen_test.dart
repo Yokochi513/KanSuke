@@ -11,7 +11,10 @@ import 'package:kansuke/models/models.dart';
 
 final _day = DateTime(2026, 7, 5);
 
-Future<FakeFirebaseFirestore> _seed({bool withEvent = true}) async {
+Future<FakeFirebaseFirestore> _seed({
+  bool withEvent = true,
+  bool withParticipant = false,
+}) async {
   final firestore = FakeFirebaseFirestore();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
@@ -20,11 +23,21 @@ Future<FakeFirebaseFirestore> _seed({bool withEvent = true}) async {
     'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
     'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
   });
+  if (withParticipant) {
+    await firestore.collection('users').doc('other').set({
+      'name': 'まま',
+      'email': 'other@example.com',
+      'color': '#C2185B',
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
   if (withEvent) {
     final start = DateTime(2026, 7, 5, 9);
     final event = Event.create(
       title: '打ち合わせ',
-      ownerId: 'me',
+      creatorId: 'me',
+      participantIds: withParticipant ? const ['me', 'other'] : const [],
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
@@ -69,8 +82,20 @@ Widget _wrap(
   );
 }
 
+/// ListTile の leading にある、メンバー色の丸ドット数を数える。
+int _memberDotCount(WidgetTester tester) {
+  return tester
+      .widgetList<Container>(find.byType(Container))
+      .where(
+        (c) =>
+            c.constraints ==
+            const BoxConstraints.tightFor(width: 10, height: 10),
+      )
+      .length;
+}
+
 void main() {
-  testWidgets('選択日の予定を所有者色・種別バッジ・時刻付きで一覧表示する', (tester) async {
+  testWidgets('選択日の予定を参加者色・種別バッジ・時刻付きで一覧表示する', (tester) async {
     final firestore = await _seed();
     await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
     await tester.pumpAndSettle();
@@ -78,7 +103,28 @@ void main() {
     expect(find.text('打ち合わせ'), findsOneWidget);
     expect(find.text('仮'), findsOneWidget); // 種別バッジ
     expect(find.textContaining('09:00〜10:00'), findsOneWidget);
-    expect(find.textContaining('ぱぱ'), findsOneWidget); // 所有者名
+  });
+
+  testWidgets('参加者が複数いる予定は参加者名を副次表示する', (tester) async {
+    final firestore = await _seed(withParticipant: true);
+    await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('参加: ぱぱ・まま'), findsOneWidget);
+  });
+
+  testWidgets('参加者がいる予定は先頭のドットが参加人数分になる', (tester) async {
+    final withParticipant = await _seed(withParticipant: true);
+    await tester.pumpWidget(_wrap(withParticipant, editArgsSink: []));
+    await tester.pumpAndSettle();
+    expect(_memberDotCount(tester), 2);
+  });
+
+  testWidgets('参加者が1人の予定は先頭のドットが1個になる', (tester) async {
+    final soloEvent = await _seed();
+    await tester.pumpWidget(_wrap(soloEvent, editArgsSink: []));
+    await tester.pumpAndSettle();
+    expect(_memberDotCount(tester), 1);
   });
 
   testWidgets('予定なしの日は空状態を表示する', (tester) async {

@@ -10,7 +10,7 @@ import '../../users/application/user_providers.dart';
 
 /// カレンダー月表示（FR-4）。
 ///
-/// 各日をマス目（枠線付きセル）で描画し、予定を所有者色のバー＋タイトルで
+/// 各日をマス目（枠線付きセル）で描画し、予定を参加者の色のバー＋タイトルで
 /// 表示する。仮＝点線枠・半透明／確定＝塗りつぶしで種別を区別する
 /// （FR-2 / FR-3、基本設計 §6.1・§6.3）。マス目形式にすることで、複数人の
 /// 予定が同じ日に入っても一目で誰の予定かを判別できる。表示は
@@ -290,7 +290,9 @@ class _DayCell extends StatelessWidget {
             for (final event in visible)
               EventBar(
                 title: event.title,
-                color: colorFromHex(membersById[event.ownerId]?.color ?? ''),
+                colors: event.memberIds
+                    .map((id) => colorFromHex(membersById[id]?.color ?? ''))
+                    .toList(),
                 type: event.type,
               ),
             if (hidden > 0)
@@ -347,49 +349,83 @@ class _DayCell extends StatelessWidget {
 
 /// 予定を表す 1 本のバー（FR-2 / FR-3、基本設計 §6.3）。
 ///
-/// 所有者色で塗り、確定＝塗りつぶし、仮＝枠線・半透明で種別を区別する。
+/// 参加メンバーの色で等分割して塗り、確定＝塗りつぶし・
+/// 仮＝枠線＋半透明で種別を区別する。参加者が 1 人ならこれまで通り単色になる。
 /// 幅は親（マスの縦積み）に合わせて広がる。
 class EventBar extends StatelessWidget {
   const EventBar({
     required this.title,
-    required this.color,
+    required this.colors,
     required this.type,
     super.key,
   });
 
   final String title;
-  final Color color;
+  final List<Color> colors;
   final EventType type;
 
   @override
   Widget build(BuildContext context) {
     final confirmed = type == EventType.confirmed;
+    final primary = colors.first;
     final textColor = confirmed
-        ? (ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+        ? (ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
               ? Colors.white
               : Colors.black)
-        : color;
+        : primary;
 
     return Container(
       height: 16,
       margin: const EdgeInsets.only(bottom: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      alignment: Alignment.centerLeft,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: confirmed ? color : color.withValues(alpha: 0.16),
-        border: confirmed ? null : Border.all(color: color, width: 1),
+        border: confirmed ? null : Border.all(color: primary, width: 1),
         borderRadius: BorderRadius.circular(3),
       ),
-      child: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 11,
-          height: 1.0,
-          fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
-          color: textColor,
-        ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            // Row+Expanded の等分割は Flutter 3.41.6 でこの構成だと塗りが
+            // 描画されないため、LayoutBuilder で幅を計算し固定幅の
+            // SizedBox で等分割している（flex レイアウトを使わない）。
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final segmentWidth = constraints.maxWidth / colors.length;
+                return Row(
+                  children: [
+                    for (final color in colors)
+                      SizedBox(
+                        width: segmentWidth,
+                        height: constraints.maxHeight,
+                        child: ColoredBox(
+                          color: confirmed
+                              ? color
+                              : color.withValues(alpha: 0.16),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.0,
+                  fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
+                  color: textColor,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

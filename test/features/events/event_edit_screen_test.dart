@@ -21,6 +21,18 @@ Future<FakeFirebaseFirestore> _seedMember() async {
   return firestore;
 }
 
+Future<FakeFirebaseFirestore> _seedMembers() async {
+  final firestore = await _seedMember();
+  await firestore.collection('users').doc('other').set({
+    'name': 'まま',
+    'email': 'other@example.com',
+    'color': '#C2185B',
+    'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+  });
+  return firestore;
+}
+
 Future<void> _openEditor(
   WidgetTester tester,
   FakeFirebaseFirestore firestore,
@@ -87,7 +99,8 @@ void main() {
     expect(docs, hasLength(1));
     final data = docs.single.data();
     expect(data['title'], '打ち合わせ');
-    expect(data['ownerId'], 'me');
+    expect(data['creatorId'], 'me');
+    expect(data['participantIds'], ['me']);
     expect(data['updatedBy'], 'me');
     expect(data['type'], 'tentative');
     expect(data['deleted'], false);
@@ -105,6 +118,22 @@ void main() {
     await _tapVisible(tester, find.text('作成'));
 
     expect(find.text('タイトルを入力してください'), findsOneWidget);
+    expect(await _events(firestore), isEmpty);
+  });
+
+  testWidgets('参加者を全員解除するとバリデーションエラーで保存しない', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '打ち合わせ');
+    await _tapVisible(tester, find.widgetWithText(FilterChip, 'ぱぱ'));
+    await _tapVisible(tester, find.text('作成'));
+
+    expect(find.text('参加者を1人以上選択してください'), findsOneWidget);
     expect(await _events(firestore), isEmpty);
   });
 
@@ -126,12 +155,29 @@ void main() {
     expect(data['reminderOffsets'], [30]);
   });
 
+  testWidgets('参加者を複数選択して保存する', (tester) async {
+    final firestore = await _seedMembers();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '家族旅行');
+    await _tapVisible(tester, find.widgetWithText(FilterChip, 'まま'));
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['participantIds'], ['me', 'other']);
+  });
+
   testWidgets('既存予定を編集して更新する', (tester) async {
     final firestore = await _seedMember();
     final start = DateTime(2026, 7, 5, 9);
     final event = Event.create(
       title: '旧タイトル',
-      ownerId: 'me',
+      creatorId: 'me',
+      participantIds: const ['me'],
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
@@ -162,7 +208,7 @@ void main() {
     final start = DateTime(2026, 7, 5, 9);
     final event = Event.create(
       title: '消す予定',
-      ownerId: 'me',
+      creatorId: 'me',
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
