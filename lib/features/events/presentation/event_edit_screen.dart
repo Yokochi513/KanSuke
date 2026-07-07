@@ -39,7 +39,6 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   late TimeOfDay _endTime;
   bool _allDay = false;
   EventType _type = EventType.tentative;
-  String? _ownerId;
   final Set<String> _participantIds = {};
   final Set<int> _reminderOffsets = {};
   bool _saving = false;
@@ -70,7 +69,6 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _memoController.text = event.memo;
       _allDay = event.allDay;
       _type = event.type;
-      _ownerId = event.ownerId;
       _participantIds.addAll(event.participantIds);
       final start = event.startAt.toLocal();
       final end = event.endAt.toLocal();
@@ -82,9 +80,9 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _date = DateUtils.dateOnly(args.initialDate!);
       _startTime = const TimeOfDay(hour: 9, minute: 0);
       _endTime = const TimeOfDay(hour: 10, minute: 0);
-      _ownerId = ref.read(currentUidProvider);
-      if (_ownerId != null) {
-        _participantIds.add(_ownerId!);
+      final uid = ref.read(currentUidProvider);
+      if (uid != null) {
+        _participantIds.add(uid);
       }
     }
   }
@@ -128,8 +126,6 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                   ),
                   const SizedBox(height: 16),
                   _buildTypeToggle(),
-                  const SizedBox(height: 8),
-                  _buildOwnerField(members),
                   const SizedBox(height: 8),
                   _buildParticipantsField(members),
                   const SizedBox(height: 8),
@@ -186,59 +182,53 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     );
   }
 
-  Widget _buildOwnerField(List<User> members) {
-    if (members.isEmpty) {
-      return const ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text('所有者'),
-        subtitle: Text('メンバー情報を読み込み中…'),
-      );
-    }
-    final value = members.any((m) => m.id == _ownerId)
-        ? _ownerId
-        : members.first.id;
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      decoration: const InputDecoration(
-        labelText: '所有者',
-        border: OutlineInputBorder(),
-      ),
-      items: [
-        for (final member in members)
-          DropdownMenuItem(value: member.id, child: Text(member.name)),
-      ],
-      onChanged: (id) => setState(() => _ownerId = id),
-    );
-  }
-
-  /// 参加者の複数選択（FR-1、基本設計 §6.1・§6.3）。所有者とは独立して選択できる。
+  /// 参加者の複数選択（FR-1・FR-2、基本設計 §6.1・§6.3）。1人以上の選択を必須とする。
   Widget _buildParticipantsField(List<User> members) {
     if (members.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('参加者'),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
+    return FormField<Set<String>>(
+      initialValue: _participantIds,
+      validator: (value) =>
+          (value == null || value.isEmpty) ? '参加者を1人以上選択してください' : null,
+      builder: (field) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final member in members)
-              FilterChip(
-                label: Text(member.name),
-                selected: _participantIds.contains(member.id),
-                onSelected: (selected) => setState(() {
-                  if (selected) {
-                    _participantIds.add(member.id);
-                  } else {
-                    _participantIds.remove(member.id);
-                  }
-                }),
+            const Text('参加者'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final member in members)
+                  FilterChip(
+                    label: Text(member.name),
+                    selected: _participantIds.contains(member.id),
+                    onSelected: (selected) => setState(() {
+                      if (selected) {
+                        _participantIds.add(member.id);
+                      } else {
+                        _participantIds.remove(member.id);
+                      }
+                      field.didChange(_participantIds);
+                    }),
+                  ),
+              ],
+            ),
+            if (field.hasError)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  field.errorText!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
+                ),
               ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -359,7 +349,6 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     setState(() => _saving = true);
     final repository = ref.read(eventRepositoryProvider);
     final offsets = _reminderOffsets.toList()..sort();
-    final ownerId = _ownerId ?? uid;
     final participantIds = _participantIds.toList()..sort();
 
     try {
@@ -367,7 +356,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       if (editing == null) {
         final event = Event.create(
           title: _titleController.text.trim(),
-          ownerId: ownerId,
+          creatorId: uid,
           participantIds: participantIds,
           startAt: _startAt,
           endAt: _endAt,
@@ -382,7 +371,6 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       } else {
         final updated = editing.copyWith(
           title: _titleController.text.trim(),
-          ownerId: ownerId,
           participantIds: participantIds,
           startAt: _startAt,
           endAt: _endAt,

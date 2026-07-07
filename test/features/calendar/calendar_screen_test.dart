@@ -22,7 +22,7 @@ Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
   final start = DateTime(today.year, today.month, today.day, 9);
   final event = Event.create(
     title: '会議',
-    ownerId: 'me',
+    creatorId: 'me',
     startAt: start,
     endAt: start.add(const Duration(hours: 1)),
     allDay: false,
@@ -59,17 +59,17 @@ Future<FakeFirebaseFirestore> _seedManyOnOneDay({
   // 1 マスに収まりきらない本数を同日に作る（「+N」省略を発生させる）。
   for (var i = 0; i < 8; i++) {
     final start = DateTime(today.year, today.month, today.day, 8 + i);
-    final owner = i.isEven ? 'me' : 'mama';
+    final creator = i.isEven ? 'me' : 'mama';
     final event = Event.create(
       title: '予定${i + 1}',
-      ownerId: owner,
+      creatorId: creator,
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
       type: i.isEven ? EventType.confirmed : EventType.tentative,
       memo: '',
       reminderOffsets: const [],
-      updatedBy: owner,
+      updatedBy: creator,
       now: start,
     );
     await firestore
@@ -236,7 +236,7 @@ void main() {
     final start = DateTime(today.year, today.month, today.day, 9);
     final sharedEvent = Event.create(
       title: '家族の予定',
-      ownerId: 'me',
+      creatorId: 'me',
       participantIds: const ['me', 'mama'],
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),

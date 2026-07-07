@@ -99,7 +99,8 @@ void main() {
     expect(docs, hasLength(1));
     final data = docs.single.data();
     expect(data['title'], '打ち合わせ');
-    expect(data['ownerId'], 'me');
+    expect(data['creatorId'], 'me');
+    expect(data['participantIds'], ['me']);
     expect(data['updatedBy'], 'me');
     expect(data['type'], 'tentative');
     expect(data['deleted'], false);
@@ -117,6 +118,22 @@ void main() {
     await _tapVisible(tester, find.text('作成'));
 
     expect(find.text('タイトルを入力してください'), findsOneWidget);
+    expect(await _events(firestore), isEmpty);
+  });
+
+  testWidgets('参加者を全員解除するとバリデーションエラーで保存しない', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '打ち合わせ');
+    await _tapVisible(tester, find.widgetWithText(FilterChip, 'ぱぱ'));
+    await _tapVisible(tester, find.text('作成'));
+
+    expect(find.text('参加者を1人以上選択してください'), findsOneWidget);
     expect(await _events(firestore), isEmpty);
   });
 
@@ -159,7 +176,8 @@ void main() {
     final start = DateTime(2026, 7, 5, 9);
     final event = Event.create(
       title: '旧タイトル',
-      ownerId: 'me',
+      creatorId: 'me',
+      participantIds: const ['me'],
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
@@ -190,7 +208,7 @@ void main() {
     final start = DateTime(2026, 7, 5, 9);
     final event = Event.create(
       title: '消す予定',
-      ownerId: 'me',
+      creatorId: 'me',
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,

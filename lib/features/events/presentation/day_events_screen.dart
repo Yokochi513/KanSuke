@@ -11,7 +11,7 @@ import 'event_type_badge.dart';
 
 /// 日別予定一覧（FR-1 / FR-2 / FR-3、基本設計 §6.1）。
 ///
-/// 選択日の予定を所有者色・種別バッジ・時刻付きで表示し、各項目や新規作成から
+/// 選択日の予定を参加者の色・種別バッジ・時刻付きで表示し、各項目や新規作成から
 /// 予定編集画面（#11）へ遷移する。対象日はルート引数（[DateTime]）で受け取る。
 class DayEventsScreen extends ConsumerWidget {
   const DayEventsScreen({super.key});
@@ -54,11 +54,7 @@ class DayEventsScreen extends ConsumerWidget {
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final event = events[index];
-              return _EventTile(
-                event: event,
-                owner: membersById[event.ownerId],
-                membersById: membersById,
-              );
+              return _EventTile(event: event, membersById: membersById);
             },
           );
         },
@@ -71,14 +67,9 @@ class DayEventsScreen extends ConsumerWidget {
 }
 
 class _EventTile extends StatelessWidget {
-  const _EventTile({
-    required this.event,
-    required this.owner,
-    required this.membersById,
-  });
+  const _EventTile({required this.event, required this.membersById});
 
   final Event event;
-  final User? owner;
   final Map<String, User> membersById;
 
   @override
@@ -110,10 +101,12 @@ class _EventTile extends StatelessWidget {
     );
   }
 
-  /// 参加者名（所有者を除く）を「・」区切りで返す。参加者がいなければ null。
+  /// 参加者名を「・」区切りで返す。2人以上の予定でのみ表示する（1人だけの
+  /// 予定は色ドットのみで十分判別できるため、テキストは省略する）。
   String? _participantsLabel(Event event) {
-    final names = event.participantIds
-        .where((id) => id != event.ownerId)
+    final ids = event.memberIds;
+    if (ids.length <= 1) return null;
+    final names = ids
         .map((id) => membersById[id]?.name)
         .whereType<String>()
         .toList();
@@ -122,21 +115,19 @@ class _EventTile extends StatelessWidget {
   }
 
   String _scheduleLabel(Event event) {
-    final ownerName = owner?.name;
-    final ownerLabel = ownerName == null ? '' : '・$ownerName';
     if (event.allDay) {
-      return '終日$ownerLabel';
+      return '終日';
     }
     final start = event.startAt.toLocal();
     final end = event.endAt.toLocal();
     return '${_two(start.hour)}:${_two(start.minute)}'
-        '〜${_two(end.hour)}:${_two(end.minute)}$ownerLabel';
+        '〜${_two(end.hour)}:${_two(end.minute)}';
   }
 }
 
-/// 参加メンバー（所有者を含む）を色付きドットで並べる（FR-2、参加者の可視化）。
+/// 参加メンバーを色付きドットで並べる（FR-2、参加者の可視化）。
 ///
-/// 一目で誰が参加しているか把握できるよう、所有者色 1 色だけに頼らず全員分表示する。
+/// 一目で誰が参加しているか把握できるよう、単色に頼らず全員分表示する。
 class _MemberDots extends StatelessWidget {
   const _MemberDots({required this.colors});
 
