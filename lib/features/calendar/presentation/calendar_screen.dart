@@ -263,7 +263,6 @@ class _DayCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final holidayName = isOutside ? null : japaneseHolidayName(day);
-    final isHoliday = holidayName != null;
 
     // マスの高さから、表示できるバー本数を見積もる。
     final available = rowHeight - _headerHeight - 2;
@@ -285,8 +284,6 @@ class _DayCell extends StatelessWidget {
     final Color? backgroundColor;
     if (isSelected) {
       backgroundColor = scheme.primary.withValues(alpha: 0.08);
-    } else if (isHoliday) {
-      backgroundColor = scheme.errorContainer.withValues(alpha: 0.28);
     } else if (isToday) {
       backgroundColor = scheme.primary.withValues(alpha: 0.04);
     } else {
@@ -345,73 +342,60 @@ class _DayCell extends StatelessWidget {
 
     return SizedBox(
       height: _headerHeight,
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 20,
-              height: 18,
-              alignment: Alignment.center,
-              decoration: isToday
-                  ? BoxDecoration(
-                      color: isHoliday ? scheme.error : scheme.primary,
-                      shape: BoxShape.circle,
-                    )
-                  : null,
-              child: Text(
-                '${day.day}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
-                  color: isToday
-                      ? (isHoliday ? scheme.onError : scheme.onPrimary)
-                      : numberColor,
-                ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 18,
+            alignment: Alignment.center,
+            decoration: isToday
+                ? BoxDecoration(
+                    color: isHoliday ? scheme.error : scheme.primary,
+                    shape: BoxShape.circle,
+                  )
+                : null,
+            child: Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
+                color: isToday
+                    ? (isHoliday ? scheme.onError : scheme.onPrimary)
+                    : numberColor,
               ),
             ),
-            if (holidayName != null) _HolidayChip(name: holidayName),
-          ],
-        ),
+          ),
+          if (holidayName != null)
+            Expanded(child: _HolidayLabel(name: holidayName)),
+        ],
       ),
     );
   }
 }
 
-class _HolidayChip extends StatelessWidget {
-  const _HolidayChip({required this.name});
+/// 祝日名ラベル（例: 「海の日」）。"祝" という記号だけでは何の祝日か
+/// わからないため、名称そのものを表示して一目で判別できるようにする。
+class _HolidayLabel extends StatelessWidget {
+  const _HolidayLabel({required this.name});
 
   final String name;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(left: 1, top: 1),
+      padding: const EdgeInsets.only(left: 2, top: 3),
       child: Tooltip(
         message: name,
-        child: Container(
-          width: 16,
-          height: 14,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: scheme.error.withValues(alpha: 0.10),
-            border: Border.all(
-              color: scheme.error.withValues(alpha: 0.36),
-              width: 0.5,
-            ),
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Text(
-            '祝',
-            style: TextStyle(
-              fontSize: 9,
-              height: 1,
-              fontWeight: FontWeight.w700,
-              color: scheme.error,
-            ),
+        child: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 9,
+            height: 1,
+            fontWeight: FontWeight.w600,
+            color: Colors.red.shade400,
           ),
         ),
       ),
