@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -70,6 +72,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     setState(() => _focusedDay = DateTime.now());
   }
 
+  /// ヘッダの「YYYY年MM月」タップで年月一覧を出し、選択した月へ飛ぶ（Issue #32）。
+  Future<void> _openMonthYearPicker() async {
+    final picked = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _MonthYearPickerSheet(focusedDay: _focusedDay),
+    );
+    if (picked != null) {
+      setState(() => _focusedDay = picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(eventsInRangeProvider(_monthRange));
@@ -99,6 +113,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             onPrev: () => _changeMonth(-1),
             onNext: () => _changeMonth(1),
             onToday: _goToToday,
+            onTapTitle: _openMonthYearPicker,
           ),
           // カレンダーは残りの高さいっぱいに広げ、各マスを大きく取る。
           Expanded(
@@ -497,12 +512,14 @@ class _MonthHeader extends StatelessWidget {
     required this.onPrev,
     required this.onNext,
     required this.onToday,
+    required this.onTapTitle,
   });
 
   final DateTime focusedDay;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onToday;
+  final VoidCallback onTapTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -517,9 +534,20 @@ class _MonthHeader extends StatelessWidget {
           ),
           Expanded(
             child: Center(
-              child: Text(
-                '${focusedDay.year}年${focusedDay.month}月',
-                style: Theme.of(context).textTheme.titleMedium,
+              // Issue #32: タップで年月一覧を出し、選択した月へ直接飛べるようにする。
+              child: InkWell(
+                onTap: onTapTitle,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    '${focusedDay.year}年${focusedDay.month}月',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
               ),
             ),
           ),
@@ -530,6 +558,150 @@ class _MonthHeader extends StatelessWidget {
             icon: const Icon(Icons.chevron_right),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 年月を選ぶボトムシート（Issue #32）。
+///
+/// 「年」「月」それぞれをスクロールホイール（[CupertinoPicker]）で選ばせる、
+/// iOS の日付選択に準じた見た目にする。ホイールは慣性でスクロールが止まる
+/// まで値が確定しないため、「完了」で明示的に選択を確定する。
+class _MonthYearPickerSheet extends StatefulWidget {
+  const _MonthYearPickerSheet({required this.focusedDay});
+
+  final DateTime focusedDay;
+
+  @override
+  State<_MonthYearPickerSheet> createState() => _MonthYearPickerSheetState();
+}
+
+class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
+  // TableCalendar の firstDay/lastDay（calendar_screen.dart 内）と範囲を揃える。
+  static const int _minYear = 2020;
+  static const int _maxYear = 2035;
+  static const double _itemExtent = 40;
+
+  late int _year;
+  late int _month;
+
+  // build() のたびに作り直すと、一方のホイールを操作した setState が
+  // もう一方のコントローラも作り直してしまい、進行中のドラッグ操作を
+  // 中断させて互いに干渉して見える。State のフィールドとして一度だけ
+  // 生成し、以後は使い回すことで年・月を独立して操作できるようにする。
+  late final FixedExtentScrollController _yearController;
+  late final FixedExtentScrollController _monthController;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.focusedDay.year;
+    _month = widget.focusedDay.month;
+    _yearController = FixedExtentScrollController(
+      initialItem: _year - _minYear,
+    );
+    _monthController = FixedExtentScrollController(initialItem: _month - 1);
+  }
+
+  @override
+  void dispose() {
+    _yearController.dispose();
+    _monthController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('キャンセル'),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(context, DateTime(_year, _month, 1)),
+                  child: const Text('完了'),
+                ),
+              ],
+            ),
+            SizedBox(
+              height: 180,
+              // 既定の ScrollBehavior はマウスでのドラッグ操作を許可しない
+              // （マウスホイールでの回転のみ）ため、クリックしたまま上下に
+              // 流す操作もできるよう明示的に許可する。
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: CupertinoPicker(
+                        scrollController: _yearController,
+                        itemExtent: _itemExtent,
+                        onSelectedItemChanged: (index) =>
+                            setState(() => _year = _minYear + index),
+                        selectionOverlay: _PickerSelectionOverlay(
+                          color: scheme.primary,
+                        ),
+                        children: [
+                          for (var year = _minYear; year <= _maxYear; year++)
+                            Center(child: Text('$year年')),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: CupertinoPicker(
+                        scrollController: _monthController,
+                        itemExtent: _itemExtent,
+                        onSelectedItemChanged: (index) =>
+                            setState(() => _month = index + 1),
+                        selectionOverlay: _PickerSelectionOverlay(
+                          color: scheme.primary,
+                        ),
+                        children: [
+                          for (var month = 1; month <= 12; month++)
+                            Center(child: Text('$month月')),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ホイールの選択中央行を示す帯。既定の [CupertinoPickerDefaultSelectionOverlay]
+/// はテーマの primary 色と馴染まないため、テーマ色の帯に差し替える。
+class _PickerSelectionOverlay extends StatelessWidget {
+  const _PickerSelectionOverlay({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.symmetric(
+            horizontal: BorderSide(color: color.withValues(alpha: 0.4)),
+          ),
+        ),
       ),
     );
   }

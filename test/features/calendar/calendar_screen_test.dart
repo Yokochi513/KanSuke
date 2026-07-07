@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -230,6 +231,70 @@ void main() {
       const Color(0xFFD84315),
       const Color(0xFF2E7D32),
     ]);
+  });
+
+  testWidgets('ヘッダの年月タップでホイールピッカーを表示し、月を選ぶとその月へ飛ぶ', (tester) async {
+    final focusedDay = DateTime(2024, 7, 1);
+    final firestore = await _seed(today: focusedDay);
+
+    await tester.pumpWidget(_wrap(firestore, initialFocusedDay: focusedDay));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('2024年7月'));
+    await tester.pumpAndSettle();
+
+    // 「年」「月」それぞれのホイールピッカーが表示される。
+    expect(find.byType(CupertinoPicker), findsNWidgets(2));
+    expect(find.text('完了'), findsOneWidget);
+
+    // 月ホイールを 1 目盛り分ドラッグして選択を進める（7月→8月）。
+    await tester.drag(find.byType(CupertinoPicker).last, const Offset(0, -40));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('完了'));
+    await tester.pumpAndSettle();
+
+    // 選んだ月へフォーカスが移り、ヘッダのタイトルが更新される。
+    expect(find.text('2024年8月'), findsOneWidget);
+  });
+
+  testWidgets('ホイールピッカーで年を切り替えられる', (tester) async {
+    final focusedDay = DateTime(2024, 7, 1);
+    final firestore = await _seed(today: focusedDay);
+
+    await tester.pumpWidget(_wrap(firestore, initialFocusedDay: focusedDay));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('2024年7月'));
+    await tester.pumpAndSettle();
+
+    // 年ホイールを 1 目盛り分ドラッグして選択を進める（2024年→2025年）。
+    await tester.drag(find.byType(CupertinoPicker).first, const Offset(0, -40));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('完了'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2025年7月'), findsOneWidget);
+  });
+
+  testWidgets('ホイールピッカーでキャンセルすると月が変わらない', (tester) async {
+    final focusedDay = DateTime(2024, 7, 1);
+    final firestore = await _seed(today: focusedDay);
+
+    await tester.pumpWidget(_wrap(firestore, initialFocusedDay: focusedDay));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('2024年7月'));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(CupertinoPicker).last, const Offset(0, -40));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('キャンセル'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2024年7月'), findsOneWidget);
   });
 
   testWidgets('参加者がいる予定はマス目のバーもメンバー数だけ分割される', (tester) async {
