@@ -70,6 +70,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     setState(() => _focusedDay = DateTime.now());
   }
 
+  /// ヘッダの「YYYY年MM月」タップで年月一覧を出し、選択した月へ飛ぶ（Issue #32）。
+  Future<void> _openMonthYearPicker() async {
+    final picked = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _MonthYearPickerSheet(focusedDay: _focusedDay),
+    );
+    if (picked != null) {
+      setState(() => _focusedDay = picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(eventsInRangeProvider(_monthRange));
@@ -99,6 +111,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             onPrev: () => _changeMonth(-1),
             onNext: () => _changeMonth(1),
             onToday: _goToToday,
+            onTapTitle: _openMonthYearPicker,
           ),
           // カレンダーは残りの高さいっぱいに広げ、各マスを大きく取る。
           Expanded(
@@ -497,12 +510,14 @@ class _MonthHeader extends StatelessWidget {
     required this.onPrev,
     required this.onNext,
     required this.onToday,
+    required this.onTapTitle,
   });
 
   final DateTime focusedDay;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onToday;
+  final VoidCallback onTapTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -517,9 +532,20 @@ class _MonthHeader extends StatelessWidget {
           ),
           Expanded(
             child: Center(
-              child: Text(
-                '${focusedDay.year}年${focusedDay.month}月',
-                style: Theme.of(context).textTheme.titleMedium,
+              // Issue #32: タップで年月一覧を出し、選択した月へ直接飛べるようにする。
+              child: InkWell(
+                onTap: onTapTitle,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    '${focusedDay.year}年${focusedDay.month}月',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
               ),
             ),
           ),
@@ -530,6 +556,133 @@ class _MonthHeader extends StatelessWidget {
             icon: const Icon(Icons.chevron_right),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 年月一覧から月を選ぶボトムシート（Issue #32）。
+///
+/// 年を左右で切り替えつつ、その年の 12 か月を一覧（グリッド）表示する。
+/// 月をタップするとその年月の月初日を選択結果として返す。
+class _MonthYearPickerSheet extends StatefulWidget {
+  const _MonthYearPickerSheet({required this.focusedDay});
+
+  final DateTime focusedDay;
+
+  @override
+  State<_MonthYearPickerSheet> createState() => _MonthYearPickerSheetState();
+}
+
+class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
+  // TableCalendar の firstDay/lastDay（calendar_screen.dart 内）と範囲を揃える。
+  static const int _minYear = 2020;
+  static const int _maxYear = 2035;
+
+  late int _year;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.focusedDay.year;
+  }
+
+  void _changeYear(int delta) {
+    final next = _year + delta;
+    if (next < _minYear || next > _maxYear) {
+      return;
+    }
+    setState(() => _year = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  tooltip: '前の年',
+                  onPressed: _year > _minYear ? () => _changeYear(-1) : null,
+                  icon: const Icon(Icons.chevron_left),
+                ),
+                SizedBox(
+                  width: 96,
+                  child: Text(
+                    '$_year年',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '次の年',
+                  onPressed: _year < _maxYear ? () => _changeYear(1) : null,
+                  icon: const Icon(Icons.chevron_right),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 4,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.6,
+              children: [
+                for (var month = 1; month <= 12; month++)
+                  _MonthTile(
+                    month: month,
+                    isSelected:
+                        _year == widget.focusedDay.year &&
+                        month == widget.focusedDay.month,
+                    onTap: () =>
+                        Navigator.pop(context, DateTime(_year, month, 1)),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 年月一覧内の 1 か月分ボタン。
+class _MonthTile extends StatelessWidget {
+  const _MonthTile({
+    required this.month,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final int month;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: isSelected ? scheme.primary : scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Center(
+          child: Text(
+            '$month月',
+            style: TextStyle(
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              color: isSelected ? scheme.onPrimary : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
       ),
     );
   }

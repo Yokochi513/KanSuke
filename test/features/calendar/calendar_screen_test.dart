@@ -232,6 +232,48 @@ void main() {
     ]);
   });
 
+  testWidgets('ヘッダの年月タップで一覧を表示し、月を選ぶとその月へ飛ぶ', (tester) async {
+    final focusedDay = DateTime(2024, 7, 1);
+    final firestore = await _seed(today: focusedDay);
+
+    await tester.pumpWidget(_wrap(firestore, initialFocusedDay: focusedDay));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('2024年7月'));
+    await tester.pumpAndSettle();
+
+    // 年月一覧（ボトムシート）に 12 か月分が並ぶ。
+    expect(find.text('2024年'), findsOneWidget);
+    expect(find.text('1月'), findsOneWidget);
+    expect(find.text('12月'), findsOneWidget);
+
+    await tester.tap(find.text('12月'));
+    await tester.pumpAndSettle();
+
+    // 選んだ月へフォーカスが移り、ヘッダのタイトルが更新される。
+    expect(find.text('2024年12月'), findsOneWidget);
+  });
+
+  testWidgets('年月一覧で年を切り替えられる', (tester) async {
+    final focusedDay = DateTime(2024, 7, 1);
+    final firestore = await _seed(today: focusedDay);
+
+    await tester.pumpWidget(_wrap(firestore, initialFocusedDay: focusedDay));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('2024年7月'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('次の年'));
+    await tester.pumpAndSettle();
+    expect(find.text('2025年'), findsOneWidget);
+
+    await tester.tap(find.text('1月'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2025年1月'), findsOneWidget);
+  });
+
   testWidgets('参加者がいる予定はマス目のバーもメンバー数だけ分割される', (tester) async {
     final today = DateTime.now();
     final firestore = FakeFirebaseFirestore();
