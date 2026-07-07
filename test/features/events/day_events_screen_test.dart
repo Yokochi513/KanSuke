@@ -82,6 +82,18 @@ Widget _wrap(
   );
 }
 
+/// ListTile の leading にある、メンバー色の丸ドット数を数える。
+int _memberDotCount(WidgetTester tester) {
+  return tester
+      .widgetList<Container>(find.byType(Container))
+      .where(
+        (c) =>
+            c.constraints ==
+            const BoxConstraints.tightFor(width: 10, height: 10),
+      )
+      .length;
+}
+
 void main() {
   testWidgets('選択日の予定を所有者色・種別バッジ・時刻付きで一覧表示する', (tester) async {
     final firestore = await _seed();
@@ -100,6 +112,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('参加: まま'), findsOneWidget);
+  });
+
+  testWidgets('参加者がいる予定は先頭のドットが参加人数分になる', (tester) async {
+    final withParticipant = await _seed(withParticipant: true);
+    await tester.pumpWidget(_wrap(withParticipant, editArgsSink: []));
+    await tester.pumpAndSettle();
+    expect(_memberDotCount(tester), 2);
+  });
+
+  testWidgets('参加者がいない予定は先頭のドットが所有者の1個になる', (tester) async {
+    final ownerOnly = await _seed();
+    await tester.pumpWidget(_wrap(ownerOnly, editArgsSink: []));
+    await tester.pumpAndSettle();
+    expect(_memberDotCount(tester), 1);
   });
 
   testWidgets('予定なしの日は空状態を表示する', (tester) async {

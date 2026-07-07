@@ -116,6 +116,17 @@ final class Event {
   final DateTime updatedAt;
   final bool deleted;
 
+  /// 予定に関わるメンバー ID を所有者を先頭にして重複なく並べたもの。
+  ///
+  /// 色分け表示（月表示の分割バー・日別一覧の複数ドット）で使う表示順。
+  List<String> get memberIds {
+    final seen = <String>{};
+    return [
+      for (final id in [ownerId, ...participantIds])
+        if (seen.add(id)) id,
+    ];
+  }
+
   FirestoreData toFirestore({bool useServerTimestamp = true}) {
     return {
       'id': id,

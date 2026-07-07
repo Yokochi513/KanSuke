@@ -83,15 +83,12 @@ class _EventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ownerColor = colorFromHex(owner?.color ?? '');
+    final memberColors = event.memberIds
+        .map((id) => colorFromHex(membersById[id]?.color ?? ''))
+        .toList();
     final participantsLabel = _participantsLabel(event);
     return ListTile(
-      leading: Container(
-        width: 12,
-        height: 12,
-        margin: const EdgeInsets.only(top: 6),
-        decoration: BoxDecoration(color: ownerColor, shape: BoxShape.circle),
-      ),
+      leading: _MemberDots(colors: memberColors),
       title: Text(event.title),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,6 +131,37 @@ class _EventTile extends StatelessWidget {
     final end = event.endAt.toLocal();
     return '${_two(start.hour)}:${_two(start.minute)}'
         '〜${_two(end.hour)}:${_two(end.minute)}$ownerLabel';
+  }
+}
+
+/// 参加メンバー（所有者を含む）を色付きドットで並べる（FR-2、参加者の可視化）。
+///
+/// 一目で誰が参加しているか把握できるよう、所有者色 1 色だけに頼らず全員分表示する。
+class _MemberDots extends StatelessWidget {
+  const _MemberDots({required this.colors});
+
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 32,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Wrap(
+          spacing: 3,
+          runSpacing: 3,
+          children: [
+            for (final color in colors)
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -68,6 +68,15 @@ void main() {
     expect(restored.participantIds, isEmpty);
   });
 
+  test('memberIdsは所有者を先頭に参加者を重複なく並べる', () {
+    final event = buildEvent().copyWith(
+      ownerId: 'user-1',
+      participantIds: ['user-2', 'user-1', 'user-3', 'user-2'],
+    );
+
+    expect(event.memberIds, ['user-1', 'user-2', 'user-3']);
+  });
+
   test('生成ファクトリは重複しないUUIDを付与する', () {
     final now = DateTime.utc(2026, 7, 2);
 
