@@ -45,6 +45,9 @@ node_modules/
 firebase-debug.log
 firestore-debug.log
 
+# ---- ローカル運用メモ（リポジトリに含めない個人メモ）----
+*.local.md
+
 # ---- エディタ / OS ----
 .idea/
 .vscode/
