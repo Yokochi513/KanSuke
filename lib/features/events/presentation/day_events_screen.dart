@@ -11,7 +11,7 @@ import 'event_type_badge.dart';
 
 /// 日別予定一覧（FR-1 / FR-2 / FR-3、基本設計 §6.1）。
 ///
-/// 選択日の予定を所有者色・種別バッジ・時刻付きで表示し、各項目や新規作成から
+/// 選択日の予定を参加者の色・種別バッジ・時刻付きで表示し、各項目や新規作成から
 /// 予定編集画面（#11）へ遷移する。対象日はルート引数（[DateTime]）で受け取る。
 class DayEventsScreen extends ConsumerWidget {
   const DayEventsScreen({super.key});
@@ -54,10 +54,7 @@ class DayEventsScreen extends ConsumerWidget {
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final event = events[index];
-              return _EventTile(
-                event: event,
-                owner: membersById[event.ownerId],
-              );
+              return _EventTile(event: event, membersById: membersById);
             },
           );
         },
@@ -70,23 +67,31 @@ class DayEventsScreen extends ConsumerWidget {
 }
 
 class _EventTile extends StatelessWidget {
-  const _EventTile({required this.event, required this.owner});
+  const _EventTile({required this.event, required this.membersById});
 
   final Event event;
-  final User? owner;
+  final Map<String, User> membersById;
 
   @override
   Widget build(BuildContext context) {
-    final ownerColor = colorFromHex(owner?.color ?? '');
+    final memberColors = event.memberIds
+        .map((id) => colorFromHex(membersById[id]?.color ?? ''))
+        .toList();
+    final participantsLabel = _participantsLabel(event);
     return ListTile(
-      leading: Container(
-        width: 12,
-        height: 12,
-        margin: const EdgeInsets.only(top: 6),
-        decoration: BoxDecoration(color: ownerColor, shape: BoxShape.circle),
-      ),
+      leading: _MemberDots(colors: memberColors),
       title: Text(event.title),
-      subtitle: Text(_scheduleLabel(event)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_scheduleLabel(event)),
+          if (participantsLabel != null)
+            Text(
+              '参加: $participantsLabel',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+        ],
+      ),
       trailing: EventTypeBadge(event.type),
       onTap: () => Navigator.pushNamed(
         context,
@@ -96,16 +101,58 @@ class _EventTile extends StatelessWidget {
     );
   }
 
+  /// 参加者名を「・」区切りで返す。2人以上の予定でのみ表示する（1人だけの
+  /// 予定は色ドットのみで十分判別できるため、テキストは省略する）。
+  String? _participantsLabel(Event event) {
+    final ids = event.memberIds;
+    if (ids.length <= 1) return null;
+    final names = ids
+        .map((id) => membersById[id]?.name)
+        .whereType<String>()
+        .toList();
+    if (names.isEmpty) return null;
+    return names.join('・');
+  }
+
   String _scheduleLabel(Event event) {
-    final ownerName = owner?.name;
-    final ownerLabel = ownerName == null ? '' : '・$ownerName';
     if (event.allDay) {
-      return '終日$ownerLabel';
+      return '終日';
     }
     final start = event.startAt.toLocal();
     final end = event.endAt.toLocal();
     return '${_two(start.hour)}:${_two(start.minute)}'
-        '〜${_two(end.hour)}:${_two(end.minute)}$ownerLabel';
+        '〜${_two(end.hour)}:${_two(end.minute)}';
+  }
+}
+
+/// 参加メンバーを色付きドットで並べる（FR-2、参加者の可視化）。
+///
+/// 一目で誰が参加しているか把握できるよう、単色に頼らず全員分表示する。
+class _MemberDots extends StatelessWidget {
+  const _MemberDots({required this.colors});
+
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 32,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Wrap(
+          spacing: 3,
+          runSpacing: 3,
+          children: [
+            for (final color in colors)
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -23,7 +23,7 @@ final familyMembersProvider = StreamProvider<List<User>>((ref) {
   return ref.watch(userRepositoryProvider).watchMembers();
 });
 
-/// uid をキーにメンバーを引ける Map。予定の所有者色を引くのに使う。
+/// uid をキーにメンバーを引ける Map。予定の参加者色を引くのに使う。
 final membersByIdProvider = Provider<Map<String, User>>((ref) {
   final members = ref.watch(familyMembersProvider).asData?.value ?? const [];
   return {for (final member in members) member.id: member};

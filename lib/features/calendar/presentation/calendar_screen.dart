@@ -4,26 +4,29 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
+import '../../../core/japanese_holidays.dart';
 import '../../../models/models.dart';
 import '../../events/application/event_providers.dart';
 import '../../users/application/user_providers.dart';
 
 /// カレンダー月表示（FR-4）。
 ///
-/// 各日をマス目（枠線付きセル）で描画し、予定を所有者色のバー＋タイトルで
+/// 各日をマス目（枠線付きセル）で描画し、予定を参加者の色のバー＋タイトルで
 /// 表示する。仮＝点線枠・半透明／確定＝塗りつぶしで種別を区別する
 /// （FR-2 / FR-3、基本設計 §6.1・§6.3）。マス目形式にすることで、複数人の
 /// 予定が同じ日に入っても一目で誰の予定かを判別できる。表示は
 /// [eventsInRangeProvider] のスナップショット（ローカルキャッシュ起点）に従う（NFR-1）。
 class CalendarScreen extends ConsumerStatefulWidget {
-  const CalendarScreen({super.key});
+  const CalendarScreen({super.key, this.initialFocusedDay});
+
+  final DateTime? initialFocusedDay;
 
   @override
   ConsumerState<CalendarScreen> createState() => _CalendarScreenState();
 }
 
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
-  DateTime _focusedDay = DateTime.now();
+  late DateTime _focusedDay;
   DateTime? _selectedDay;
 
   /// 直近にタップした日と時刻。ダブルタップ（=日別一覧へ遷移）の判定に使う。
@@ -46,6 +49,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     start: DateTime(_focusedDay.year, _focusedDay.month, 1),
     end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _focusedDay = widget.initialFocusedDay ?? DateTime.now();
+  }
 
   void _changeMonth(int delta) {
     setState(
@@ -253,6 +262,7 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final holidayName = isOutside ? null : japaneseHolidayName(day);
 
     // マスの高さから、表示できるバー本数を見積もる。
     final available = rowHeight - _headerHeight - 2;
@@ -271,12 +281,18 @@ class _DayCell extends StatelessWidget {
     }
 
     final border = BorderSide(color: scheme.outlineVariant, width: 0.5);
+    final Color? backgroundColor;
+    if (isSelected) {
+      backgroundColor = scheme.primary.withValues(alpha: 0.08);
+    } else if (isToday) {
+      backgroundColor = scheme.primary.withValues(alpha: 0.04);
+    } else {
+      backgroundColor = null;
+    }
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isSelected
-            ? scheme.primary.withValues(alpha: 0.08)
-            : (isToday ? scheme.primary.withValues(alpha: 0.04) : null),
+        color: backgroundColor,
         border: isSelected
             ? Border.all(color: scheme.primary, width: 1)
             : Border(top: border, left: border, right: border, bottom: border),
@@ -286,11 +302,14 @@ class _DayCell extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _dayLabel(scheme),
+            // FR-4: 祝日は日付色とチップで強調し、月表示で見落としにくくする。
+            _dayLabel(scheme, holidayName),
             for (final event in visible)
               EventBar(
                 title: event.title,
-                color: colorFromHex(membersById[event.ownerId]?.color ?? ''),
+                colors: event.memberIds
+                    .map((id) => colorFromHex(membersById[id]?.color ?? ''))
+                    .toList(),
                 type: event.type,
               ),
             if (hidden > 0)
@@ -308,11 +327,12 @@ class _DayCell extends StatelessWidget {
     );
   }
 
-  Widget _dayLabel(ColorScheme scheme) {
+  Widget _dayLabel(ColorScheme scheme, String? holidayName) {
+    final isHoliday = holidayName != null;
     final Color numberColor;
     if (isOutside) {
       numberColor = scheme.onSurface.withValues(alpha: 0.35);
-    } else if (day.weekday == DateTime.sunday) {
+    } else if (isHoliday || day.weekday == DateTime.sunday) {
       numberColor = Colors.red.shade400;
     } else if (day.weekday == DateTime.saturday) {
       numberColor = Colors.blue.shade400;
@@ -322,22 +342,60 @@ class _DayCell extends StatelessWidget {
 
     return SizedBox(
       height: _headerHeight,
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: Container(
-          width: 20,
-          height: 18,
-          alignment: Alignment.center,
-          decoration: isToday
-              ? BoxDecoration(color: scheme.primary, shape: BoxShape.circle)
-              : null,
-          child: Text(
-            '${day.day}',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
-              color: isToday ? scheme.onPrimary : numberColor,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 18,
+            alignment: Alignment.center,
+            decoration: isToday
+                ? BoxDecoration(
+                    color: isHoliday ? scheme.error : scheme.primary,
+                    shape: BoxShape.circle,
+                  )
+                : null,
+            child: Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
+                color: isToday
+                    ? (isHoliday ? scheme.onError : scheme.onPrimary)
+                    : numberColor,
+              ),
             ),
+          ),
+          if (holidayName != null)
+            Expanded(child: _HolidayLabel(name: holidayName)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 祝日名ラベル（例: 「海の日」）。"祝" という記号だけでは何の祝日か
+/// わからないため、名称そのものを表示して一目で判別できるようにする。
+class _HolidayLabel extends StatelessWidget {
+  const _HolidayLabel({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, top: 3),
+      child: Tooltip(
+        message: name,
+        child: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 9,
+            height: 1,
+            fontWeight: FontWeight.w600,
+            color: Colors.red.shade400,
           ),
         ),
       ),
@@ -347,49 +405,83 @@ class _DayCell extends StatelessWidget {
 
 /// 予定を表す 1 本のバー（FR-2 / FR-3、基本設計 §6.3）。
 ///
-/// 所有者色で塗り、確定＝塗りつぶし、仮＝枠線・半透明で種別を区別する。
+/// 参加メンバーの色で等分割して塗り、確定＝塗りつぶし・
+/// 仮＝枠線＋半透明で種別を区別する。参加者が 1 人ならこれまで通り単色になる。
 /// 幅は親（マスの縦積み）に合わせて広がる。
 class EventBar extends StatelessWidget {
   const EventBar({
     required this.title,
-    required this.color,
+    required this.colors,
     required this.type,
     super.key,
   });
 
   final String title;
-  final Color color;
+  final List<Color> colors;
   final EventType type;
 
   @override
   Widget build(BuildContext context) {
     final confirmed = type == EventType.confirmed;
+    final primary = colors.first;
     final textColor = confirmed
-        ? (ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+        ? (ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
               ? Colors.white
               : Colors.black)
-        : color;
+        : primary;
 
     return Container(
       height: 16,
       margin: const EdgeInsets.only(bottom: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      alignment: Alignment.centerLeft,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: confirmed ? color : color.withValues(alpha: 0.16),
-        border: confirmed ? null : Border.all(color: color, width: 1),
+        border: confirmed ? null : Border.all(color: primary, width: 1),
         borderRadius: BorderRadius.circular(3),
       ),
-      child: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 11,
-          height: 1.0,
-          fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
-          color: textColor,
-        ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            // Row+Expanded の等分割は Flutter 3.41.6 でこの構成だと塗りが
+            // 描画されないため、LayoutBuilder で幅を計算し固定幅の
+            // SizedBox で等分割している（flex レイアウトを使わない）。
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final segmentWidth = constraints.maxWidth / colors.length;
+                return Row(
+                  children: [
+                    for (final color in colors)
+                      SizedBox(
+                        width: segmentWidth,
+                        height: constraints.maxHeight,
+                        child: ColoredBox(
+                          color: confirmed
+                              ? color
+                              : color.withValues(alpha: 0.16),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.0,
+                  fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
+                  color: textColor,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

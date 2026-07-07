@@ -8,20 +8,21 @@ Event _buildEvent({
   required String id,
   required DateTime startAt,
   EventType type = EventType.tentative,
-  String ownerId = 'owner-1',
+  String creatorId = 'creator-1',
   String title = '打ち合わせ',
 }) {
   return Event(
     id: id,
     title: title,
-    ownerId: ownerId,
+    creatorId: creatorId,
+    participantIds: const [],
     startAt: startAt,
     endAt: startAt.add(const Duration(hours: 1)),
     allDay: false,
     type: type,
     memo: '',
     reminderOffsets: const [60],
-    updatedBy: ownerId,
+    updatedBy: creatorId,
     createdAt: startAt,
     updatedAt: startAt,
     deleted: false,
@@ -65,13 +66,13 @@ void main() {
     await repository.create(event, updatedBy: 'me');
 
     await repository.update(
-      event.copyWith(title: '変更後', ownerId: 'owner-2'),
+      event.copyWith(title: '変更後', creatorId: 'creator-2'),
       updatedBy: 'me',
     );
 
     final raw = await readRaw('evt-1');
     expect(raw['title'], '変更後');
-    expect(raw['ownerId'], 'owner-2');
+    expect(raw['creatorId'], 'creator-2');
     expect(raw['updatedBy'], 'me');
   });
 

@@ -22,7 +22,8 @@ final class Event {
   Event({
     required this.id,
     required this.title,
-    required this.ownerId,
+    required this.creatorId,
+    required List<String> participantIds,
     required this.startAt,
     required this.endAt,
     required this.allDay,
@@ -33,11 +34,13 @@ final class Event {
     required this.createdAt,
     required this.updatedAt,
     required this.deleted,
-  }) : reminderOffsets = UnmodifiableListView(reminderOffsets);
+  }) : participantIds = UnmodifiableListView(participantIds),
+       reminderOffsets = UnmodifiableListView(reminderOffsets);
 
   factory Event.create({
     required String title,
-    required String ownerId,
+    required String creatorId,
+    List<String> participantIds = const [],
     required DateTime startAt,
     required DateTime endAt,
     required bool allDay,
@@ -51,7 +54,8 @@ final class Event {
     return Event(
       id: uuid.v4(),
       title: title,
-      ownerId: ownerId,
+      creatorId: creatorId,
+      participantIds: participantIds,
       startAt: startAt,
       endAt: endAt,
       allDay: allDay,
@@ -77,7 +81,13 @@ final class Event {
     return Event(
       id: id,
       title: data['title'] as String,
-      ownerId: data['ownerId'] as String,
+      // 所有者(ownerId)から作成者(creatorId)へのフィールド改名前のドキュメントを
+      // 読めるよう、旧キーへフォールバックする。
+      creatorId: (data['creatorId'] ?? data['ownerId']) as String,
+      // 参加者機能導入前のドキュメントにはキーが存在しないため空リストにフォールバックする。
+      participantIds: (data['participantIds'] as List<Object?>? ?? const [])
+          .map((id) => id as String)
+          .toList(),
       startAt: dateTimeFromFirestore(data['startAt'], 'startAt'),
       endAt: dateTimeFromFirestore(data['endAt'], 'endAt'),
       allDay: data['allDay'] as bool,
@@ -95,7 +105,8 @@ final class Event {
 
   final String id;
   final String title;
-  final String ownerId;
+  final String creatorId;
+  final List<String> participantIds;
   final DateTime startAt;
   final DateTime endAt;
   final bool allDay;
@@ -107,11 +118,25 @@ final class Event {
   final DateTime updatedAt;
   final bool deleted;
 
+  /// 色分け表示（月表示の分割バー・日別一覧の複数ドット）で使う表示順の ID 一覧。
+  ///
+  /// 参加者を重複なく並べたもの。参加者機能導入前の未移行ドキュメント等、
+  /// 参加者が空の場合のみ作成者にフォールバックする（表示が空にならないように）。
+  List<String> get memberIds {
+    if (participantIds.isEmpty) return [creatorId];
+    final seen = <String>{};
+    return [
+      for (final id in participantIds)
+        if (seen.add(id)) id,
+    ];
+  }
+
   FirestoreData toFirestore({bool useServerTimestamp = true}) {
     return {
       'id': id,
       'title': title,
-      'ownerId': ownerId,
+      'creatorId': creatorId,
+      'participantIds': participantIds.toList(),
       'startAt': Timestamp.fromDate(startAt),
       'endAt': Timestamp.fromDate(endAt),
       'allDay': allDay,
@@ -131,7 +156,8 @@ final class Event {
   Event copyWith({
     String? id,
     String? title,
-    String? ownerId,
+    String? creatorId,
+    List<String>? participantIds,
     DateTime? startAt,
     DateTime? endAt,
     bool? allDay,
@@ -146,7 +172,8 @@ final class Event {
     return Event(
       id: id ?? this.id,
       title: title ?? this.title,
-      ownerId: ownerId ?? this.ownerId,
+      creatorId: creatorId ?? this.creatorId,
+      participantIds: participantIds ?? this.participantIds,
       startAt: startAt ?? this.startAt,
       endAt: endAt ?? this.endAt,
       allDay: allDay ?? this.allDay,
