@@ -113,9 +113,7 @@ void main() {
     final focusedDay = DateTime(2024, 7, 1);
     final firestore = await _seed(today: focusedDay);
 
-    await tester.pumpWidget(
-      _wrap(firestore, initialFocusedDay: focusedDay),
-    );
+    await tester.pumpWidget(_wrap(firestore, initialFocusedDay: focusedDay));
     await tester.pumpAndSettle();
 
     final holidayDayText = tester.widget<Text>(find.text('15').first);
