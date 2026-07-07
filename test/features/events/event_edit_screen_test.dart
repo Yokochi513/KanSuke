@@ -21,6 +21,18 @@ Future<FakeFirebaseFirestore> _seedMember() async {
   return firestore;
 }
 
+Future<FakeFirebaseFirestore> _seedMembers() async {
+  final firestore = await _seedMember();
+  await firestore.collection('users').doc('other').set({
+    'name': 'まま',
+    'email': 'other@example.com',
+    'color': '#C2185B',
+    'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+  });
+  return firestore;
+}
+
 Future<void> _openEditor(
   WidgetTester tester,
   FakeFirebaseFirestore firestore,
@@ -124,6 +136,22 @@ void main() {
     final data = (await _events(firestore)).single.data();
     expect(data['type'], 'confirmed');
     expect(data['reminderOffsets'], [30]);
+  });
+
+  testWidgets('参加者を複数選択して保存する', (tester) async {
+    final firestore = await _seedMembers();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '家族旅行');
+    await _tapVisible(tester, find.widgetWithText(FilterChip, 'まま'));
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['participantIds'], ['me', 'other']);
   });
 
   testWidgets('既存予定を編集して更新する', (tester) async {

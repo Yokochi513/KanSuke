@@ -8,6 +8,7 @@ void main() {
       id: 'event-1',
       title: '通院',
       ownerId: 'user-1',
+      participantIds: const ['user-1', 'user-2'],
       startAt: DateTime.utc(2026, 7, 10, 1),
       endAt: DateTime.utc(2026, 7, 10, 2),
       allDay: false,
@@ -30,6 +31,7 @@ void main() {
     expect(restored.id, event.id);
     expect(restored.title, event.title);
     expect(restored.ownerId, event.ownerId);
+    expect(restored.participantIds, event.participantIds);
     expect(restored.startAt, event.startAt);
     expect(restored.endAt, event.endAt);
     expect(restored.allDay, event.allDay);
@@ -55,6 +57,15 @@ void main() {
 
   test('通常の書き込みではupdatedAtにserverTimestampを設定する', () {
     expect(buildEvent().toFirestore()['updatedAt'], isA<FieldValue>());
+  });
+
+  test('participantIdsが未保存の既存ドキュメントは空リストにフォールバックする', () {
+    final map = buildEvent().toFirestore(useServerTimestamp: false);
+    map.remove('participantIds');
+
+    final restored = Event.fromMap('event-1', map);
+
+    expect(restored.participantIds, isEmpty);
   });
 
   test('生成ファクトリは重複しないUUIDを付与する', () {

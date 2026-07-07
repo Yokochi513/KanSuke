@@ -11,7 +11,10 @@ import 'package:kansuke/models/models.dart';
 
 final _day = DateTime(2026, 7, 5);
 
-Future<FakeFirebaseFirestore> _seed({bool withEvent = true}) async {
+Future<FakeFirebaseFirestore> _seed({
+  bool withEvent = true,
+  bool withParticipant = false,
+}) async {
   final firestore = FakeFirebaseFirestore();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
@@ -20,11 +23,21 @@ Future<FakeFirebaseFirestore> _seed({bool withEvent = true}) async {
     'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
     'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
   });
+  if (withParticipant) {
+    await firestore.collection('users').doc('other').set({
+      'name': 'まま',
+      'email': 'other@example.com',
+      'color': '#C2185B',
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
   if (withEvent) {
     final start = DateTime(2026, 7, 5, 9);
     final event = Event.create(
       title: '打ち合わせ',
       ownerId: 'me',
+      participantIds: withParticipant ? const ['me', 'other'] : const [],
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
@@ -79,6 +92,14 @@ void main() {
     expect(find.text('仮'), findsOneWidget); // 種別バッジ
     expect(find.textContaining('09:00〜10:00'), findsOneWidget);
     expect(find.textContaining('ぱぱ'), findsOneWidget); // 所有者名
+  });
+
+  testWidgets('参加者がいる予定は参加者名を副次表示する', (tester) async {
+    final firestore = await _seed(withParticipant: true);
+    await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('参加: まま'), findsOneWidget);
   });
 
   testWidgets('予定なしの日は空状態を表示する', (tester) async {

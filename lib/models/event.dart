@@ -23,6 +23,7 @@ final class Event {
     required this.id,
     required this.title,
     required this.ownerId,
+    required List<String> participantIds,
     required this.startAt,
     required this.endAt,
     required this.allDay,
@@ -33,11 +34,13 @@ final class Event {
     required this.createdAt,
     required this.updatedAt,
     required this.deleted,
-  }) : reminderOffsets = UnmodifiableListView(reminderOffsets);
+  }) : participantIds = UnmodifiableListView(participantIds),
+       reminderOffsets = UnmodifiableListView(reminderOffsets);
 
   factory Event.create({
     required String title,
     required String ownerId,
+    List<String> participantIds = const [],
     required DateTime startAt,
     required DateTime endAt,
     required bool allDay,
@@ -52,6 +55,7 @@ final class Event {
       id: uuid.v4(),
       title: title,
       ownerId: ownerId,
+      participantIds: participantIds,
       startAt: startAt,
       endAt: endAt,
       allDay: allDay,
@@ -78,6 +82,10 @@ final class Event {
       id: id,
       title: data['title'] as String,
       ownerId: data['ownerId'] as String,
+      // 参加者機能導入前のドキュメントにはキーが存在しないため空リストにフォールバックする。
+      participantIds: (data['participantIds'] as List<Object?>? ?? const [])
+          .map((id) => id as String)
+          .toList(),
       startAt: dateTimeFromFirestore(data['startAt'], 'startAt'),
       endAt: dateTimeFromFirestore(data['endAt'], 'endAt'),
       allDay: data['allDay'] as bool,
@@ -96,6 +104,7 @@ final class Event {
   final String id;
   final String title;
   final String ownerId;
+  final List<String> participantIds;
   final DateTime startAt;
   final DateTime endAt;
   final bool allDay;
@@ -112,6 +121,7 @@ final class Event {
       'id': id,
       'title': title,
       'ownerId': ownerId,
+      'participantIds': participantIds.toList(),
       'startAt': Timestamp.fromDate(startAt),
       'endAt': Timestamp.fromDate(endAt),
       'allDay': allDay,
@@ -132,6 +142,7 @@ final class Event {
     String? id,
     String? title,
     String? ownerId,
+    List<String>? participantIds,
     DateTime? startAt,
     DateTime? endAt,
     bool? allDay,
@@ -147,6 +158,7 @@ final class Event {
       id: id ?? this.id,
       title: title ?? this.title,
       ownerId: ownerId ?? this.ownerId,
+      participantIds: participantIds ?? this.participantIds,
       startAt: startAt ?? this.startAt,
       endAt: endAt ?? this.endAt,
       allDay: allDay ?? this.allDay,

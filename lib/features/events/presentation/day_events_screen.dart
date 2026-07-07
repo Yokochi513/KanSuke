@@ -57,6 +57,7 @@ class DayEventsScreen extends ConsumerWidget {
               return _EventTile(
                 event: event,
                 owner: membersById[event.ownerId],
+                membersById: membersById,
               );
             },
           );
@@ -70,14 +71,20 @@ class DayEventsScreen extends ConsumerWidget {
 }
 
 class _EventTile extends StatelessWidget {
-  const _EventTile({required this.event, required this.owner});
+  const _EventTile({
+    required this.event,
+    required this.owner,
+    required this.membersById,
+  });
 
   final Event event;
   final User? owner;
+  final Map<String, User> membersById;
 
   @override
   Widget build(BuildContext context) {
     final ownerColor = colorFromHex(owner?.color ?? '');
+    final participantsLabel = _participantsLabel(event);
     return ListTile(
       leading: Container(
         width: 12,
@@ -86,7 +93,17 @@ class _EventTile extends StatelessWidget {
         decoration: BoxDecoration(color: ownerColor, shape: BoxShape.circle),
       ),
       title: Text(event.title),
-      subtitle: Text(_scheduleLabel(event)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_scheduleLabel(event)),
+          if (participantsLabel != null)
+            Text(
+              '参加: $participantsLabel',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+        ],
+      ),
       trailing: EventTypeBadge(event.type),
       onTap: () => Navigator.pushNamed(
         context,
@@ -94,6 +111,17 @@ class _EventTile extends StatelessWidget {
         arguments: EventEditArgs.edit(event),
       ),
     );
+  }
+
+  /// 参加者名（所有者を除く）を「・」区切りで返す。参加者がいなければ null。
+  String? _participantsLabel(Event event) {
+    final names = event.participantIds
+        .where((id) => id != event.ownerId)
+        .map((id) => membersById[id]?.name)
+        .whereType<String>()
+        .toList();
+    if (names.isEmpty) return null;
+    return names.join('・');
   }
 
   String _scheduleLabel(Event event) {

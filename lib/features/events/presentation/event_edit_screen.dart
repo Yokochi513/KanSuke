@@ -40,6 +40,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   bool _allDay = false;
   EventType _type = EventType.tentative;
   String? _ownerId;
+  final Set<String> _participantIds = {};
   final Set<int> _reminderOffsets = {};
   bool _saving = false;
 
@@ -70,6 +71,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _allDay = event.allDay;
       _type = event.type;
       _ownerId = event.ownerId;
+      _participantIds.addAll(event.participantIds);
       final start = event.startAt.toLocal();
       final end = event.endAt.toLocal();
       _date = DateUtils.dateOnly(start);
@@ -81,6 +83,9 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _startTime = const TimeOfDay(hour: 9, minute: 0);
       _endTime = const TimeOfDay(hour: 10, minute: 0);
       _ownerId = ref.read(currentUidProvider);
+      if (_ownerId != null) {
+        _participantIds.add(_ownerId!);
+      }
     }
   }
 
@@ -125,6 +130,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                   _buildTypeToggle(),
                   const SizedBox(height: 8),
                   _buildOwnerField(members),
+                  const SizedBox(height: 8),
+                  _buildParticipantsField(members),
                   const SizedBox(height: 8),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -201,6 +208,37 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           DropdownMenuItem(value: member.id, child: Text(member.name)),
       ],
       onChanged: (id) => setState(() => _ownerId = id),
+    );
+  }
+
+  /// 参加者の複数選択（FR-1、基本設計 §6.1・§6.3）。所有者とは独立して選択できる。
+  Widget _buildParticipantsField(List<User> members) {
+    if (members.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('参加者'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final member in members)
+              FilterChip(
+                label: Text(member.name),
+                selected: _participantIds.contains(member.id),
+                onSelected: (selected) => setState(() {
+                  if (selected) {
+                    _participantIds.add(member.id);
+                  } else {
+                    _participantIds.remove(member.id);
+                  }
+                }),
+              ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -322,6 +360,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     final repository = ref.read(eventRepositoryProvider);
     final offsets = _reminderOffsets.toList()..sort();
     final ownerId = _ownerId ?? uid;
+    final participantIds = _participantIds.toList()..sort();
 
     try {
       final editing = _editing;
@@ -329,6 +368,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
         final event = Event.create(
           title: _titleController.text.trim(),
           ownerId: ownerId,
+          participantIds: participantIds,
           startAt: _startAt,
           endAt: _endAt,
           allDay: _allDay,
@@ -343,6 +383,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
         final updated = editing.copyWith(
           title: _titleController.text.trim(),
           ownerId: ownerId,
+          participantIds: participantIds,
           startAt: _startAt,
           endAt: _endAt,
           allDay: _allDay,

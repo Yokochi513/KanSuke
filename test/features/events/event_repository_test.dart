@@ -15,6 +15,7 @@ Event _buildEvent({
     id: id,
     title: title,
     ownerId: ownerId,
+    participantIds: const [],
     startAt: startAt,
     endAt: startAt.add(const Duration(hours: 1)),
     allDay: false,
