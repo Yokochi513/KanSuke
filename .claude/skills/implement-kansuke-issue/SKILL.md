@@ -14,7 +14,7 @@ description: Implement a KanSuke GitHub Issue end to end from its acceptance cri
 5. Map every acceptance criterion to a code change or verification, then implement only that scope. Annotate implementation that satisfies a spec item with its FR-x / NFR-x number in a code comment or the PR body.
 6. Format and run every validation required by the Issue and `AGENTS.md` (see Validation below).
 7. Review the final diff for generated artifacts, secrets, specification edits, and unmet criteria.
-8. Follow the `1 Issue = 1 branch = 1 PR` rule. Open a PR targeting `main` whose body lists the Issue number (`Closes #<number>`), a checklist of the satisfied acceptance criteria, and the exact validation commands run with their results. Commit and push only when requested; report the commit hash and PR URL.
+8. Follow the `1 Issue = 1 branch = 1 PR` rule. Open a PR targeting `develop` whose body lists the Issue number (`Closes #<number>`), a checklist of the satisfied acceptance criteria, and the exact validation commands run with their results. Commit and push only when requested; report the commit hash and PR URL.
 
 ## Operating Rules
 
