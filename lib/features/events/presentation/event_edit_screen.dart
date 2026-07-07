@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -299,9 +300,30 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   }
 
   Future<void> _pickTime({required bool isStart}) async {
-    final picked = await showTimePicker(
+    final initialTime = isStart ? _startTime : _endTime;
+    final picked = await showCupertinoModalPopup<TimeOfDay>(
       context: context,
-      initialTime: isStart ? _startTime : _endTime,
+      builder: (context) {
+        final initialDateTime = DateTime(
+          _date.year,
+          _date.month,
+          _date.day,
+          initialTime.hour,
+          initialTime.minute,
+        );
+        var selectedDateTime = initialDateTime;
+
+        return _TimePickerSheet(
+          title: isStart ? '開始時刻' : '終了時刻',
+          initialDateTime: initialDateTime,
+          onDateTimeChanged: (value) => selectedDateTime = value,
+          onCancel: () => Navigator.pop(context),
+          onDone: () => Navigator.pop(
+            context,
+            TimeOfDay.fromDateTime(selectedDateTime),
+          ),
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -441,4 +463,72 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       '${_two(time.hour)}:${_two(time.minute)}';
 
   String _two(int value) => value.toString().padLeft(2, '0');
+}
+
+class _TimePickerSheet extends StatelessWidget {
+  const _TimePickerSheet({
+    required this.title,
+    required this.initialDateTime,
+    required this.onDateTimeChanged,
+    required this.onCancel,
+    required this.onDone,
+  });
+
+  final String title;
+  final DateTime initialDateTime;
+  final ValueChanged<DateTime> onDateTimeChanged;
+  final VoidCallback onCancel;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      height: 320,
+      color: theme.colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 56,
+              child: Row(
+                children: [
+                  CupertinoButton(
+                    onPressed: onCancel,
+                    child: const Text('キャンセル'),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        title,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
+                  CupertinoButton(
+                    onPressed: onDone,
+                    child: const Text('完了'),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              // NFR-1: iPhoneでの時刻指定を軽くするため、時計盤ではなく縦スクロールの24時間ピッカーにする。
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.time,
+                initialDateTime: initialDateTime,
+                minuteInterval: 1,
+                use24hFormat: true,
+                showTimeSeparator: true,
+                backgroundColor: theme.colorScheme.surface,
+                onDateTimeChanged: onDateTimeChanged,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
