@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/theme.dart';
 import '../../../core/color_utils.dart';
 import '../../auth/application/auth_state.dart';
 import '../../users/application/user_providers.dart';
 import '../application/notification_permission.dart';
+
+/// フィードバック用 Google フォームの URL（tools/feedback-to-issue 参照）。
+const _feedbackFormUrl = 'https://forms.gle/4h35EcT2Deqq8FsM6';
 
 /// 設定画面（FR-2 / FR-5 / NFR-4、基本設計 §6.1・§2.2）。
 ///
@@ -27,6 +31,9 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('通知'),
           const _NotificationSection(),
+          const Divider(),
+          const _SectionHeader('フィードバック'),
+          const _FeedbackSection(),
           const Divider(),
           const _SignOutSection(),
         ],
@@ -219,6 +226,25 @@ class _NotificationSection extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 不具合報告・要望を Google フォームから送ってもらう導線。
+class _FeedbackSection extends StatelessWidget {
+  const _FeedbackSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.feedback_outlined),
+      title: const Text('ご意見・不具合報告'),
+      subtitle: const Text('アンケートフォームを開きます'),
+      trailing: const Icon(Icons.open_in_new),
+      onTap: () => launchUrl(
+        Uri.parse(_feedbackFormUrl),
+        mode: LaunchMode.externalApplication,
+      ),
     );
   }
 }

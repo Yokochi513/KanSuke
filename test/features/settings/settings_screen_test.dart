@@ -109,6 +109,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text('サインアウト'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('サインアウト'));
     await tester.pumpAndSettle();
 
