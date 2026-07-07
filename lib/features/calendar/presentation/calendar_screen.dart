@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -585,11 +586,29 @@ class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
   late int _year;
   late int _month;
 
+  // build() のたびに作り直すと、一方のホイールを操作した setState が
+  // もう一方のコントローラも作り直してしまい、進行中のドラッグ操作を
+  // 中断させて互いに干渉して見える。State のフィールドとして一度だけ
+  // 生成し、以後は使い回すことで年・月を独立して操作できるようにする。
+  late final FixedExtentScrollController _yearController;
+  late final FixedExtentScrollController _monthController;
+
   @override
   void initState() {
     super.initState();
     _year = widget.focusedDay.year;
     _month = widget.focusedDay.month;
+    _yearController = FixedExtentScrollController(
+      initialItem: _year - _minYear,
+    );
+    _monthController = FixedExtentScrollController(initialItem: _month - 1);
+  }
+
+  @override
+  void dispose() {
+    _yearController.dispose();
+    _monthController.dispose();
+    super.dispose();
   }
 
   @override
@@ -617,43 +636,47 @@ class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
             ),
             SizedBox(
               height: 180,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: CupertinoPicker(
-                      scrollController: FixedExtentScrollController(
-                        initialItem: _year - _minYear,
+              // 既定の ScrollBehavior はマウスでのドラッグ操作を許可しない
+              // （マウスホイールでの回転のみ）ため、クリックしたまま上下に
+              // 流す操作もできるよう明示的に許可する。
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: CupertinoPicker(
+                        scrollController: _yearController,
+                        itemExtent: _itemExtent,
+                        onSelectedItemChanged: (index) =>
+                            setState(() => _year = _minYear + index),
+                        selectionOverlay: _PickerSelectionOverlay(
+                          color: scheme.primary,
+                        ),
+                        children: [
+                          for (var year = _minYear; year <= _maxYear; year++)
+                            Center(child: Text('$year年')),
+                        ],
                       ),
-                      itemExtent: _itemExtent,
-                      onSelectedItemChanged: (index) =>
-                          setState(() => _year = _minYear + index),
-                      selectionOverlay: _PickerSelectionOverlay(
-                        color: scheme.primary,
-                      ),
-                      children: [
-                        for (var year = _minYear; year <= _maxYear; year++)
-                          Center(child: Text('$year年')),
-                      ],
                     ),
-                  ),
-                  Expanded(
-                    child: CupertinoPicker(
-                      scrollController: FixedExtentScrollController(
-                        initialItem: _month - 1,
+                    Expanded(
+                      child: CupertinoPicker(
+                        scrollController: _monthController,
+                        itemExtent: _itemExtent,
+                        onSelectedItemChanged: (index) =>
+                            setState(() => _month = index + 1),
+                        selectionOverlay: _PickerSelectionOverlay(
+                          color: scheme.primary,
+                        ),
+                        children: [
+                          for (var month = 1; month <= 12; month++)
+                            Center(child: Text('$month月')),
+                        ],
                       ),
-                      itemExtent: _itemExtent,
-                      onSelectedItemChanged: (index) =>
-                          setState(() => _month = index + 1),
-                      selectionOverlay: _PickerSelectionOverlay(
-                        color: scheme.primary,
-                      ),
-                      children: [
-                        for (var month = 1; month <= 12; month++)
-                          Center(child: Text('$month月')),
-                      ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
