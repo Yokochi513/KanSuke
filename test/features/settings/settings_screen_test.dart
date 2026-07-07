@@ -47,6 +47,29 @@ void main() {
     expect(doc.data()!['color'], hexFromColor(MemberColors.palette[1]));
   });
 
+  testWidgets('自分の名前を変更すると users/{uid}.name が更新される', (tester) async {
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('ぱぱ'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'あかねママ');
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.check));
+    await tester.pumpAndSettle();
+
+    final doc = await firestore.collection('users').doc('me').get();
+    expect(doc.data()!['name'], 'あかねママ');
+  });
+
   testWidgets('通知許可の状態表示と要求導線が動く', (tester) async {
     final firestore = await _seedUser();
     await tester.pumpWidget(

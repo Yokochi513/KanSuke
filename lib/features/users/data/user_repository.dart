@@ -40,4 +40,14 @@ class UserRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
+
+  /// 自分の表示名を更新する（FR-2 の所有者表示に反映）。
+  ///
+  /// 基本設計 §2.2 の Security Rules 上、本人（uid==自分）のみ更新可。
+  Future<void> updateName(String uid, String name) {
+    return _users.doc(uid).update({
+      'name': name,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

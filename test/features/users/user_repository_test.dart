@@ -38,4 +38,13 @@ void main() {
     expect((await repository.watchUser('u1').first)?.name, 'あかね');
     expect(await repository.watchUser('missing').first, isNull);
   });
+
+  test('updateName は表示名を更新する', () async {
+    await seedUser('u1', 'あかね', '#D84315');
+
+    await repository.updateName('u1', 'あかねママ');
+
+    final doc = await firestore.collection('users').doc('u1').get();
+    expect(doc.data()!['name'], 'あかねママ');
+  });
 }

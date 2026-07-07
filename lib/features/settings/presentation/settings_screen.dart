@@ -18,14 +18,17 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
-        children: const [
-          _SectionHeader('自分の色'),
-          _ColorSection(),
-          Divider(),
-          _SectionHeader('通知'),
-          _NotificationSection(),
-          Divider(),
-          _SignOutSection(),
+        children: [
+          const _SectionHeader('自分の名前'),
+          const _NameSection(),
+          const Divider(),
+          const _SectionHeader('自分の色'),
+          const _ColorSection(),
+          const Divider(),
+          const _SectionHeader('通知'),
+          const _NotificationSection(),
+          const Divider(),
+          const _SignOutSection(),
         ],
       ),
     );
@@ -46,6 +49,79 @@ class _SectionHeader extends StatelessWidget {
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
           color: Theme.of(context).colorScheme.primary,
         ),
+      ),
+    );
+  }
+}
+
+/// 自分の表示名を変更する（本人のみ更新可、FR-2 / §2.2）。
+class _NameSection extends ConsumerStatefulWidget {
+  const _NameSection();
+
+  @override
+  ConsumerState<_NameSection> createState() => _NameSectionState();
+}
+
+class _NameSectionState extends ConsumerState<_NameSection> {
+  final _controller = TextEditingController();
+  bool _initialized = false;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save(String uid) async {
+    final name = _controller.text.trim();
+    if (name.isEmpty) {
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await ref.read(userRepositoryProvider).updateName(uid, name);
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = ref.watch(currentUidProvider);
+    final currentName = ref.watch(currentUserProvider).asData?.value?.name;
+    if (!_initialized && currentName != null) {
+      _controller.text = currentName;
+      _initialized = true;
+    }
+    final canSave = uid != null && !_saving;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              enabled: canSave,
+              decoration: const InputDecoration(labelText: '名前'),
+              onSubmitted: canSave ? (_) => _save(uid) : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check),
+            onPressed: canSave ? () => _save(uid) : null,
+          ),
+        ],
       ),
     );
   }
