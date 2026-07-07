@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -561,10 +562,11 @@ class _MonthHeader extends StatelessWidget {
   }
 }
 
-/// 年月一覧から月を選ぶボトムシート（Issue #32）。
+/// 年月を選ぶボトムシート（Issue #32）。
 ///
-/// 年を左右で切り替えつつ、その年の 12 か月を一覧（グリッド）表示する。
-/// 月をタップするとその年月の月初日を選択結果として返す。
+/// 「年」「月」それぞれをスクロールホイール（[CupertinoPicker]）で選ばせる、
+/// iOS の日付選択に準じた見た目にする。ホイールは慣性でスクロールが止まる
+/// まで値が確定しないため、「完了」で明示的に選択を確定する。
 class _MonthYearPickerSheet extends StatefulWidget {
   const _MonthYearPickerSheet({required this.focusedDay});
 
@@ -578,73 +580,81 @@ class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
   // TableCalendar の firstDay/lastDay（calendar_screen.dart 内）と範囲を揃える。
   static const int _minYear = 2020;
   static const int _maxYear = 2035;
+  static const double _itemExtent = 40;
 
   late int _year;
+  late int _month;
 
   @override
   void initState() {
     super.initState();
     _year = widget.focusedDay.year;
-  }
-
-  void _changeYear(int delta) {
-    final next = _year + delta;
-    if (next < _minYear || next > _maxYear) {
-      return;
-    }
-    setState(() => _year = next);
+    _month = widget.focusedDay.month;
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                IconButton(
-                  tooltip: '前の年',
-                  onPressed: _year > _minYear ? () => _changeYear(-1) : null,
-                  icon: const Icon(Icons.chevron_left),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('キャンセル'),
                 ),
-                SizedBox(
-                  width: 96,
-                  child: Text(
-                    '$_year年',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                IconButton(
-                  tooltip: '次の年',
-                  onPressed: _year < _maxYear ? () => _changeYear(1) : null,
-                  icon: const Icon(Icons.chevron_right),
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(context, DateTime(_year, _month, 1)),
+                  child: const Text('完了'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 4,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 1.6,
-              children: [
-                for (var month = 1; month <= 12; month++)
-                  _MonthTile(
-                    month: month,
-                    isSelected:
-                        _year == widget.focusedDay.year &&
-                        month == widget.focusedDay.month,
-                    onTap: () =>
-                        Navigator.pop(context, DateTime(_year, month, 1)),
+            SizedBox(
+              height: 180,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: CupertinoPicker(
+                      scrollController: FixedExtentScrollController(
+                        initialItem: _year - _minYear,
+                      ),
+                      itemExtent: _itemExtent,
+                      onSelectedItemChanged: (index) =>
+                          setState(() => _year = _minYear + index),
+                      selectionOverlay: _PickerSelectionOverlay(
+                        color: scheme.primary,
+                      ),
+                      children: [
+                        for (var year = _minYear; year <= _maxYear; year++)
+                          Center(child: Text('$year年')),
+                      ],
+                    ),
                   ),
-              ],
+                  Expanded(
+                    child: CupertinoPicker(
+                      scrollController: FixedExtentScrollController(
+                        initialItem: _month - 1,
+                      ),
+                      itemExtent: _itemExtent,
+                      onSelectedItemChanged: (index) =>
+                          setState(() => _month = index + 1),
+                      selectionOverlay: _PickerSelectionOverlay(
+                        color: scheme.primary,
+                      ),
+                      children: [
+                        for (var month = 1; month <= 12; month++)
+                          Center(child: Text('$month月')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -653,34 +663,20 @@ class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
   }
 }
 
-/// 年月一覧内の 1 か月分ボタン。
-class _MonthTile extends StatelessWidget {
-  const _MonthTile({
-    required this.month,
-    required this.isSelected,
-    required this.onTap,
-  });
+/// ホイールの選択中央行を示す帯。既定の [CupertinoPickerDefaultSelectionOverlay]
+/// はテーマの primary 色と馴染まないため、テーマ色の帯に差し替える。
+class _PickerSelectionOverlay extends StatelessWidget {
+  const _PickerSelectionOverlay({required this.color});
 
-  final int month;
-  final bool isSelected;
-  final VoidCallback onTap;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: isSelected ? scheme.primary : scheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Center(
-          child: Text(
-            '$month月',
-            style: TextStyle(
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-              color: isSelected ? scheme.onPrimary : scheme.onSurfaceVariant,
-            ),
+    return IgnorePointer(
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.symmetric(
+            horizontal: BorderSide(color: color.withValues(alpha: 0.4)),
           ),
         ),
       ),
