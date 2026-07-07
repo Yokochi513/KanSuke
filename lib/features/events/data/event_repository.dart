@@ -58,18 +58,21 @@ class EventRepository {
 
   /// 期間 `[start, end)` の予定をリアルタイムに監視する（FR-4 の月表示に利用）。
   ///
-  /// `deleted==false` かつ `startAt` 範囲で取得し `startAt` 昇順。
-  /// 複合インデックス（deleted ASC, startAt ASC）を前提とする。
+  /// `deleted==false` かつ `[startAt, endAt]` が指定期間と重なる予定を取得し
+  /// `startAt` 昇順で返す。
+  /// 複合インデックス（deleted ASC, startAt ASC, endAt ASC）を前提とする。
   /// Firestore の既定でローカルキャッシュ起点に描画される（NFR-1）。
   Stream<List<Event>> watchRange({
     required DateTime start,
     required DateTime end,
   }) {
+    // 既存の終日単日予定は startAt == endAt のため、終了境界は含める。
     return _events
         .where('deleted', isEqualTo: false)
-        .where('startAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .where('startAt', isLessThan: Timestamp.fromDate(end))
+        .where('endAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .orderBy('startAt')
+        .orderBy('endAt')
         .snapshots()
         .map((snapshot) => snapshot.docs.map(Event.fromFirestore).toList());
   }

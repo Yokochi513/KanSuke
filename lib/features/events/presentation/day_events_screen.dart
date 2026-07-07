@@ -115,14 +115,34 @@ class _EventTile extends StatelessWidget {
   }
 
   String _scheduleLabel(Event event) {
-    if (event.allDay) {
-      return '終日';
-    }
     final start = event.startAt.toLocal();
     final end = event.endAt.toLocal();
+    final sameDay = _isSameDate(start, end);
+
+    if (event.allDay) {
+      if (sameDay) {
+        return '終日';
+      }
+      return '${_formatMonthDay(start)}〜${_formatMonthDay(end)}・終日';
+    }
+    if (!sameDay) {
+      return '${_formatMonthDay(start)} ${_formatTime(start)}'
+          '〜${_formatMonthDay(end)} ${_formatTime(end)}';
+    }
     return '${_two(start.hour)}:${_two(start.minute)}'
         '〜${_two(end.hour)}:${_two(end.minute)}';
   }
+
+  bool _isSameDate(DateTime start, DateTime end) =>
+      start.year == end.year &&
+      start.month == end.month &&
+      start.day == end.day;
+
+  String _formatMonthDay(DateTime dateTime) =>
+      '${dateTime.month}/${dateTime.day}';
+
+  String _formatTime(DateTime dateTime) =>
+      '${_two(dateTime.hour)}:${_two(dateTime.minute)}';
 }
 
 /// 参加メンバーを色付きドットで並べる（FR-2、参加者の可視化）。

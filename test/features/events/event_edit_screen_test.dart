@@ -107,6 +107,26 @@ void main() {
     expect(docs.single.id, data['id']); // クライアント生成UUID
   });
 
+  testWidgets('新規作成: 開始日と終了日を分けて期間予定を保存する', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, 'テスト週間');
+    await _tapVisible(tester, find.text('終了日'));
+    await tester.tap(find.text('8').last);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect((data['startAt'] as Timestamp).toDate(), DateTime(2026, 7, 5, 9));
+    expect((data['endAt'] as Timestamp).toDate(), DateTime(2026, 7, 8, 10));
+  });
+
   testWidgets('タイトル未入力はバリデーションエラーで保存しない', (tester) async {
     final firestore = await _seedMember();
     await _openEditor(
