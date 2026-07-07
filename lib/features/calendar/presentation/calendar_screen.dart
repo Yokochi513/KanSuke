@@ -239,9 +239,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   }) {
     final map = <DateTime, List<Event>>{};
     final firstVisibleDay = _dateKey(range.start);
-    final lastVisibleDay = _dateKey(range.end).subtract(
-      const Duration(days: 1),
-    );
+    final lastVisibleDay = _dateKey(
+      range.end,
+    ).subtract(const Duration(days: 1));
 
     for (final event in events) {
       final eventStartDay = _dateKey(event.startAt.toLocal());

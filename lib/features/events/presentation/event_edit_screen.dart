@@ -356,9 +356,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_endAt.isBefore(_startAt)) {
-      _showSnack(
-        _allDay ? '終了日は開始日以降にしてください' : '終了は開始日時以降にしてください',
-      );
+      _showSnack(_allDay ? '終了日は開始日以降にしてください' : '終了は開始日時以降にしてください');
       return;
     }
     final uid = ref.read(currentUidProvider);

@@ -150,11 +150,7 @@ void main() {
         .set(event.toFirestore(useServerTimestamp: false));
 
     await tester.pumpWidget(
-      _wrap(
-        firestore,
-        editArgsSink: [],
-        selectedDay: DateTime(2026, 7, 6),
-      ),
+      _wrap(firestore, editArgsSink: [], selectedDay: DateTime(2026, 7, 6)),
     );
     await tester.pumpAndSettle();
 

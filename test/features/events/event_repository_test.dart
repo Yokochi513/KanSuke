@@ -152,10 +152,6 @@ void main() {
         )
         .first;
 
-    expect(events.map((event) => event.id), [
-      'overlap-before',
-      'in-1',
-      'in-2',
-    ]);
+    expect(events.map((event) => event.id), ['overlap-before', 'in-1', 'in-2']);
   });
 }
