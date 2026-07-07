@@ -11,8 +11,9 @@ import 'event_type_badge.dart';
 
 /// 日別予定一覧（FR-1 / FR-2 / FR-3、基本設計 §6.1）。
 ///
-/// 選択日の予定を参加者の色・種別バッジ・時刻付きで表示し、各項目や新規作成から
-/// 予定編集画面（#11）へ遷移する。対象日はルート引数（[DateTime]）で受け取る。
+/// 選択日の予定を参加者の色・種別バッジ・時刻・メモ付きで表示し、各項目や
+/// 新規作成から予定編集画面（#11）へ遷移する。対象日はルート引数（[DateTime]）
+/// で受け取る。
 class DayEventsScreen extends ConsumerWidget {
   const DayEventsScreen({super.key});
 
@@ -78,17 +79,27 @@ class _EventTile extends StatelessWidget {
         .map((id) => colorFromHex(membersById[id]?.color ?? ''))
         .toList();
     final participantsLabel = _participantsLabel(event);
+    final memoPreview = event.memo.trim();
     return ListTile(
       leading: _MemberDots(colors: memberColors),
+      isThreeLine: memoPreview.isNotEmpty,
       title: Text(event.title),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_scheduleLabel(event)),
-          if (participantsLabel != null)
+          Text(
+            _scheduleDetailsLabel(event, participantsLabel),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (memoPreview.isNotEmpty)
             Text(
-              '参加: $participantsLabel',
-              style: Theme.of(context).textTheme.bodySmall,
+              'メモ: $memoPreview',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
         ],
       ),
@@ -99,6 +110,12 @@ class _EventTile extends StatelessWidget {
         arguments: EventEditArgs.edit(event),
       ),
     );
+  }
+
+  String _scheduleDetailsLabel(Event event, String? participantsLabel) {
+    final scheduleLabel = _scheduleLabel(event);
+    if (participantsLabel == null) return scheduleLabel;
+    return '$scheduleLabel・参加: $participantsLabel';
   }
 
   /// 参加者名を「・」区切りで返す。2人以上の予定でのみ表示する（1人だけの
