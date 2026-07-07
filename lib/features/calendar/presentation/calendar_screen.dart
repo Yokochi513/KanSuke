@@ -58,12 +58,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
   );
 
-  @override
-  void initState() {
-    super.initState();
-    _focusedDay = widget.initialFocusedDay ?? DateTime.now();
-  }
-
   void _changeMonth(int delta) {
     setState(
       () => _focusedDay = DateTime(

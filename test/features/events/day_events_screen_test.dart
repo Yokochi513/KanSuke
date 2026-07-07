@@ -134,7 +134,7 @@ void main() {
     final start = DateTime(2026, 7, 5, 9);
     final event = Event.create(
       title: 'テスト週間',
-      ownerId: 'me',
+      creatorId: 'me',
       startAt: start,
       endAt: DateTime(2026, 7, 7, 10),
       allDay: false,
