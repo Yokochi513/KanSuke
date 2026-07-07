@@ -4,6 +4,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
+import '../../../core/japanese_holidays.dart';
 import '../../../models/models.dart';
 import '../../events/application/event_providers.dart';
 import '../../users/application/user_providers.dart';
@@ -16,14 +17,16 @@ import '../../users/application/user_providers.dart';
 /// 予定が同じ日に入っても一目で誰の予定かを判別できる。表示は
 /// [eventsInRangeProvider] のスナップショット（ローカルキャッシュ起点）に従う（NFR-1）。
 class CalendarScreen extends ConsumerStatefulWidget {
-  const CalendarScreen({super.key});
+  const CalendarScreen({super.key, this.initialFocusedDay});
+
+  final DateTime? initialFocusedDay;
 
   @override
   ConsumerState<CalendarScreen> createState() => _CalendarScreenState();
 }
 
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
-  DateTime _focusedDay = DateTime.now();
+  late DateTime _focusedDay;
   DateTime? _selectedDay;
 
   /// 直近にタップした日と時刻。ダブルタップ（=日別一覧へ遷移）の判定に使う。
@@ -46,6 +49,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     start: DateTime(_focusedDay.year, _focusedDay.month, 1),
     end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _focusedDay = widget.initialFocusedDay ?? DateTime.now();
+  }
 
   void _changeMonth(int delta) {
     setState(
@@ -253,6 +262,8 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final holidayName = isOutside ? null : japaneseHolidayName(day);
+    final isHoliday = holidayName != null;
 
     // マスの高さから、表示できるバー本数を見積もる。
     final available = rowHeight - _headerHeight - 2;
@@ -271,12 +282,20 @@ class _DayCell extends StatelessWidget {
     }
 
     final border = BorderSide(color: scheme.outlineVariant, width: 0.5);
+    final Color? backgroundColor;
+    if (isSelected) {
+      backgroundColor = scheme.primary.withValues(alpha: 0.08);
+    } else if (isHoliday) {
+      backgroundColor = scheme.errorContainer.withValues(alpha: 0.28);
+    } else if (isToday) {
+      backgroundColor = scheme.primary.withValues(alpha: 0.04);
+    } else {
+      backgroundColor = null;
+    }
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isSelected
-            ? scheme.primary.withValues(alpha: 0.08)
-            : (isToday ? scheme.primary.withValues(alpha: 0.04) : null),
+        color: backgroundColor,
         border: isSelected
             ? Border.all(color: scheme.primary, width: 1)
             : Border(top: border, left: border, right: border, bottom: border),
@@ -286,7 +305,8 @@ class _DayCell extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _dayLabel(scheme),
+            // FR-4: 祝日は日付色とチップで強調し、月表示で見落としにくくする。
+            _dayLabel(scheme, holidayName),
             for (final event in visible)
               EventBar(
                 title: event.title,
@@ -308,11 +328,12 @@ class _DayCell extends StatelessWidget {
     );
   }
 
-  Widget _dayLabel(ColorScheme scheme) {
+  Widget _dayLabel(ColorScheme scheme, String? holidayName) {
+    final isHoliday = holidayName != null;
     final Color numberColor;
     if (isOutside) {
       numberColor = scheme.onSurface.withValues(alpha: 0.35);
-    } else if (day.weekday == DateTime.sunday) {
+    } else if (isHoliday || day.weekday == DateTime.sunday) {
       numberColor = Colors.red.shade400;
     } else if (day.weekday == DateTime.saturday) {
       numberColor = Colors.blue.shade400;
@@ -324,19 +345,70 @@ class _DayCell extends StatelessWidget {
       height: _headerHeight,
       child: Align(
         alignment: Alignment.topLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 20,
+              height: 18,
+              alignment: Alignment.center,
+              decoration: isToday
+                  ? BoxDecoration(
+                      color: isHoliday ? scheme.error : scheme.primary,
+                      shape: BoxShape.circle,
+                    )
+                  : null,
+              child: Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
+                  color: isToday
+                      ? (isHoliday ? scheme.onError : scheme.onPrimary)
+                      : numberColor,
+                ),
+              ),
+            ),
+            if (holidayName != null) _HolidayChip(name: holidayName),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HolidayChip extends StatelessWidget {
+  const _HolidayChip({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 1, top: 1),
+      child: Tooltip(
+        message: name,
         child: Container(
-          width: 20,
-          height: 18,
+          width: 16,
+          height: 14,
           alignment: Alignment.center,
-          decoration: isToday
-              ? BoxDecoration(color: scheme.primary, shape: BoxShape.circle)
-              : null,
+          decoration: BoxDecoration(
+            color: scheme.error.withValues(alpha: 0.10),
+            border: Border.all(
+              color: scheme.error.withValues(alpha: 0.36),
+              width: 0.5,
+            ),
+            borderRadius: BorderRadius.circular(3),
+          ),
           child: Text(
-            '${day.day}',
+            '祝',
             style: TextStyle(
-              fontSize: 12,
-              fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
-              color: isToday ? scheme.onPrimary : numberColor,
+              fontSize: 9,
+              height: 1,
+              fontWeight: FontWeight.w700,
+              color: scheme.error,
             ),
           ),
         ),

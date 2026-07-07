@@ -80,14 +80,14 @@ Future<FakeFirebaseFirestore> _seedManyOnOneDay({
   return firestore;
 }
 
-Widget _wrap(FakeFirebaseFirestore firestore) {
+Widget _wrap(FakeFirebaseFirestore firestore, {DateTime? initialFocusedDay}) {
   return ProviderScope(
     overrides: [
       firestoreProvider.overrideWithValue(firestore),
       currentUidProvider.overrideWithValue('me'),
     ],
     child: MaterialApp(
-      home: const CalendarScreen(),
+      home: CalendarScreen(initialFocusedDay: initialFocusedDay),
       routes: {
         AppRoutes.dayEvents: (_) =>
             const Scaffold(body: Text('DAY_LIST_SCREEN')),
@@ -107,6 +107,22 @@ void main() {
 
     expect(find.byType(TableCalendar<Event>), findsOneWidget);
     expect(find.text('ぱぱ'), findsOneWidget); // 凡例
+  });
+
+  testWidgets('祝日は赤い日付と祝チップで表示する', (tester) async {
+    final focusedDay = DateTime(2024, 7, 1);
+    final firestore = await _seed(today: focusedDay);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: focusedDay),
+    );
+    await tester.pumpAndSettle();
+
+    final holidayDayText = tester.widget<Text>(find.text('15').first);
+
+    expect(holidayDayText.style?.color, Colors.red.shade400);
+    expect(find.text('祝'), findsOneWidget);
+    expect(find.byTooltip('海の日'), findsOneWidget);
   });
 
   testWidgets('日付のシングルタップでは遷移しない', (tester) async {
