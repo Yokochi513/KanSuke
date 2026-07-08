@@ -59,6 +59,15 @@ void main() {
     expect(buildEvent().toFirestore()['updatedAt'], isA<FieldValue>());
   });
 
+  test('updatedAtがpending write中のnullでも例外にせず暫定値を返す', () {
+    final map = buildEvent().toFirestore(useServerTimestamp: false);
+    map['updatedAt'] = null;
+
+    final restored = Event.fromMap('event-1', map);
+
+    expect(restored.updatedAt, isNotNull);
+  });
+
   test('participantIdsが未保存の既存ドキュメントは空リストにフォールバックする', () {
     final map = buildEvent().toFirestore(useServerTimestamp: false);
     map.remove('participantIds');

@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
 import '../../../core/japanese_holidays.dart';
+import '../../../core/logger.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
 import '../../events/application/event_ordering.dart';
@@ -84,6 +85,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
     final events = eventsAsync.asData?.value ?? const <Event>[];
+    if (eventsAsync.hasError) {
+      AppLogger.error(
+        'eventsInRangeProvider errored for $_monthRange',
+        tag: 'CalendarScreen',
+        error: eventsAsync.error,
+        stackTrace: eventsAsync.stackTrace,
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

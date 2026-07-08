@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/logger.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
 import '../../users/application/user_providers.dart';
@@ -423,7 +424,13 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
         await repository.update(updated, updatedBy: uid);
       }
       if (mounted) Navigator.pop(context);
-    } on Object {
+    } on Object catch (error, stackTrace) {
+      AppLogger.error(
+        'Failed to save event (editing=${_editing?.id})',
+        tag: 'EventEditScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() => _saving = false);
         _showSnack('保存に失敗しました。通信環境を確認してください。');
@@ -461,7 +468,13 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           .read(eventRepositoryProvider)
           .softDelete(_editing!.id, updatedBy: uid);
       if (mounted) Navigator.pop(context);
-    } on Object {
+    } on Object catch (error, stackTrace) {
+      AppLogger.error(
+        'Failed to delete event ${_editing?.id}',
+        tag: 'EventEditScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         setState(() => _saving = false);
         _showSnack('削除に失敗しました。通信環境を確認してください。');

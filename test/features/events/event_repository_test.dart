@@ -154,4 +154,27 @@ void main() {
 
     expect(events.map((event) => event.id), ['overlap-before', 'in-1', 'in-2']);
   });
+
+  test('1件の破損ドキュメントがあってもwatchRangeは他の予定を返す', () async {
+    await repository.create(
+      _buildEvent(id: 'ok', startAt: DateTime.utc(2026, 7, 10, 9)),
+      updatedBy: 'me',
+    );
+    // 型不正など何らかの理由でパースに失敗するドキュメントを模擬する。
+    await firestore.collection('events').doc('broken').set({
+      'deleted': false,
+      'startAt': Timestamp.fromDate(DateTime.utc(2026, 7, 11, 9)),
+      'endAt': Timestamp.fromDate(DateTime.utc(2026, 7, 11, 10)),
+      'title': 123, // String のはずが不正な型
+    });
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+        )
+        .first;
+
+    expect(events.map((event) => event.id), ['ok']);
+  });
 }

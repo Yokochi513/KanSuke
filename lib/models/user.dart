@@ -28,7 +28,14 @@ final class User {
       email: data['email'] as String,
       color: data['color'] as String,
       createdAt: dateTimeFromFirestore(data['createdAt'], 'createdAt'),
-      updatedAt: dateTimeFromFirestore(data['updatedAt'], 'updatedAt'),
+      // updatedAt は serverTimestamp() 書き込みのため、サーバー確定前は
+      // ローカルの現在時刻を暫定値として扱う（確定後のスナップショットで
+      // 正しい値に更新される）。
+      updatedAt: dateTimeFromFirestore(
+        data['updatedAt'],
+        'updatedAt',
+        pendingWriteEstimate: DateTime.now().toUtc(),
+      ),
     );
   }
 

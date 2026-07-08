@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
+import '../../../core/logger.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
 import '../../users/application/user_providers.dart';
@@ -46,8 +47,15 @@ class DayEventsScreen extends ConsumerWidget {
       ),
       body: eventsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) =>
-            const Center(child: Text('予定を読み込めませんでした。通信環境を確認してください。')),
+        error: (error, stackTrace) {
+          AppLogger.error(
+            'eventsInRangeProvider errored for $day-$nextDay',
+            tag: 'DayEventsScreen',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          return const Center(child: Text('予定を読み込めませんでした。通信環境を確認してください。'));
+        },
         data: (events) {
           if (events.isEmpty) {
             return const _EmptyState();
