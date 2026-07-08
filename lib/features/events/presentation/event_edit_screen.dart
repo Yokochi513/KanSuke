@@ -321,13 +321,14 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
   Future<void> _pickTime({required bool isStart}) async {
     final initialTime = isStart ? _startTime : _endTime;
+    final baseDate = isStart ? _startDate : _endDate;
     final picked = await showCupertinoModalPopup<TimeOfDay>(
       context: context,
       builder: (context) {
         final initialDateTime = DateTime(
-          _date.year,
-          _date.month,
-          _date.day,
+          baseDate.year,
+          baseDate.month,
+          baseDate.day,
           initialTime.hour,
           initialTime.minute,
         );

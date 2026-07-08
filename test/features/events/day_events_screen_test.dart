@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/app/routes.dart';
 import 'package:kansuke/core/firebase_providers.dart';
+import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/events/presentation/day_events_screen.dart';
 import 'package:kansuke/features/events/presentation/event_edit_args.dart';
 import 'package:kansuke/models/models.dart';
@@ -56,6 +57,46 @@ Future<FakeFirebaseFirestore> _seed({
   return firestore;
 }
 
+Future<FakeFirebaseFirestore> _seedCurrentUserPriority() async {
+  final firestore = FakeFirebaseFirestore();
+  for (final (id, name, color) in const [
+    ('me', 'ぱぱ', '#1565C0'),
+    ('other', 'まま', '#C2185B'),
+  ]) {
+    await firestore.collection('users').doc(id).set({
+      'name': name,
+      'email': '$id@example.com',
+      'color': color,
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
+  for (final (title, participantId, hour) in [
+    ('他人の朝予定', 'other', 8),
+    ('自分の夜予定', 'me', 20),
+  ]) {
+    final start = DateTime(2026, 7, 5, hour);
+    final event = Event.create(
+      title: title,
+      creatorId: participantId,
+      participantIds: [participantId],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: participantId,
+      now: start,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+  }
+  return firestore;
+}
+
 Widget _wrap(
   FakeFirebaseFirestore firestore, {
   required List<Object?> editArgsSink,
@@ -63,7 +104,10 @@ Widget _wrap(
 }) {
   final routeDay = selectedDay ?? _day;
   return ProviderScope(
-    overrides: [firestoreProvider.overrideWithValue(firestore)],
+    overrides: [
+      firestoreProvider.overrideWithValue(firestore),
+      currentUidProvider.overrideWithValue('me'),
+    ],
     child: MaterialApp(
       onGenerateRoute: (settings) {
         if (settings.name == AppRoutes.dayEvents) {
@@ -137,6 +181,17 @@ void main() {
     await tester.pumpWidget(_wrap(soloEvent, editArgsSink: []));
     await tester.pumpAndSettle();
     expect(_memberDotCount(tester), 1);
+  });
+
+  testWidgets('日別一覧では自分が参加者の予定を先頭に表示する', (tester) async {
+    final firestore = await _seedCurrentUserPriority();
+    await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+    await tester.pumpAndSettle();
+
+    final myEventTop = tester.getTopLeft(find.text('自分の夜予定')).dy;
+    final otherEventTop = tester.getTopLeft(find.text('他人の朝予定')).dy;
+
+    expect(myEventTop, lessThan(otherEventTop));
   });
 
   testWidgets('選択日に重なる期間予定を一覧表示する', (tester) async {

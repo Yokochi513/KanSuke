@@ -184,7 +184,7 @@ void main() {
       EventEditArgs.create(DateTime(2026, 7, 5)),
     );
 
-    await _tapVisible(tester, find.widgetWithText(ListTile, '開始'));
+    await _tapVisible(tester, find.widgetWithText(ListTile, '開始時刻'));
 
     final picker = tester.widget<CupertinoDatePicker>(
       find.byType(CupertinoDatePicker),
