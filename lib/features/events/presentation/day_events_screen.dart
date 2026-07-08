@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
 import '../../../models/models.dart';
+import '../../auth/application/auth_state.dart';
 import '../../users/application/user_providers.dart';
+import '../application/event_ordering.dart';
 import '../application/event_providers.dart';
 import 'event_edit_args.dart';
 import 'event_type_badge.dart';
@@ -28,6 +30,7 @@ class DayEventsScreen extends ConsumerWidget {
       eventsInRangeProvider((start: day, end: nextDay)),
     );
     final membersById = ref.watch(membersByIdProvider);
+    final currentUid = ref.watch(currentUidProvider);
 
     return Scaffold(
       appBar: AppBar(title: Text('${_formatDate(day)} の予定')),
@@ -48,12 +51,13 @@ class DayEventsScreen extends ConsumerWidget {
           if (events.isEmpty) {
             return const _EmptyState();
           }
+          final orderedEvents = orderEventsForDisplay(events, currentUid);
           return ListView.separated(
             padding: const EdgeInsets.only(bottom: 88),
-            itemCount: events.length,
+            itemCount: orderedEvents.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) {
-              final event = events[index];
+              final event = orderedEvents[index];
               return _EventTile(event: event, membersById: membersById);
             },
           );

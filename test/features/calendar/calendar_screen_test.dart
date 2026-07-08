@@ -68,9 +68,52 @@ Future<FakeFirebaseFirestore> _seedManyOnOneDay({
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
       type: i.isEven ? EventType.confirmed : EventType.tentative,
+      participantIds: [creator],
       memo: '',
       reminderOffsets: const [],
       updatedBy: creator,
+      now: start,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+  }
+  return firestore;
+}
+
+Future<FakeFirebaseFirestore> _seedCurrentUserPriority({
+  required DateTime today,
+}) async {
+  final firestore = FakeFirebaseFirestore();
+  for (final (id, name, color) in const [
+    ('me', 'ぱぱ', '#1565C0'),
+    ('mama', 'まま', '#D84315'),
+  ]) {
+    await firestore.collection('users').doc(id).set({
+      'name': name,
+      'email': '$id@example.com',
+      'color': color,
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
+  for (final (title, participantId, hour) in [
+    ('他人の朝予定', 'mama', 8),
+    ('自分の夜予定', 'me', 20),
+  ]) {
+    final start = DateTime(today.year, today.month, today.day, hour);
+    final event = Event.create(
+      title: title,
+      creatorId: participantId,
+      participantIds: [participantId],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: participantId,
       now: start,
     );
     await firestore
@@ -166,6 +209,21 @@ void main() {
     expect(find.text('予定1'), findsOneWidget);
     // マスに収まらない分は「+N」で省略される（オーバーフローしない）。
     expect(find.textContaining('+'), findsWidgets);
+  });
+
+  testWidgets('月表示では自分が参加者の予定を同日の先頭に表示する', (tester) async {
+    final today = DateTime.now();
+    final firestore = await _seedCurrentUserPriority(today: today);
+
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    final titles = tester
+        .widgetList<EventBar>(find.byType(EventBar))
+        .map((bar) => bar.title)
+        .toList();
+
+    expect(titles.take(2), ['自分の夜予定', '他人の朝予定']);
   });
 
   testWidgets('EventBar は確定=塗り・仮=枠付きで種別を区別する', (tester) async {
