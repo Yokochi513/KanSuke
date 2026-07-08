@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -5,7 +7,10 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
 import '../../../core/japanese_holidays.dart';
+import '../../../core/logger.dart';
 import '../../../models/models.dart';
+import '../../auth/application/auth_state.dart';
+import '../../events/application/event_ordering.dart';
 import '../../events/application/event_providers.dart';
 import '../../users/application/user_providers.dart';
 
@@ -29,10 +34,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   late DateTime _focusedDay;
   DateTime? _selectedDay;
 
-  /// 直近にタップした日と時刻。ダブルタップ（=日別一覧へ遷移）の判定に使う。
-  DateTime? _lastTappedDay;
-  DateTime? _lastTappedAt;
-
   /// 曜日ヘッダの高さ。行の高さ計算に使う。
   static const double _daysOfWeekHeight = 22;
 
@@ -40,21 +41,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// 高さのばらつきをなくす。行の高さ計算に使う。
   static const int _weekRows = 6;
 
-  /// 同じ日への 2 回目タップをダブルタップとみなす許容間隔。
-  /// 標準のダブルタップ判定（約 300ms）より少しだけ余裕を持たせる。
-  static const Duration _doubleTapWindow = Duration(milliseconds: 350);
+  @override
+  void initState() {
+    super.initState();
+    _focusedDay = widget.initialFocusedDay ?? DateTime.now();
+  }
 
   /// 表示中の月の範囲 `[月初, 翌月初)`。月切替時のみ差し替わる（差分取得）。
   DateRange get _monthRange => (
     start: DateTime(_focusedDay.year, _focusedDay.month, 1),
     end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
   );
-
-  @override
-  void initState() {
-    super.initState();
-    _focusedDay = widget.initialFocusedDay ?? DateTime.now();
-  }
 
   void _changeMonth(int delta) {
     setState(
@@ -70,11 +67,32 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     setState(() => _focusedDay = DateTime.now());
   }
 
+  /// ヘッダの「YYYY年MM月」タップで年月一覧を出し、選択した月へ飛ぶ（Issue #32）。
+  Future<void> _openMonthYearPicker() async {
+    final picked = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _MonthYearPickerSheet(focusedDay: _focusedDay),
+    );
+    if (picked != null) {
+      setState(() => _focusedDay = picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(eventsInRangeProvider(_monthRange));
     final membersById = ref.watch(membersByIdProvider);
+    final currentUid = ref.watch(currentUidProvider);
     final events = eventsAsync.asData?.value ?? const <Event>[];
+    if (eventsAsync.hasError) {
+      AppLogger.error(
+        'eventsInRangeProvider errored for $_monthRange',
+        tag: 'CalendarScreen',
+        error: eventsAsync.error,
+        stackTrace: eventsAsync.stackTrace,
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -99,6 +117,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             onPrev: () => _changeMonth(-1),
             onNext: () => _changeMonth(1),
             onToday: _goToToday,
+            onTapTitle: _openMonthYearPicker,
           ),
           // カレンダーは残りの高さいっぱいに広げ、各マスを大きく取る。
           Expanded(
@@ -112,7 +131,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   52.0,
                   240.0,
                 );
-                return _buildCalendar(events, membersById, rowHeight);
+                return _buildCalendar(
+                  events,
+                  membersById,
+                  rowHeight,
+                  currentUid,
+                );
               },
             ),
           ),
@@ -127,8 +151,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     List<Event> events,
     Map<String, User> membersById,
     double rowHeight,
+    String? currentUid,
   ) {
-    final byDay = _groupByDay(events);
+    final byDay = _groupByDay(
+      events,
+      range: _monthRange,
+      currentUid: currentUid,
+    );
 
     Widget cellBuilder(
       DateTime day, {
@@ -172,34 +201,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       onPageChanged: (focusedDay) {
         setState(() => _focusedDay = focusedDay);
       },
-      // シングルタップ＝日の選択（ハイライト）、ダブルタップ＝日別一覧へ遷移。
-      // table_calendar はダブルタップ口を持たないため、同じ日への連続タップを
-      // 時間差で自前判定する（子に onDoubleTap を足すとジェスチャー競合を招く）。
+      // 1 回目タップ＝日の選択（ハイライト）、選択済みの日を再タップ＝日別一覧へ遷移。
+      // Issue #45 / FR-4: ダブルタップの短い時間制限に依存せず、選択日への
+      // 明示的な 2 回目タップで日別一覧へ移動できるようにする。
       onDaySelected: (selectedDay, focusedDay) {
-        final now = DateTime.now();
-        final isDoubleTap =
-            _lastTappedDay != null &&
-            isSameDay(_lastTappedDay, selectedDay) &&
-            _lastTappedAt != null &&
-            now.difference(_lastTappedAt!) <= _doubleTapWindow;
+        final selectedDayAlreadyFocused = isSameDay(_selectedDay, selectedDay);
 
         setState(() {
           _selectedDay = selectedDay;
           _focusedDay = focusedDay;
         });
 
-        if (isDoubleTap) {
-          _lastTappedDay = null;
-          _lastTappedAt = null;
+        if (selectedDayAlreadyFocused) {
           // FR-4: 対象日を引数で渡して日別一覧へ遷移する。
           Navigator.pushNamed(
             context,
             AppRoutes.dayEvents,
             arguments: DateUtils.dateOnly(selectedDay),
           );
-        } else {
-          _lastTappedDay = selectedDay;
-          _lastTappedAt = now;
         }
       },
       calendarBuilders: CalendarBuilders<Event>(
@@ -212,20 +231,42 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Map<DateTime, List<Event>> _groupByDay(List<Event> events) {
+  Map<DateTime, List<Event>> _groupByDay(
+    List<Event> events, {
+    required DateRange range,
+    required String? currentUid,
+  }) {
     final map = <DateTime, List<Event>>{};
+    final firstVisibleDay = _dateKey(range.start);
+    final lastVisibleDay = _dateKey(
+      range.end,
+    ).subtract(const Duration(days: 1));
+
     for (final event in events) {
-      final key = _dateKey(event.startAt.toLocal());
-      map.putIfAbsent(key, () => []).add(event);
+      final eventStartDay = _dateKey(event.startAt.toLocal());
+      final eventEndDay = _dateKey(event.endAt.toLocal());
+      final firstEventDay = eventStartDay.isBefore(firstVisibleDay)
+          ? firstVisibleDay
+          : eventStartDay;
+      final lastEventDay = eventEndDay.isAfter(lastVisibleDay)
+          ? lastVisibleDay
+          : eventEndDay;
+
+      if (lastEventDay.isBefore(firstEventDay)) continue;
+
+      // FR-4: 既存の終日単日予定（startAt == endAt）を保つため終了日も含める。
+      for (
+        var visibleDay = firstEventDay;
+        !visibleDay.isAfter(lastEventDay);
+        visibleDay = visibleDay.add(const Duration(days: 1))
+      ) {
+        final key = _dateKey(visibleDay);
+        map.putIfAbsent(key, () => []).add(event);
+      }
     }
-    // 表示順を安定させる：終日を先頭、次に開始時刻順。
+    // 表示順を安定させる：自分が参加者の予定、終日、開始時刻の順。
     for (final list in map.values) {
-      list.sort((a, b) {
-        if (a.allDay != b.allDay) {
-          return a.allDay ? -1 : 1;
-        }
-        return a.startAt.compareTo(b.startAt);
-      });
+      list.sort((a, b) => compareEventsForDisplay(a, b, currentUid));
     }
     return map;
   }
@@ -497,12 +538,14 @@ class _MonthHeader extends StatelessWidget {
     required this.onPrev,
     required this.onNext,
     required this.onToday,
+    required this.onTapTitle,
   });
 
   final DateTime focusedDay;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onToday;
+  final VoidCallback onTapTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -517,9 +560,20 @@ class _MonthHeader extends StatelessWidget {
           ),
           Expanded(
             child: Center(
-              child: Text(
-                '${focusedDay.year}年${focusedDay.month}月',
-                style: Theme.of(context).textTheme.titleMedium,
+              // Issue #32: タップで年月一覧を出し、選択した月へ直接飛べるようにする。
+              child: InkWell(
+                onTap: onTapTitle,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    '${focusedDay.year}年${focusedDay.month}月',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
               ),
             ),
           ),
@@ -530,6 +584,150 @@ class _MonthHeader extends StatelessWidget {
             icon: const Icon(Icons.chevron_right),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 年月を選ぶボトムシート（Issue #32）。
+///
+/// 「年」「月」それぞれをスクロールホイール（[CupertinoPicker]）で選ばせる、
+/// iOS の日付選択に準じた見た目にする。ホイールは慣性でスクロールが止まる
+/// まで値が確定しないため、「完了」で明示的に選択を確定する。
+class _MonthYearPickerSheet extends StatefulWidget {
+  const _MonthYearPickerSheet({required this.focusedDay});
+
+  final DateTime focusedDay;
+
+  @override
+  State<_MonthYearPickerSheet> createState() => _MonthYearPickerSheetState();
+}
+
+class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
+  // TableCalendar の firstDay/lastDay（calendar_screen.dart 内）と範囲を揃える。
+  static const int _minYear = 2020;
+  static const int _maxYear = 2035;
+  static const double _itemExtent = 40;
+
+  late int _year;
+  late int _month;
+
+  // build() のたびに作り直すと、一方のホイールを操作した setState が
+  // もう一方のコントローラも作り直してしまい、進行中のドラッグ操作を
+  // 中断させて互いに干渉して見える。State のフィールドとして一度だけ
+  // 生成し、以後は使い回すことで年・月を独立して操作できるようにする。
+  late final FixedExtentScrollController _yearController;
+  late final FixedExtentScrollController _monthController;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.focusedDay.year;
+    _month = widget.focusedDay.month;
+    _yearController = FixedExtentScrollController(
+      initialItem: _year - _minYear,
+    );
+    _monthController = FixedExtentScrollController(initialItem: _month - 1);
+  }
+
+  @override
+  void dispose() {
+    _yearController.dispose();
+    _monthController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('キャンセル'),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(context, DateTime(_year, _month, 1)),
+                  child: const Text('完了'),
+                ),
+              ],
+            ),
+            SizedBox(
+              height: 180,
+              // 既定の ScrollBehavior はマウスでのドラッグ操作を許可しない
+              // （マウスホイールでの回転のみ）ため、クリックしたまま上下に
+              // 流す操作もできるよう明示的に許可する。
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: CupertinoPicker(
+                        scrollController: _yearController,
+                        itemExtent: _itemExtent,
+                        onSelectedItemChanged: (index) =>
+                            setState(() => _year = _minYear + index),
+                        selectionOverlay: _PickerSelectionOverlay(
+                          color: scheme.primary,
+                        ),
+                        children: [
+                          for (var year = _minYear; year <= _maxYear; year++)
+                            Center(child: Text('$year年')),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: CupertinoPicker(
+                        scrollController: _monthController,
+                        itemExtent: _itemExtent,
+                        onSelectedItemChanged: (index) =>
+                            setState(() => _month = index + 1),
+                        selectionOverlay: _PickerSelectionOverlay(
+                          color: scheme.primary,
+                        ),
+                        children: [
+                          for (var month = 1; month <= 12; month++)
+                            Center(child: Text('$month月')),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ホイールの選択中央行を示す帯。既定の [CupertinoPickerDefaultSelectionOverlay]
+/// はテーマの primary 色と馴染まないため、テーマ色の帯に差し替える。
+class _PickerSelectionOverlay extends StatelessWidget {
+  const _PickerSelectionOverlay({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.symmetric(
+            horizontal: BorderSide(color: color.withValues(alpha: 0.4)),
+          ),
+        ),
       ),
     );
   }

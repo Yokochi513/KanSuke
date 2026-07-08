@@ -93,12 +93,21 @@ final class Event {
       allDay: data['allDay'] as bool,
       type: EventType.fromFirestore(data['type'] as String),
       memo: data['memo'] as String,
-      reminderOffsets: (data['reminderOffsets'] as List<Object?>)
+      // リマインド機能導入前や、何らかの理由でキーが欠落したドキュメントを
+      // 読んでも例外にならないよう空リストにフォールバックする。
+      reminderOffsets: (data['reminderOffsets'] as List<Object?>? ?? const [])
           .map((offset) => offset as int)
           .toList(),
       updatedBy: data['updatedBy'] as String,
       createdAt: dateTimeFromFirestore(data['createdAt'], 'createdAt'),
-      updatedAt: dateTimeFromFirestore(data['updatedAt'], 'updatedAt'),
+      // updatedAt は serverTimestamp() 書き込みのため、サーバー確定前は
+      // ローカルの現在時刻を暫定値として扱う（確定後のスナップショットで
+      // 正しい値に更新される）。
+      updatedAt: dateTimeFromFirestore(
+        data['updatedAt'],
+        'updatedAt',
+        pendingWriteEstimate: DateTime.now().toUtc(),
+      ),
       deleted: data['deleted'] as bool,
     );
   }
