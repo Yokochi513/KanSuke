@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/application/auth_state.dart';
@@ -22,6 +23,14 @@ class KanSukeApp extends ConsumerWidget {
       title: 'KanSuke',
       debugShowCheckedModeBanner: false,
       theme: buildKanSukeTheme(),
+      // NFR-1: 日付ピッカー等の標準UIが英語表記になる不具合を解消する（Issue #58）。
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('ja')],
+      locale: const Locale('ja'),
       home: authState.when(
         loading: () => const _AuthLoadingScreen(),
         error: (_, _) => const SignInScreen(

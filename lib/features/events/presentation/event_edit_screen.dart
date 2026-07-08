@@ -488,8 +488,13 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // NFR-1: 「英語圏の表記」に見えるという指摘（Issue #58）を受け、
+  // スラッシュ区切りではなく年月日＋曜日の日本語表記にする。
+  static const _weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
+
   String _formatDate(DateTime day) =>
-      '${day.year}/${_two(day.month)}/${_two(day.day)}';
+      '${day.year}年${day.month}月${day.day}日'
+      '（${_weekdayLabels[day.weekday - 1]}）';
 
   String _formatTime(TimeOfDay time) =>
       '${_two(time.hour)}:${_two(time.minute)}';
