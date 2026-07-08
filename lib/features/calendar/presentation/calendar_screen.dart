@@ -31,20 +31,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   late DateTime _focusedDay;
   DateTime? _selectedDay;
 
-  /// 直近にタップした日と時刻。ダブルタップ（=日別一覧へ遷移）の判定に使う。
-  DateTime? _lastTappedDay;
-  DateTime? _lastTappedAt;
-
   /// 曜日ヘッダの高さ。行の高さ計算に使う。
   static const double _daysOfWeekHeight = 22;
 
   /// グリッドの行数。常に 6 週で固定し（sixWeekMonthsEnforced）、月による
   /// 高さのばらつきをなくす。行の高さ計算に使う。
   static const int _weekRows = 6;
-
-  /// 同じ日への 2 回目タップをダブルタップとみなす許容間隔。
-  /// 標準のダブルタップ判定（約 300ms）より少しだけ余裕を持たせる。
-  static const Duration _doubleTapWindow = Duration(milliseconds: 350);
 
   /// 表示中の月の範囲 `[月初, 翌月初)`。月切替時のみ差し替わる（差分取得）。
   DateRange get _monthRange => (
@@ -187,34 +179,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       onPageChanged: (focusedDay) {
         setState(() => _focusedDay = focusedDay);
       },
-      // シングルタップ＝日の選択（ハイライト）、ダブルタップ＝日別一覧へ遷移。
-      // table_calendar はダブルタップ口を持たないため、同じ日への連続タップを
-      // 時間差で自前判定する（子に onDoubleTap を足すとジェスチャー競合を招く）。
+      // 1 回目タップ＝日の選択（ハイライト）、選択済みの日を再タップ＝日別一覧へ遷移。
+      // Issue #45 / FR-4: ダブルタップの短い時間制限に依存せず、選択日への
+      // 明示的な 2 回目タップで日別一覧へ移動できるようにする。
       onDaySelected: (selectedDay, focusedDay) {
-        final now = DateTime.now();
-        final isDoubleTap =
-            _lastTappedDay != null &&
-            isSameDay(_lastTappedDay, selectedDay) &&
-            _lastTappedAt != null &&
-            now.difference(_lastTappedAt!) <= _doubleTapWindow;
+        final selectedDayAlreadyFocused = isSameDay(_selectedDay, selectedDay);
 
         setState(() {
           _selectedDay = selectedDay;
           _focusedDay = focusedDay;
         });
 
-        if (isDoubleTap) {
-          _lastTappedDay = null;
-          _lastTappedAt = null;
+        if (selectedDayAlreadyFocused) {
           // FR-4: 対象日を引数で渡して日別一覧へ遷移する。
           Navigator.pushNamed(
             context,
             AppRoutes.dayEvents,
             arguments: DateUtils.dateOnly(selectedDay),
           );
-        } else {
-          _lastTappedDay = selectedDay;
-          _lastTappedAt = now;
         }
       },
       calendarBuilders: CalendarBuilders<Event>(
