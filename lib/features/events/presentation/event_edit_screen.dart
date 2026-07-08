@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,7 +36,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
   bool _initialized = false;
   Event? _editing; // 編集対象（新規は null）
-  late DateTime _date;
+  late DateTime _startDate;
+  late DateTime _endDate;
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   bool _allDay = false;
@@ -72,12 +75,14 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _participantIds.addAll(event.participantIds);
       final start = event.startAt.toLocal();
       final end = event.endAt.toLocal();
-      _date = DateUtils.dateOnly(start);
+      _startDate = DateUtils.dateOnly(start);
+      _endDate = DateUtils.dateOnly(end);
       _startTime = TimeOfDay.fromDateTime(start);
       _endTime = TimeOfDay.fromDateTime(end);
       _reminderOffsets.addAll(event.reminderOffsets);
     } else {
-      _date = DateUtils.dateOnly(args.initialDate!);
+      _startDate = DateUtils.dateOnly(args.initialDate!);
+      _endDate = _startDate;
       _startTime = const TimeOfDay(hour: 9, minute: 0);
       _endTime = const TimeOfDay(hour: 10, minute: 0);
       final uid = ref.read(currentUidProvider);
@@ -237,20 +242,26 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       children: [
         ListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('日付'),
-          trailing: Text(_formatDate(_date)),
-          onTap: _pickDate,
+          title: const Text('開始日'),
+          trailing: Text(_formatDate(_startDate)),
+          onTap: () => _pickDate(isStart: true),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('終了日'),
+          trailing: Text(_formatDate(_endDate)),
+          onTap: () => _pickDate(isStart: false),
         ),
         if (!_allDay) ...[
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('開始'),
+            title: const Text('開始時刻'),
             trailing: Text(_formatTime(_startTime)),
             onTap: () => _pickTime(isStart: true),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('終了'),
+            title: const Text('終了時刻'),
             trailing: Text(_formatTime(_endTime)),
             onTap: () => _pickTime(isStart: false),
           ),
@@ -286,22 +297,52 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     );
   }
 
-  Future<void> _pickDate() async {
+  Future<void> _pickDate({required bool isStart}) async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _date,
+      initialDate: isStart ? _startDate : _endDate,
       firstDate: DateTime(2020),
       lastDate: DateTime(2035, 12, 31),
     );
     if (picked != null) {
-      setState(() => _date = DateUtils.dateOnly(picked));
+      final pickedDate = DateUtils.dateOnly(picked);
+      setState(() {
+        if (isStart) {
+          _startDate = pickedDate;
+          if (_endDate.isBefore(_startDate)) {
+            _endDate = _startDate;
+          }
+        } else {
+          _endDate = pickedDate;
+        }
+      });
     }
   }
 
   Future<void> _pickTime({required bool isStart}) async {
-    final picked = await showTimePicker(
+    final initialTime = isStart ? _startTime : _endTime;
+    final baseDate = isStart ? _startDate : _endDate;
+    final picked = await showCupertinoModalPopup<TimeOfDay>(
       context: context,
-      initialTime: isStart ? _startTime : _endTime,
+      builder: (context) {
+        final initialDateTime = DateTime(
+          baseDate.year,
+          baseDate.month,
+          baseDate.day,
+          initialTime.hour,
+          initialTime.minute,
+        );
+        var selectedDateTime = initialDateTime;
+
+        return _TimePickerSheet(
+          title: isStart ? '開始時刻' : '終了時刻',
+          initialDateTime: initialDateTime,
+          onDateTimeChanged: (value) => selectedDateTime = value,
+          onCancel: () => Navigator.pop(context),
+          onDone: () =>
+              Navigator.pop(context, TimeOfDay.fromDateTime(selectedDateTime)),
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -315,29 +356,29 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   }
 
   DateTime get _startAt => _allDay
-      ? _date
+      ? _startDate
       : DateTime(
-          _date.year,
-          _date.month,
-          _date.day,
+          _startDate.year,
+          _startDate.month,
+          _startDate.day,
           _startTime.hour,
           _startTime.minute,
         );
 
   DateTime get _endAt => _allDay
-      ? _date
+      ? _endDate
       : DateTime(
-          _date.year,
-          _date.month,
-          _date.day,
+          _endDate.year,
+          _endDate.month,
+          _endDate.day,
           _endTime.hour,
           _endTime.minute,
         );
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_allDay && _endAt.isBefore(_startAt)) {
-      _showSnack('終了は開始以降の時刻にしてください');
+    if (_endAt.isBefore(_startAt)) {
+      _showSnack(_allDay ? '終了日は開始日以降にしてください' : '終了は開始日時以降にしてください');
       return;
     }
     final uid = ref.read(currentUidProvider);
@@ -441,4 +482,74 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       '${_two(time.hour)}:${_two(time.minute)}';
 
   String _two(int value) => value.toString().padLeft(2, '0');
+}
+
+class _TimePickerSheet extends StatelessWidget {
+  const _TimePickerSheet({
+    required this.title,
+    required this.initialDateTime,
+    required this.onDateTimeChanged,
+    required this.onCancel,
+    required this.onDone,
+  });
+
+  final String title;
+  final DateTime initialDateTime;
+  final ValueChanged<DateTime> onDateTimeChanged;
+  final VoidCallback onCancel;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      height: 320,
+      color: theme.colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 56,
+              child: Row(
+                children: [
+                  CupertinoButton(
+                    onPressed: onCancel,
+                    child: const Text('キャンセル'),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(title, style: theme.textTheme.titleMedium),
+                    ),
+                  ),
+                  CupertinoButton(onPressed: onDone, child: const Text('完了')),
+                ],
+              ),
+            ),
+            Expanded(
+              // NFR-1: iPhoneでの時刻指定を軽くするため、時計盤ではなく縦スクロールの24時間ピッカーにする。
+              // 既定の ScrollBehavior はマウスでのドラッグ操作を許可しない
+              // （マウスホイールでの回転のみ）ため、クリックしたまま上下に
+              // 流す操作もできるよう明示的に許可する。
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialDateTime,
+                  minuteInterval: 1,
+                  use24hFormat: true,
+                  showTimeSeparator: true,
+                  backgroundColor: theme.colorScheme.surface,
+                  onDateTimeChanged: onDateTimeChanged,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

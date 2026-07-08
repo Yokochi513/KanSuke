@@ -8,6 +8,8 @@ import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
 import '../../../core/japanese_holidays.dart';
 import '../../../models/models.dart';
+import '../../auth/application/auth_state.dart';
+import '../../events/application/event_ordering.dart';
 import '../../events/application/event_providers.dart';
 import '../../users/application/user_providers.dart';
 
@@ -38,17 +40,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// 高さのばらつきをなくす。行の高さ計算に使う。
   static const int _weekRows = 6;
 
-  /// 表示中の月の範囲 `[月初, 翌月初)`。月切替時のみ差し替わる（差分取得）。
-  DateRange get _monthRange => (
-    start: DateTime(_focusedDay.year, _focusedDay.month, 1),
-    end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
-  );
-
   @override
   void initState() {
     super.initState();
     _focusedDay = widget.initialFocusedDay ?? DateTime.now();
   }
+
+  /// 表示中の月の範囲 `[月初, 翌月初)`。月切替時のみ差し替わる（差分取得）。
+  DateRange get _monthRange => (
+    start: DateTime(_focusedDay.year, _focusedDay.month, 1),
+    end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
+  );
 
   void _changeMonth(int delta) {
     setState(
@@ -80,6 +82,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(eventsInRangeProvider(_monthRange));
     final membersById = ref.watch(membersByIdProvider);
+    final currentUid = ref.watch(currentUidProvider);
     final events = eventsAsync.asData?.value ?? const <Event>[];
 
     return Scaffold(
@@ -119,7 +122,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   52.0,
                   240.0,
                 );
-                return _buildCalendar(events, membersById, rowHeight);
+                return _buildCalendar(
+                  events,
+                  membersById,
+                  rowHeight,
+                  currentUid,
+                );
               },
             ),
           ),
@@ -134,8 +142,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     List<Event> events,
     Map<String, User> membersById,
     double rowHeight,
+    String? currentUid,
   ) {
-    final byDay = _groupByDay(events);
+    final byDay = _groupByDay(
+      events,
+      range: _monthRange,
+      currentUid: currentUid,
+    );
 
     Widget cellBuilder(
       DateTime day, {
@@ -209,20 +222,42 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Map<DateTime, List<Event>> _groupByDay(List<Event> events) {
+  Map<DateTime, List<Event>> _groupByDay(
+    List<Event> events, {
+    required DateRange range,
+    required String? currentUid,
+  }) {
     final map = <DateTime, List<Event>>{};
+    final firstVisibleDay = _dateKey(range.start);
+    final lastVisibleDay = _dateKey(
+      range.end,
+    ).subtract(const Duration(days: 1));
+
     for (final event in events) {
-      final key = _dateKey(event.startAt.toLocal());
-      map.putIfAbsent(key, () => []).add(event);
+      final eventStartDay = _dateKey(event.startAt.toLocal());
+      final eventEndDay = _dateKey(event.endAt.toLocal());
+      final firstEventDay = eventStartDay.isBefore(firstVisibleDay)
+          ? firstVisibleDay
+          : eventStartDay;
+      final lastEventDay = eventEndDay.isAfter(lastVisibleDay)
+          ? lastVisibleDay
+          : eventEndDay;
+
+      if (lastEventDay.isBefore(firstEventDay)) continue;
+
+      // FR-4: 既存の終日単日予定（startAt == endAt）を保つため終了日も含める。
+      for (
+        var visibleDay = firstEventDay;
+        !visibleDay.isAfter(lastEventDay);
+        visibleDay = visibleDay.add(const Duration(days: 1))
+      ) {
+        final key = _dateKey(visibleDay);
+        map.putIfAbsent(key, () => []).add(event);
+      }
     }
-    // 表示順を安定させる：終日を先頭、次に開始時刻順。
+    // 表示順を安定させる：自分が参加者の予定、終日、開始時刻の順。
     for (final list in map.values) {
-      list.sort((a, b) {
-        if (a.allDay != b.allDay) {
-          return a.allDay ? -1 : 1;
-        }
-        return a.startAt.compareTo(b.startAt);
-      });
+      list.sort((a, b) => compareEventsForDisplay(a, b, currentUid));
     }
     return map;
   }
