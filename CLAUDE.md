@@ -82,4 +82,4 @@ npm --prefix functions test
 
 - コミットは小さく、論理単位で。プレフィックス例: `feat:` `fix:` `docs:` `chore:` `test:`。
 - PR タイトル: `feat: 予定のCRUD実装 (#12)` のように Issue 番号を含める。
-- PR は `main` 向け。マージ前に `flutter analyze` / `flutter test` がローカルで通っていること。
+- PR は `develop` 向け。マージ前に `flutter analyze` / `flutter test` がローカルで通っていること。
