@@ -318,10 +318,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           initialDateTime: initialDateTime,
           onDateTimeChanged: (value) => selectedDateTime = value,
           onCancel: () => Navigator.pop(context),
-          onDone: () => Navigator.pop(
-            context,
-            TimeOfDay.fromDateTime(selectedDateTime),
-          ),
+          onDone: () =>
+              Navigator.pop(context, TimeOfDay.fromDateTime(selectedDateTime)),
         );
       },
     );
@@ -501,16 +499,10 @@ class _TimePickerSheet extends StatelessWidget {
                   ),
                   Expanded(
                     child: Center(
-                      child: Text(
-                        title,
-                        style: theme.textTheme.titleMedium,
-                      ),
+                      child: Text(title, style: theme.textTheme.titleMedium),
                     ),
                   ),
-                  CupertinoButton(
-                    onPressed: onDone,
-                    child: const Text('完了'),
-                  ),
+                  CupertinoButton(onPressed: onDone, child: const Text('完了')),
                 ],
               ),
             ),
