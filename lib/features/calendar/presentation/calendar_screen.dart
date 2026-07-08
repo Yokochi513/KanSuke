@@ -48,17 +48,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// 標準のダブルタップ判定（約 300ms）より少しだけ余裕を持たせる。
   static const Duration _doubleTapWindow = Duration(milliseconds: 350);
 
-  /// 表示中の月の範囲 `[月初, 翌月初)`。月切替時のみ差し替わる（差分取得）。
-  DateRange get _monthRange => (
-    start: DateTime(_focusedDay.year, _focusedDay.month, 1),
-    end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
-  );
-
   @override
   void initState() {
     super.initState();
     _focusedDay = widget.initialFocusedDay ?? DateTime.now();
   }
+
+  /// 表示中の月の範囲 `[月初, 翌月初)`。月切替時のみ差し替わる（差分取得）。
+  DateRange get _monthRange => (
+    start: DateTime(_focusedDay.year, _focusedDay.month, 1),
+    end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
+  );
 
   void _changeMonth(int delta) {
     setState(
@@ -152,7 +152,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     double rowHeight,
     String? currentUid,
   ) {
-    final byDay = _groupByDay(events, currentUid);
+    final byDay = _groupByDay(
+      events,
+      range: _monthRange,
+      currentUid: currentUid,
+    );
 
     Widget cellBuilder(
       DateTime day, {
@@ -237,13 +241,37 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   }
 
   Map<DateTime, List<Event>> _groupByDay(
-    List<Event> events,
-    String? currentUid,
-  ) {
+    List<Event> events, {
+    required DateRange range,
+    required String? currentUid,
+  }) {
     final map = <DateTime, List<Event>>{};
+    final firstVisibleDay = _dateKey(range.start);
+    final lastVisibleDay = _dateKey(
+      range.end,
+    ).subtract(const Duration(days: 1));
+
     for (final event in events) {
-      final key = _dateKey(event.startAt.toLocal());
-      map.putIfAbsent(key, () => []).add(event);
+      final eventStartDay = _dateKey(event.startAt.toLocal());
+      final eventEndDay = _dateKey(event.endAt.toLocal());
+      final firstEventDay = eventStartDay.isBefore(firstVisibleDay)
+          ? firstVisibleDay
+          : eventStartDay;
+      final lastEventDay = eventEndDay.isAfter(lastVisibleDay)
+          ? lastVisibleDay
+          : eventEndDay;
+
+      if (lastEventDay.isBefore(firstEventDay)) continue;
+
+      // FR-4: 既存の終日単日予定（startAt == endAt）を保つため終了日も含める。
+      for (
+        var visibleDay = firstEventDay;
+        !visibleDay.isAfter(lastEventDay);
+        visibleDay = visibleDay.add(const Duration(days: 1))
+      ) {
+        final key = _dateKey(visibleDay);
+        map.putIfAbsent(key, () => []).add(event);
+      }
     }
     // 表示順を安定させる：自分が参加者の予定、終日、開始時刻の順。
     for (final list in map.values) {

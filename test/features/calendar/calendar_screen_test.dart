@@ -124,6 +124,35 @@ Future<FakeFirebaseFirestore> _seedCurrentUserPriority({
   return firestore;
 }
 
+Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
+  final firestore = FakeFirebaseFirestore();
+  await firestore.collection('users').doc('me').set({
+    'name': 'ぱぱ',
+    'email': 'me@example.com',
+    'color': '#1565C0',
+    'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+  });
+  final start = DateTime(2026, 7, 5, 9);
+  final event = Event.create(
+    title: 'テスト週間',
+    creatorId: 'me',
+    startAt: start,
+    endAt: DateTime(2026, 7, 7, 10),
+    allDay: false,
+    type: EventType.confirmed,
+    memo: '',
+    reminderOffsets: const [],
+    updatedBy: 'me',
+    now: start,
+  );
+  await firestore
+      .collection('events')
+      .doc(event.id)
+      .set(event.toFirestore(useServerTimestamp: false));
+  return firestore;
+}
+
 Widget _wrap(FakeFirebaseFirestore firestore, {DateTime? initialFocusedDay}) {
   return ProviderScope(
     overrides: [
@@ -224,6 +253,17 @@ void main() {
         .toList();
 
     expect(titles.take(2), ['自分の夜予定', '他人の朝予定']);
+  });
+
+  testWidgets('期間予定は重なる各日のマスに表示する', (tester) async {
+    final firestore = await _seedPeriodEvent();
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('テスト週間'), findsNWidgets(3));
   });
 
   testWidgets('EventBar は確定=塗り・仮=枠付きで種別を区別する', (tester) async {

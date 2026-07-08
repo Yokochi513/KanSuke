@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -107,6 +108,26 @@ void main() {
     expect(docs.single.id, data['id']); // クライアント生成UUID
   });
 
+  testWidgets('新規作成: 開始日と終了日を分けて期間予定を保存する', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, 'テスト週間');
+    await _tapVisible(tester, find.text('終了日'));
+    await tester.tap(find.text('8').last);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect((data['startAt'] as Timestamp).toDate(), DateTime(2026, 7, 5, 9));
+    expect((data['endAt'] as Timestamp).toDate(), DateTime(2026, 7, 8, 10));
+  });
+
   testWidgets('タイトル未入力はバリデーションエラーで保存しない', (tester) async {
     final firestore = await _seedMember();
     await _openEditor(
@@ -153,6 +174,31 @@ void main() {
     final data = (await _events(firestore)).single.data();
     expect(data['type'], 'confirmed');
     expect(data['reminderOffsets'], [30]);
+  });
+
+  testWidgets('時刻選択は24時間表記の縦スクロールピッカーで更新する', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await _tapVisible(tester, find.widgetWithText(ListTile, '開始時刻'));
+
+    final picker = tester.widget<CupertinoDatePicker>(
+      find.byType(CupertinoDatePicker),
+    );
+    expect(picker.mode, CupertinoDatePickerMode.time);
+    expect(picker.use24hFormat, true);
+    expect(picker.minuteInterval, 1);
+    expect(picker.showTimeSeparator, true);
+
+    picker.onDateTimeChanged(DateTime(2026, 7, 5, 13, 45));
+    await tester.tap(find.text('完了'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('13:45'), findsOneWidget);
   });
 
   testWidgets('参加者を複数選択して保存する', (tester) async {

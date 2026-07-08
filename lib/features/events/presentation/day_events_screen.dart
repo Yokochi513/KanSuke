@@ -13,8 +13,9 @@ import 'event_type_badge.dart';
 
 /// 日別予定一覧（FR-1 / FR-2 / FR-3、基本設計 §6.1）。
 ///
-/// 選択日の予定を参加者の色・種別バッジ・時刻付きで表示し、各項目や新規作成から
-/// 予定編集画面（#11）へ遷移する。対象日はルート引数（[DateTime]）で受け取る。
+/// 選択日の予定を参加者の色・種別バッジ・時刻・メモ付きで表示し、各項目や
+/// 新規作成から予定編集画面（#11）へ遷移する。対象日はルート引数（[DateTime]）
+/// で受け取る。
 class DayEventsScreen extends ConsumerWidget {
   const DayEventsScreen({super.key});
 
@@ -82,18 +83,32 @@ class _EventTile extends StatelessWidget {
         .map((id) => colorFromHex(membersById[id]?.color ?? ''))
         .toList();
     final participantsLabel = _participantsLabel(event);
+    final memoPreview = event.memo.trim();
     return ListTile(
       leading: _MemberDots(colors: memberColors),
       title: Text(event.title),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      subtitle: Row(
         children: [
-          Text(_scheduleLabel(event)),
-          if (participantsLabel != null)
-            Text(
-              '参加: $participantsLabel',
-              style: Theme.of(context).textTheme.bodySmall,
+          Flexible(
+            child: Text(
+              _scheduleDetailsLabel(event, participantsLabel),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+          ),
+          if (memoPreview.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'メモ: $memoPreview',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
       trailing: EventTypeBadge(event.type),
@@ -103,6 +118,12 @@ class _EventTile extends StatelessWidget {
         arguments: EventEditArgs.edit(event),
       ),
     );
+  }
+
+  String _scheduleDetailsLabel(Event event, String? participantsLabel) {
+    final scheduleLabel = _scheduleLabel(event);
+    if (participantsLabel == null) return scheduleLabel;
+    return '$scheduleLabel・参加: $participantsLabel';
   }
 
   /// 参加者名を「・」区切りで返す。2人以上の予定でのみ表示する（1人だけの
@@ -119,14 +140,34 @@ class _EventTile extends StatelessWidget {
   }
 
   String _scheduleLabel(Event event) {
-    if (event.allDay) {
-      return '終日';
-    }
     final start = event.startAt.toLocal();
     final end = event.endAt.toLocal();
+    final sameDay = _isSameDate(start, end);
+
+    if (event.allDay) {
+      if (sameDay) {
+        return '終日';
+      }
+      return '${_formatMonthDay(start)}〜${_formatMonthDay(end)}・終日';
+    }
+    if (!sameDay) {
+      return '${_formatMonthDay(start)} ${_formatTime(start)}'
+          '〜${_formatMonthDay(end)} ${_formatTime(end)}';
+    }
     return '${_two(start.hour)}:${_two(start.minute)}'
         '〜${_two(end.hour)}:${_two(end.minute)}';
   }
+
+  bool _isSameDate(DateTime start, DateTime end) =>
+      start.year == end.year &&
+      start.month == end.month &&
+      start.day == end.day;
+
+  String _formatMonthDay(DateTime dateTime) =>
+      '${dateTime.month}/${dateTime.day}';
+
+  String _formatTime(DateTime dateTime) =>
+      '${_two(dateTime.hour)}:${_two(dateTime.minute)}';
 }
 
 /// 参加メンバーを色付きドットで並べる（FR-2、参加者の可視化）。

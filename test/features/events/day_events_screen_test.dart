@@ -15,6 +15,7 @@ final _day = DateTime(2026, 7, 5);
 Future<FakeFirebaseFirestore> _seed({
   bool withEvent = true,
   bool withParticipant = false,
+  String memo = '',
 }) async {
   final firestore = FakeFirebaseFirestore();
   await firestore.collection('users').doc('me').set({
@@ -43,7 +44,7 @@ Future<FakeFirebaseFirestore> _seed({
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
       type: EventType.tentative,
-      memo: '',
+      memo: memo,
       reminderOffsets: const [60],
       updatedBy: 'me',
       now: start,
@@ -99,7 +100,9 @@ Future<FakeFirebaseFirestore> _seedCurrentUserPriority() async {
 Widget _wrap(
   FakeFirebaseFirestore firestore, {
   required List<Object?> editArgsSink,
+  DateTime? selectedDay,
 }) {
+  final routeDay = selectedDay ?? _day;
   return ProviderScope(
     overrides: [
       firestoreProvider.overrideWithValue(firestore),
@@ -110,7 +113,7 @@ Widget _wrap(
         if (settings.name == AppRoutes.dayEvents) {
           return MaterialPageRoute<void>(
             builder: (_) => const DayEventsScreen(),
-            settings: RouteSettings(name: settings.name, arguments: _day),
+            settings: RouteSettings(name: settings.name, arguments: routeDay),
           );
         }
         if (settings.name == AppRoutes.eventEdit) {
@@ -147,6 +150,15 @@ void main() {
     expect(find.text('打ち合わせ'), findsOneWidget);
     expect(find.text('仮'), findsOneWidget); // 種別バッジ
     expect(find.textContaining('09:00〜10:00'), findsOneWidget);
+    expect(find.textContaining('メモ:'), findsNothing);
+  });
+
+  testWidgets('メモ付き予定は一覧でメモ本文を確認できる', (tester) async {
+    final firestore = await _seed(memo: '資料を印刷して持っていく');
+    await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('メモ: 資料を印刷して持っていく'), findsOneWidget);
   });
 
   testWidgets('参加者が複数いる予定は参加者名を副次表示する', (tester) async {
@@ -180,6 +192,35 @@ void main() {
     final otherEventTop = tester.getTopLeft(find.text('他人の朝予定')).dy;
 
     expect(myEventTop, lessThan(otherEventTop));
+  });
+
+  testWidgets('選択日に重なる期間予定を一覧表示する', (tester) async {
+    final firestore = await _seed(withEvent: false);
+    final start = DateTime(2026, 7, 5, 9);
+    final event = Event.create(
+      title: 'テスト週間',
+      creatorId: 'me',
+      startAt: start,
+      endAt: DateTime(2026, 7, 7, 10),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: 'me',
+      now: start,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+
+    await tester.pumpWidget(
+      _wrap(firestore, editArgsSink: [], selectedDay: DateTime(2026, 7, 6)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('テスト週間'), findsOneWidget);
+    expect(find.textContaining('7/5 09:00〜7/7 10:00'), findsOneWidget);
   });
 
   testWidgets('予定なしの日は空状態を表示する', (tester) async {
