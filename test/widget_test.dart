@@ -83,6 +83,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('予定はありません'), findsOneWidget);
   });
+
+  testWidgets('予定作成の日付ピッカーが日本語表記になる（Issue #58）', (tester) async {
+    final repository = FakeAuthRepository(initiallySignedIn: true);
+    await tester.pumpWidget(_testApp(repository));
+    await tester.pump();
+
+    final today = find.text('${DateTime.now().day}').first;
+    await tester.tap(today);
+    await tester.pump();
+    await tester.tap(today);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ListTile, '開始日'));
+    await tester.pumpAndSettle();
+
+    // 曜日ヘッダが日本語（例:「月」）で描画され、英語表記（S/M/T...）にならないこと。
+    expect(find.text('月'), findsWidgets);
+  });
 }
 
 Widget _testApp(
