@@ -210,16 +210,17 @@ void main() {
     expect(find.text('DAY_LIST_SCREEN'), findsNothing);
   });
 
-  testWidgets('日付のダブルタップで日別一覧へ遷移する', (tester) async {
+  testWidgets('選択済みの日付を再タップすると日別一覧へ遷移する', (tester) async {
     final today = DateTime.now();
     final firestore = await _seed(today: today);
 
     await tester.pumpWidget(_wrap(firestore));
     await tester.pumpAndSettle();
 
-    // 同じ日を短時間に 2 回タップする（自前ダブルタップ判定）。
+    // Issue #45: 時間制限つきダブルタップではなく、選択済み日付への
+    // 明示的な 2 回目タップで日別一覧へ移動する。
     await tester.tap(find.text('${today.day}').first);
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.text('${today.day}').first);
     await tester.pumpAndSettle();
 
