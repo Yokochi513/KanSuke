@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../core/logger.dart';
 import '../../../models/models.dart';
+
+const _logTag = 'EventRepository';
 
 /// events コレクションへの CRUD とリアルタイム取得を担う。
 ///
@@ -25,13 +28,35 @@ class EventRepository {
   /// `updatedBy` を [updatedBy] に上書きし、`updatedAt` は serverTimestamp とする。
   Future<void> create(Event event, {required String updatedBy}) {
     final data = event.copyWith(updatedBy: updatedBy).toFirestore();
-    return _events.doc(event.id).set(data);
+    return _events.doc(event.id).set(data).catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      AppLogger.error(
+        'Failed to create event ${event.id}',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw error;
+    });
   }
 
   /// 既存予定を全フィールド更新する。`updatedBy`/`updatedAt` を更新する。
   Future<void> update(Event event, {required String updatedBy}) {
     final data = event.copyWith(updatedBy: updatedBy).toFirestore();
-    return _events.doc(event.id).set(data);
+    return _events.doc(event.id).set(data).catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      AppLogger.error(
+        'Failed to update event ${event.id}',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw error;
+    });
   }
 
   /// 仮↔確定の切替（FR-3）。`type` 更新のみで完結させる。
@@ -40,37 +65,80 @@ class EventRepository {
     EventType type, {
     required String updatedBy,
   }) {
-    return _events.doc(eventId).update({
-      'type': type.name,
-      'updatedBy': updatedBy,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    return _events
+        .doc(eventId)
+        .update({
+          'type': type.name,
+          'updatedBy': updatedBy,
+          'updatedAt': FieldValue.serverTimestamp(),
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          AppLogger.error(
+            'Failed to set type for event $eventId',
+            tag: _logTag,
+            error: error,
+            stackTrace: stackTrace,
+          );
+          throw error;
+        });
   }
 
   /// ソフト削除（§4.2）。物理削除はサーバ側の定期パージに委ねる。
   Future<void> softDelete(String eventId, {required String updatedBy}) {
-    return _events.doc(eventId).update({
-      'deleted': true,
-      'updatedBy': updatedBy,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    return _events
+        .doc(eventId)
+        .update({
+          'deleted': true,
+          'updatedBy': updatedBy,
+          'updatedAt': FieldValue.serverTimestamp(),
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          AppLogger.error(
+            'Failed to soft-delete event $eventId',
+            tag: _logTag,
+            error: error,
+            stackTrace: stackTrace,
+          );
+          throw error;
+        });
   }
 
   /// 期間 `[start, end)` の予定をリアルタイムに監視する（FR-4 の月表示に利用）。
   ///
-  /// `deleted==false` かつ `startAt` 範囲で取得し `startAt` 昇順。
-  /// 複合インデックス（deleted ASC, startAt ASC）を前提とする。
+  /// `deleted==false` かつ `[startAt, endAt]` が指定期間と重なる予定を取得し
+  /// `startAt` 昇順で返す。
+  /// 複合インデックス（deleted ASC, startAt ASC, endAt ASC）を前提とする。
   /// Firestore の既定でローカルキャッシュ起点に描画される（NFR-1）。
   Stream<List<Event>> watchRange({
     required DateTime start,
     required DateTime end,
   }) {
+    // 既存の終日単日予定は startAt == endAt のため、終了境界は含める。
     return _events
         .where('deleted', isEqualTo: false)
-        .where('startAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .where('startAt', isLessThan: Timestamp.fromDate(end))
+        .where('endAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .orderBy('startAt')
+        .orderBy('endAt')
         .snapshots()
-        .map((snapshot) => snapshot.docs.map(Event.fromFirestore).toList());
+        .map((snapshot) {
+          final events = <Event>[];
+          for (final doc in snapshot.docs) {
+            try {
+              events.add(Event.fromFirestore(doc));
+            } catch (error, stackTrace) {
+              // 1件のドキュメントの変換失敗（未移行フィールドの欠落・不正な
+              // 型など）で月表示全体がエラーにならないよう、当該ドキュメント
+              // だけ除外してログに残す。障害調査は AppLogger の出力を見る。
+              AppLogger.error(
+                'Failed to parse event ${doc.id}, skipping it',
+                tag: _logTag,
+                error: error,
+                stackTrace: stackTrace,
+              );
+            }
+          }
+          return events;
+        });
   }
 }

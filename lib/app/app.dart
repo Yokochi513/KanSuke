@@ -7,6 +7,7 @@ import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/events/presentation/day_events_screen.dart';
 import '../features/events/presentation/event_edit_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
+import '../features/version_check/presentation/version_check_gate.dart';
 import 'routes.dart';
 import 'theme.dart';
 
@@ -26,8 +27,9 @@ class KanSukeApp extends ConsumerWidget {
         error: (_, _) => const SignInScreen(
           initialErrorMessage: '認証状態を確認できませんでした。もう一度お試しください。',
         ),
-        data: (session) =>
-            session == null ? const SignInScreen() : const CalendarScreen(),
+        data: (session) => session == null
+            ? const SignInScreen()
+            : const VersionCheckGate(child: CalendarScreen()),
       ),
       routes: {
         AppRoutes.calendar: (_) => const CalendarScreen(),

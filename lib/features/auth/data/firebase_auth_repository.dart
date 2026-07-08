@@ -9,7 +9,10 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import '../../../core/logger.dart';
 import 'auth_repository.dart';
+
+const _logTag = 'FirebaseAuthRepository';
 
 class FirebaseAuthRepository implements AuthRepository {
   FirebaseAuthRepository({
@@ -70,11 +73,29 @@ class FirebaseAuthRepository implements AuthRepository {
       final result = await _auth.signInWithCredential(credential);
       await _verifyUserDocument(result.user);
       _webSignInResults.add(null);
-    } on AuthException catch (error) {
+    } on AuthException catch (error, stackTrace) {
+      AppLogger.error(
+        'Web Google sign-in failed',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       _webSignInResults.add(error);
-    } on FirebaseAuthException catch (error) {
+    } on FirebaseAuthException catch (error, stackTrace) {
+      AppLogger.error(
+        'Web Google sign-in failed (FirebaseAuthException: ${error.code})',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       _webSignInResults.add(_mapFirebaseException(error));
-    } on FirebaseException catch (error) {
+    } on FirebaseException catch (error, stackTrace) {
+      AppLogger.error(
+        'Web Google sign-in failed (FirebaseException: ${error.code})',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       _webSignInResults.add(_mapFirebaseException(error));
     }
   }
@@ -90,14 +111,32 @@ class FirebaseAuthRepository implements AuthRepository {
       );
       final result = await _auth.signInWithCredential(credential);
       await _verifyUserDocument(result.user);
-    } on GoogleSignInException catch (error) {
+    } on GoogleSignInException catch (error, stackTrace) {
       if (error.code == GoogleSignInExceptionCode.canceled) {
         throw const AuthCancelledException();
       }
+      AppLogger.error(
+        'Google sign-in failed',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       throw const AuthException();
-    } on FirebaseAuthException catch (error) {
+    } on FirebaseAuthException catch (error, stackTrace) {
+      AppLogger.error(
+        'Google sign-in failed (FirebaseAuthException: ${error.code})',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       throw _mapFirebaseException(error);
-    } on FirebaseException catch (error) {
+    } on FirebaseException catch (error, stackTrace) {
+      AppLogger.error(
+        'Google sign-in failed (FirebaseException: ${error.code})',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       throw _mapFirebaseException(error);
     }
   }
@@ -131,14 +170,32 @@ class FirebaseAuthRepository implements AuthRepository {
       );
       final result = await _auth.signInWithCredential(credential);
       await _verifyUserDocument(result.user);
-    } on SignInWithAppleAuthorizationException catch (error) {
+    } on SignInWithAppleAuthorizationException catch (error, stackTrace) {
       if (error.code == AuthorizationErrorCode.canceled) {
         throw const AuthCancelledException();
       }
+      AppLogger.error(
+        'Apple sign-in failed',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       throw const AuthException();
-    } on FirebaseAuthException catch (error) {
+    } on FirebaseAuthException catch (error, stackTrace) {
+      AppLogger.error(
+        'Apple sign-in failed (FirebaseAuthException: ${error.code})',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       throw _mapFirebaseException(error);
-    } on FirebaseException catch (error) {
+    } on FirebaseException catch (error, stackTrace) {
+      AppLogger.error(
+        'Apple sign-in failed (FirebaseException: ${error.code})',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
       throw _mapFirebaseException(error);
     }
   }
@@ -170,6 +227,10 @@ class FirebaseAuthRepository implements AuthRepository {
     // クライアントは認証完了後に存在確認だけを行う。
     final snapshot = await _firestore.collection('users').doc(user.uid).get();
     if (!snapshot.exists) {
+      AppLogger.error(
+        'users/${user.uid} does not exist (not in allowlist?); signing out',
+        tag: _logTag,
+      );
       await _auth.signOut();
       throw const AuthAccessDeniedException();
     }

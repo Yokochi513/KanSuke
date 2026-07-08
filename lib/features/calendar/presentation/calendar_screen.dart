@@ -7,7 +7,10 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
 import '../../../core/japanese_holidays.dart';
+import '../../../core/logger.dart';
 import '../../../models/models.dart';
+import '../../auth/application/auth_state.dart';
+import '../../events/application/event_ordering.dart';
 import '../../events/application/event_providers.dart';
 import '../../users/application/user_providers.dart';
 
@@ -31,10 +34,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   late DateTime _focusedDay;
   DateTime? _selectedDay;
 
-  /// 直近にタップした日と時刻。ダブルタップ（=日別一覧へ遷移）の判定に使う。
-  DateTime? _lastTappedDay;
-  DateTime? _lastTappedAt;
-
   /// 曜日ヘッダの高さ。行の高さ計算に使う。
   static const double _daysOfWeekHeight = 22;
 
@@ -42,21 +41,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// 高さのばらつきをなくす。行の高さ計算に使う。
   static const int _weekRows = 6;
 
-  /// 同じ日への 2 回目タップをダブルタップとみなす許容間隔。
-  /// 標準のダブルタップ判定（約 300ms）より少しだけ余裕を持たせる。
-  static const Duration _doubleTapWindow = Duration(milliseconds: 350);
+  @override
+  void initState() {
+    super.initState();
+    _focusedDay = widget.initialFocusedDay ?? DateTime.now();
+  }
 
   /// 表示中の月の範囲 `[月初, 翌月初)`。月切替時のみ差し替わる（差分取得）。
   DateRange get _monthRange => (
     start: DateTime(_focusedDay.year, _focusedDay.month, 1),
     end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
   );
-
-  @override
-  void initState() {
-    super.initState();
-    _focusedDay = widget.initialFocusedDay ?? DateTime.now();
-  }
 
   void _changeMonth(int delta) {
     setState(
@@ -88,7 +83,16 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(eventsInRangeProvider(_monthRange));
     final membersById = ref.watch(membersByIdProvider);
+    final currentUid = ref.watch(currentUidProvider);
     final events = eventsAsync.asData?.value ?? const <Event>[];
+    if (eventsAsync.hasError) {
+      AppLogger.error(
+        'eventsInRangeProvider errored for $_monthRange',
+        tag: 'CalendarScreen',
+        error: eventsAsync.error,
+        stackTrace: eventsAsync.stackTrace,
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -127,7 +131,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   52.0,
                   240.0,
                 );
-                return _buildCalendar(events, membersById, rowHeight);
+                return _buildCalendar(
+                  events,
+                  membersById,
+                  rowHeight,
+                  currentUid,
+                );
               },
             ),
           ),
@@ -142,8 +151,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     List<Event> events,
     Map<String, User> membersById,
     double rowHeight,
+    String? currentUid,
   ) {
-    final byDay = _groupByDay(events);
+    final byDay = _groupByDay(
+      events,
+      range: _monthRange,
+      currentUid: currentUid,
+    );
 
     Widget cellBuilder(
       DateTime day, {
@@ -187,34 +201,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       onPageChanged: (focusedDay) {
         setState(() => _focusedDay = focusedDay);
       },
-      // シングルタップ＝日の選択（ハイライト）、ダブルタップ＝日別一覧へ遷移。
-      // table_calendar はダブルタップ口を持たないため、同じ日への連続タップを
-      // 時間差で自前判定する（子に onDoubleTap を足すとジェスチャー競合を招く）。
+      // 1 回目タップ＝日の選択（ハイライト）、選択済みの日を再タップ＝日別一覧へ遷移。
+      // Issue #45 / FR-4: ダブルタップの短い時間制限に依存せず、選択日への
+      // 明示的な 2 回目タップで日別一覧へ移動できるようにする。
       onDaySelected: (selectedDay, focusedDay) {
-        final now = DateTime.now();
-        final isDoubleTap =
-            _lastTappedDay != null &&
-            isSameDay(_lastTappedDay, selectedDay) &&
-            _lastTappedAt != null &&
-            now.difference(_lastTappedAt!) <= _doubleTapWindow;
+        final selectedDayAlreadyFocused = isSameDay(_selectedDay, selectedDay);
 
         setState(() {
           _selectedDay = selectedDay;
           _focusedDay = focusedDay;
         });
 
-        if (isDoubleTap) {
-          _lastTappedDay = null;
-          _lastTappedAt = null;
+        if (selectedDayAlreadyFocused) {
           // FR-4: 対象日を引数で渡して日別一覧へ遷移する。
           Navigator.pushNamed(
             context,
             AppRoutes.dayEvents,
             arguments: DateUtils.dateOnly(selectedDay),
           );
-        } else {
-          _lastTappedDay = selectedDay;
-          _lastTappedAt = now;
         }
       },
       calendarBuilders: CalendarBuilders<Event>(
@@ -227,20 +231,42 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Map<DateTime, List<Event>> _groupByDay(List<Event> events) {
+  Map<DateTime, List<Event>> _groupByDay(
+    List<Event> events, {
+    required DateRange range,
+    required String? currentUid,
+  }) {
     final map = <DateTime, List<Event>>{};
+    final firstVisibleDay = _dateKey(range.start);
+    final lastVisibleDay = _dateKey(
+      range.end,
+    ).subtract(const Duration(days: 1));
+
     for (final event in events) {
-      final key = _dateKey(event.startAt.toLocal());
-      map.putIfAbsent(key, () => []).add(event);
+      final eventStartDay = _dateKey(event.startAt.toLocal());
+      final eventEndDay = _dateKey(event.endAt.toLocal());
+      final firstEventDay = eventStartDay.isBefore(firstVisibleDay)
+          ? firstVisibleDay
+          : eventStartDay;
+      final lastEventDay = eventEndDay.isAfter(lastVisibleDay)
+          ? lastVisibleDay
+          : eventEndDay;
+
+      if (lastEventDay.isBefore(firstEventDay)) continue;
+
+      // FR-4: 既存の終日単日予定（startAt == endAt）を保つため終了日も含める。
+      for (
+        var visibleDay = firstEventDay;
+        !visibleDay.isAfter(lastEventDay);
+        visibleDay = visibleDay.add(const Duration(days: 1))
+      ) {
+        final key = _dateKey(visibleDay);
+        map.putIfAbsent(key, () => []).add(event);
+      }
     }
-    // 表示順を安定させる：終日を先頭、次に開始時刻順。
+    // 表示順を安定させる：自分が参加者の予定、終日、開始時刻の順。
     for (final list in map.values) {
-      list.sort((a, b) {
-        if (a.allDay != b.allDay) {
-          return a.allDay ? -1 : 1;
-        }
-        return a.startAt.compareTo(b.startAt);
-      });
+      list.sort((a, b) => compareEventsForDisplay(a, b, currentUid));
     }
     return map;
   }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
+import 'core/logger.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -17,5 +18,10 @@ Future<void> main() async {
     persistenceEnabled: true,
   );
 
-  runApp(const ProviderScope(child: KanSukeApp()));
+  runApp(
+    ProviderScope(
+      observers: const [LoggingProviderObserver()],
+      child: const KanSukeApp(),
+    ),
+  );
 }

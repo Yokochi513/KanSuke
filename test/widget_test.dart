@@ -75,7 +75,7 @@ void main() {
 
     expect(find.text('カレンダー'), findsOneWidget);
 
-    // カレンダーの日付ダブルタップで日別一覧へ遷移する（予定なしなので空状態）。
+    // カレンダーで選択済みの日付を再タップすると日別一覧へ遷移する（予定なしなので空状態）。
     final today = find.text('${DateTime.now().day}').first;
     await tester.tap(today);
     await tester.pump();
