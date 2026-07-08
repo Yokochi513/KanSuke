@@ -34,7 +34,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
   bool _initialized = false;
   Event? _editing; // 編集対象（新規は null）
-  late DateTime _date;
+  late DateTime _startDate;
+  late DateTime _endDate;
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   bool _allDay = false;
@@ -72,12 +73,14 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _participantIds.addAll(event.participantIds);
       final start = event.startAt.toLocal();
       final end = event.endAt.toLocal();
-      _date = DateUtils.dateOnly(start);
+      _startDate = DateUtils.dateOnly(start);
+      _endDate = DateUtils.dateOnly(end);
       _startTime = TimeOfDay.fromDateTime(start);
       _endTime = TimeOfDay.fromDateTime(end);
       _reminderOffsets.addAll(event.reminderOffsets);
     } else {
-      _date = DateUtils.dateOnly(args.initialDate!);
+      _startDate = DateUtils.dateOnly(args.initialDate!);
+      _endDate = _startDate;
       _startTime = const TimeOfDay(hour: 9, minute: 0);
       _endTime = const TimeOfDay(hour: 10, minute: 0);
       final uid = ref.read(currentUidProvider);
@@ -237,20 +240,26 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       children: [
         ListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('日付'),
-          trailing: Text(_formatDate(_date)),
-          onTap: _pickDate,
+          title: const Text('開始日'),
+          trailing: Text(_formatDate(_startDate)),
+          onTap: () => _pickDate(isStart: true),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('終了日'),
+          trailing: Text(_formatDate(_endDate)),
+          onTap: () => _pickDate(isStart: false),
         ),
         if (!_allDay) ...[
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('開始'),
+            title: const Text('開始時刻'),
             trailing: Text(_formatTime(_startTime)),
             onTap: () => _pickTime(isStart: true),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('終了'),
+            title: const Text('終了時刻'),
             trailing: Text(_formatTime(_endTime)),
             onTap: () => _pickTime(isStart: false),
           ),
@@ -286,15 +295,25 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     );
   }
 
-  Future<void> _pickDate() async {
+  Future<void> _pickDate({required bool isStart}) async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _date,
+      initialDate: isStart ? _startDate : _endDate,
       firstDate: DateTime(2020),
       lastDate: DateTime(2035, 12, 31),
     );
     if (picked != null) {
-      setState(() => _date = DateUtils.dateOnly(picked));
+      final pickedDate = DateUtils.dateOnly(picked);
+      setState(() {
+        if (isStart) {
+          _startDate = pickedDate;
+          if (_endDate.isBefore(_startDate)) {
+            _endDate = _startDate;
+          }
+        } else {
+          _endDate = pickedDate;
+        }
+      });
     }
   }
 
@@ -315,29 +334,29 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   }
 
   DateTime get _startAt => _allDay
-      ? _date
+      ? _startDate
       : DateTime(
-          _date.year,
-          _date.month,
-          _date.day,
+          _startDate.year,
+          _startDate.month,
+          _startDate.day,
           _startTime.hour,
           _startTime.minute,
         );
 
   DateTime get _endAt => _allDay
-      ? _date
+      ? _endDate
       : DateTime(
-          _date.year,
-          _date.month,
-          _date.day,
+          _endDate.year,
+          _endDate.month,
+          _endDate.day,
           _endTime.hour,
           _endTime.minute,
         );
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_allDay && _endAt.isBefore(_startAt)) {
-      _showSnack('終了は開始以降の時刻にしてください');
+    if (_endAt.isBefore(_startAt)) {
+      _showSnack(_allDay ? '終了日は開始日以降にしてください' : '終了は開始日時以降にしてください');
       return;
     }
     final uid = ref.read(currentUidProvider);
