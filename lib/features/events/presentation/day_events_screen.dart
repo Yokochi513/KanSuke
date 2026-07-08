@@ -82,25 +82,29 @@ class _EventTile extends StatelessWidget {
     final memoPreview = event.memo.trim();
     return ListTile(
       leading: _MemberDots(colors: memberColors),
-      isThreeLine: memoPreview.isNotEmpty,
       title: Text(event.title),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      subtitle: Row(
         children: [
-          Text(
-            _scheduleDetailsLabel(event, participantsLabel),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (memoPreview.isNotEmpty)
-            Text(
-              'メモ: $memoPreview',
+          Flexible(
+            child: Text(
+              _scheduleDetailsLabel(event, participantsLabel),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (memoPreview.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'メモ: $memoPreview',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
+          ],
         ],
       ),
       trailing: EventTypeBadge(event.type),
