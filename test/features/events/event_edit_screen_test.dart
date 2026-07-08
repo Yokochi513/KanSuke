@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -173,6 +174,31 @@ void main() {
     final data = (await _events(firestore)).single.data();
     expect(data['type'], 'confirmed');
     expect(data['reminderOffsets'], [30]);
+  });
+
+  testWidgets('時刻選択は24時間表記の縦スクロールピッカーで更新する', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await _tapVisible(tester, find.widgetWithText(ListTile, '開始'));
+
+    final picker = tester.widget<CupertinoDatePicker>(
+      find.byType(CupertinoDatePicker),
+    );
+    expect(picker.mode, CupertinoDatePickerMode.time);
+    expect(picker.use24hFormat, true);
+    expect(picker.minuteInterval, 1);
+    expect(picker.showTimeSeparator, true);
+
+    picker.onDateTimeChanged(DateTime(2026, 7, 5, 13, 45));
+    await tester.tap(find.text('完了'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('13:45'), findsOneWidget);
   });
 
   testWidgets('参加者を複数選択して保存する', (tester) async {
