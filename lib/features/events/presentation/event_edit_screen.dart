@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -508,14 +509,22 @@ class _TimePickerSheet extends StatelessWidget {
             ),
             Expanded(
               // NFR-1: iPhoneでの時刻指定を軽くするため、時計盤ではなく縦スクロールの24時間ピッカーにする。
-              child: CupertinoDatePicker(
-                mode: CupertinoDatePickerMode.time,
-                initialDateTime: initialDateTime,
-                minuteInterval: 1,
-                use24hFormat: true,
-                showTimeSeparator: true,
-                backgroundColor: theme.colorScheme.surface,
-                onDateTimeChanged: onDateTimeChanged,
+              // 既定の ScrollBehavior はマウスでのドラッグ操作を許可しない
+              // （マウスホイールでの回転のみ）ため、クリックしたまま上下に
+              // 流す操作もできるよう明示的に許可する。
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: initialDateTime,
+                  minuteInterval: 1,
+                  use24hFormat: true,
+                  showTimeSeparator: true,
+                  backgroundColor: theme.colorScheme.surface,
+                  onDateTimeChanged: onDateTimeChanged,
+                ),
               ),
             ),
           ],
