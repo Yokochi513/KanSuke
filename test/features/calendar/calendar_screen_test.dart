@@ -267,6 +267,36 @@ void main() {
     expect(find.text('テスト週間'), findsNWidgets(3));
   });
 
+  testWidgets('期間予定は開始日・終了日以外の角丸/枠線を外して連結して見える（Issue #56）', (tester) async {
+    // 2026/7/5(日)〜7/7(火) は同じ週（行）内に収まるため、中日は
+    // 左右とも角丸なし、開始日は左のみ・終了日は右のみ角丸になるはず。
+    final firestore = await _seedPeriodEvent();
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final bars = tester
+        .widgetList<EventBar>(
+          find.byWidgetPredicate(
+            (widget) => widget is EventBar && widget.title == 'テスト週間',
+          ),
+        )
+        .toList();
+
+    expect(bars, hasLength(3));
+    // 開始日（7/5）：左端は実際の開始日として角丸、右は翌日へ連結するため角丸なし。
+    expect(bars[0].roundLeft, isTrue);
+    expect(bars[0].roundRight, isFalse);
+    // 中日（7/6）：前後どちらにも連結するため両側とも角丸なし。
+    expect(bars[1].roundLeft, isFalse);
+    expect(bars[1].roundRight, isFalse);
+    // 終了日（7/7）：右端は実際の終了日として角丸、左は前日から連結するため角丸なし。
+    expect(bars[2].roundLeft, isFalse);
+    expect(bars[2].roundRight, isTrue);
+  });
+
   testWidgets('EventBar は確定=塗り・仮=枠付きで種別を区別する', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
