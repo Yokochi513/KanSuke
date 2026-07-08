@@ -21,6 +21,12 @@ service cloud.firestore {
       allow read: if isFamily();
     }
 
+    // FR-7: リリース時に CI (Admin SDK) が書き込む最新バージョン情報。
+    // クライアントからの書き込みは許可しない（読み取り専用）。
+    match /meta/release {
+      allow read: if isFamily();
+    }
+
     match /users/{uid}/devices/{token} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
