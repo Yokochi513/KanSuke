@@ -201,6 +201,47 @@ void main() {
     expect(find.text('13:45'), findsOneWidget);
   });
 
+  testWidgets('開始時刻を変更すると時間幅を保って終了時刻も更新する', (tester) async {
+    final firestore = await _seedMember();
+    final originalStartAt = DateTime(2026, 7, 5, 12);
+    final event = Event.create(
+      title: '昼の予定',
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: originalStartAt,
+      endAt: originalStartAt.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.tentative,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: 'me',
+      now: originalStartAt,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+
+    await _openEditor(tester, firestore, EventEditArgs.edit(event));
+    await _tapVisible(tester, find.widgetWithText(ListTile, '開始時刻'));
+
+    final picker = tester.widget<CupertinoDatePicker>(
+      find.byType(CupertinoDatePicker),
+    );
+    picker.onDateTimeChanged(DateTime(2026, 7, 5, 17));
+    await tester.tap(find.text('完了'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('17:00'), findsOneWidget);
+    expect(find.text('18:00'), findsOneWidget);
+
+    await _tapVisible(tester, find.text('保存'));
+
+    final data = (await _events(firestore)).single.data();
+    expect((data['startAt'] as Timestamp).toDate(), DateTime(2026, 7, 5, 17));
+    expect((data['endAt'] as Timestamp).toDate(), DateTime(2026, 7, 5, 18));
+  });
+
   testWidgets('参加者を複数選択して保存する', (tester) async {
     final firestore = await _seedMembers();
     await _openEditor(
