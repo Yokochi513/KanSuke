@@ -17,83 +17,148 @@ import 'event_type_badge.dart';
 /// 選択日の予定を参加者の色・種別バッジ・時刻・メモ付きで表示し、各項目や
 /// 新規作成から予定編集画面（#11）へ遷移する。対象日はルート引数（[DateTime]）
 /// で受け取る。
-class DayEventsScreen extends ConsumerWidget {
+///
+/// ヘッダー（AppBar「日別予定」）は固定のまま、日付見出しと一覧部分だけを
+/// [PageView] で横スクロール切り替えする（Issue #67）。前後日への移動を
+/// 新規画面遷移にすると開閉アニメーションが不自然になるため、同一画面内の
+/// ページ送りにしている。
+class DayEventsScreen extends ConsumerStatefulWidget {
   const DayEventsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DayEventsScreen> createState() => _DayEventsScreenState();
+}
+
+class _DayEventsScreenState extends ConsumerState<DayEventsScreen> {
+  // ルート引数で渡された日を中心に、前後 約136 年分のページ数を確保する。
+  // 実運用でこの範囲を使い切ることはない。
+  static const int _centerPage = 50000;
+  static const int _pageCount = _centerPage * 2 + 1;
+
+  bool _initialized = false;
+  late DateTime _baseDay;
+  late final PageController _pageController;
+  int _currentPage = _centerPage;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
     final arg = ModalRoute.of(context)?.settings.arguments;
-    final day = arg is DateTime
+    _baseDay = arg is DateTime
         ? DateUtils.dateOnly(arg)
         : DateUtils.dateOnly(DateTime.now());
-    final nextDay = day.add(const Duration(days: 1));
+    _pageController = PageController(initialPage: _centerPage);
+    _initialized = true;
+  }
 
-    final eventsAsync = ref.watch(
-      eventsInRangeProvider((start: day, end: nextDay)),
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  DateTime _dayForPage(int page) =>
+      _addCalendarDays(_baseDay, page - _centerPage);
+
+  void _goToPage(int page) {
+    _pageController.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
     );
-    final membersById = ref.watch(membersByIdProvider);
-    final currentUid = ref.watch(currentUidProvider);
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final currentDay = _dayForPage(_currentPage);
     return Scaffold(
       appBar: AppBar(title: const Text('日別予定')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.pushNamed(
           context,
           AppRoutes.eventEdit,
-          arguments: EventEditArgs.create(day),
+          arguments: EventEditArgs.create(currentDay),
         ),
         icon: const Icon(Icons.add),
         label: const Text('新規作成'),
       ),
-      body: Column(
-        children: [
-          _DayNavigationHeader(
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: _pageCount,
+        onPageChanged: (page) => setState(() => _currentPage = page),
+        itemBuilder: (context, page) {
+          final day = _dayForPage(page);
+          return _DayPage(
             day: day,
-            onPreviousDay: () => _replaceDay(context, day, -1),
-            onNextDay: () => _replaceDay(context, day, 1),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: eventsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stackTrace) {
-                AppLogger.error(
-                  'eventsInRangeProvider errored for $day-$nextDay',
-                  tag: 'DayEventsScreen',
-                  error: error,
-                  stackTrace: stackTrace,
-                );
-                return const Center(
-                  child: Text('予定を読み込めませんでした。通信環境を確認してください。'),
-                );
-              },
-              data: (events) {
-                if (events.isEmpty) {
-                  return const _EmptyState();
-                }
-                final orderedEvents = orderEventsForDisplay(events, currentUid);
-                return ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 88),
-                  itemCount: orderedEvents.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final event = orderedEvents[index];
-                    return _EventTile(event: event, membersById: membersById);
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+            onPreviousDay: () => _goToPage(page - 1),
+            onNextDay: () => _goToPage(page + 1),
+          );
+        },
       ),
     );
   }
+}
 
-  void _replaceDay(BuildContext context, DateTime day, int dayOffset) {
-    Navigator.pushReplacementNamed(
-      context,
-      AppRoutes.dayEvents,
-      arguments: _addCalendarDays(day, dayOffset),
+/// 1 日分の日付見出し＋予定一覧（[DayEventsScreen] の [PageView] の 1 ページ）。
+class _DayPage extends ConsumerWidget {
+  const _DayPage({
+    required this.day,
+    required this.onPreviousDay,
+    required this.onNextDay,
+  });
+
+  final DateTime day;
+  final VoidCallback onPreviousDay;
+  final VoidCallback onNextDay;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nextDay = day.add(const Duration(days: 1));
+    final eventsAsync = ref.watch(
+      eventsInRangeProvider((start: day, end: nextDay)),
+    );
+    final membersById = ref.watch(membersByIdProvider);
+    final currentUid = ref.watch(currentUidProvider);
+
+    return Column(
+      children: [
+        _DayNavigationHeader(
+          day: day,
+          onPreviousDay: onPreviousDay,
+          onNextDay: onNextDay,
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: eventsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, stackTrace) {
+              AppLogger.error(
+                'eventsInRangeProvider errored for $day-$nextDay',
+                tag: 'DayEventsScreen',
+                error: error,
+                stackTrace: stackTrace,
+              );
+              return const Center(child: Text('予定を読み込めませんでした。通信環境を確認してください。'));
+            },
+            data: (events) {
+              if (events.isEmpty) {
+                return const _EmptyState();
+              }
+              final orderedEvents = orderEventsForDisplay(events, currentUid);
+              return ListView.separated(
+                padding: const EdgeInsets.only(bottom: 88),
+                itemCount: orderedEvents.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final event = orderedEvents[index];
+                  return _EventTile(event: event, membersById: membersById);
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
