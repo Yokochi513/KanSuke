@@ -156,27 +156,22 @@ class _EventTile extends StatelessWidget {
     final memoPreview = event.memo.trim();
     return ListTile(
       leading: _MemberDots(colors: memberColors),
-      title: Text(event.title),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      title: _TitleLine(
+        title: event.title,
+        participantsLabel: participantsLabel,
+      ),
+      subtitle: Row(
         children: [
-          Text(
-            _scheduleLabel(event),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (participantsLabel != null)
-            Text(
-              '参加: $participantsLabel',
+          Flexible(
+            child: Text(
+              _scheduleLabel(event),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
             ),
-          if (memoPreview.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
+          ),
+          if (memoPreview.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Expanded(
               child: Text(
                 'メモ: $memoPreview',
                 maxLines: 1,
@@ -186,6 +181,7 @@ class _EventTile extends StatelessWidget {
                 ),
               ),
             ),
+          ],
         ],
       ),
       trailing: EventTypeBadge(event.type),
@@ -240,6 +236,40 @@ class _EventTile extends StatelessWidget {
 
   String _formatTime(DateTime dateTime) =>
       '${_two(dateTime.hour)}:${_two(dateTime.minute)}';
+}
+
+class _TitleLine extends StatelessWidget {
+  const _TitleLine({required this.title, required this.participantsLabel});
+
+  final String title;
+  final String? participantsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = participantsLabel;
+    return Row(
+      children: [
+        Flexible(
+          flex: 3,
+          child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        if (label != null) ...[
+          const SizedBox(width: 8),
+          Flexible(
+            flex: 2,
+            child: Text(
+              '参加: $label',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 /// 参加メンバーを色付きドットで並べる（FR-2、参加者の可視化）。

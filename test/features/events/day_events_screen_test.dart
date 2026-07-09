@@ -171,20 +171,28 @@ void main() {
     expect(find.textContaining('メモ: 資料を印刷して持っていく'), findsOneWidget);
   });
 
-  testWidgets('参加者が1人の予定でも参加者名を副次表示する', (tester) async {
+  testWidgets('参加者が1人の予定でも参加者名をタイトル横に表示する', (tester) async {
     final firestore = await _seed();
     await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
     await tester.pumpAndSettle();
 
     expect(find.text('参加: ぱぱ'), findsOneWidget);
+    final titleCenterY = tester.getCenter(find.text('打ち合わせ')).dy;
+    final participantsCenterY = tester.getCenter(find.text('参加: ぱぱ')).dy;
+
+    expect((titleCenterY - participantsCenterY).abs(), lessThan(4));
   });
 
-  testWidgets('参加者が複数いる予定は参加者名を副次表示する', (tester) async {
+  testWidgets('参加者が複数いる予定は参加者名をタイトル横に表示する', (tester) async {
     final firestore = await _seed(withParticipant: true);
     await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('参加: ぱぱ・まま'), findsOneWidget);
+    expect(find.text('参加: ぱぱ・まま'), findsOneWidget);
+    final titleCenterY = tester.getCenter(find.text('打ち合わせ')).dy;
+    final participantsCenterY = tester.getCenter(find.text('参加: ぱぱ・まま')).dy;
+
+    expect((titleCenterY - participantsCenterY).abs(), lessThan(4));
   });
 
   testWidgets('参加者がいる予定は先頭のドットが参加人数分になる', (tester) async {
