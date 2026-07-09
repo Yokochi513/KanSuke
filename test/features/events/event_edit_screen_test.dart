@@ -290,6 +290,50 @@ void main() {
     expect(data['id'], event.id); // 同一ドキュメント
   });
 
+  testWidgets('編集画面は作成者を表示し保存しても変更しない', (tester) async {
+    final firestore = await _seedMembers();
+    final start = DateTime(2026, 7, 5, 9);
+    final event = Event.create(
+      title: '別の人が入れた予定',
+      creatorId: 'other',
+      participantIds: const ['me'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.tentative,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: 'other',
+      now: start,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+
+    await _openEditor(tester, firestore, EventEditArgs.edit(event));
+
+    expect(find.text('作成者: まま'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('作成者: まま'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Align && widget.alignment == Alignment.centerRight,
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, 'タイトル変更');
+    await _tapVisible(tester, find.text('保存'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['title'], 'タイトル変更');
+    expect(data['creatorId'], 'other');
+    expect(data['updatedBy'], 'me');
+  });
+
   testWidgets('編集画面から削除するとソフト削除される', (tester) async {
     final firestore = await _seedMember();
     final start = DateTime(2026, 7, 5, 9);

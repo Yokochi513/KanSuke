@@ -42,10 +42,12 @@ class EventRepository {
     });
   }
 
-  /// 既存予定を全フィールド更新する。`updatedBy`/`updatedAt` を更新する。
+  /// 既存予定を更新する。`updatedBy`/`updatedAt` を更新する。
   Future<void> update(Event event, {required String updatedBy}) {
     final data = event.copyWith(updatedBy: updatedBy).toFirestore();
-    return _events.doc(event.id).set(data).catchError((
+    // FR-1: 作成者は予定を作った人の固定情報なので、編集保存では上書きしない。
+    data.remove('creatorId');
+    return _events.doc(event.id).update(data).catchError((
       Object error,
       StackTrace stackTrace,
     ) {
