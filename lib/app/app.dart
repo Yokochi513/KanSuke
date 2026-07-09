@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/application/auth_state.dart';
 import '../features/auth/presentation/sign_in_screen.dart';
 import '../features/calendar/presentation/calendar_screen.dart';
+import '../features/calendars/application/calendar_providers.dart';
+import '../features/calendars/presentation/calendar_edit_screen.dart';
+import '../features/calendars/presentation/calendar_management_screen.dart';
 import '../features/events/presentation/day_events_screen.dart';
 import '../features/events/presentation/event_edit_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
@@ -36,15 +39,23 @@ class KanSukeApp extends ConsumerWidget {
         error: (_, _) => const SignInScreen(
           initialErrorMessage: '認証状態を確認できませんでした。もう一度お試しください。',
         ),
-        data: (session) => session == null
-            ? const SignInScreen()
-            : const VersionCheckGate(child: CalendarScreen()),
+        data: (session) {
+          if (session != null) {
+            // FR-8: 既定カレンダーの存在を保証する副作用。画面はブロックしない。
+            ref.watch(calendarBootstrapProvider);
+          }
+          return session == null
+              ? const SignInScreen()
+              : const VersionCheckGate(child: CalendarScreen());
+        },
       ),
       routes: {
         AppRoutes.calendar: (_) => const CalendarScreen(),
         AppRoutes.dayEvents: (_) => const DayEventsScreen(),
         AppRoutes.eventEdit: (_) => const EventEditScreen(),
         AppRoutes.settings: (_) => const SettingsScreen(),
+        AppRoutes.calendarManagement: (_) => const CalendarManagementScreen(),
+        AppRoutes.calendarEdit: (_) => const CalendarEditScreen(),
       },
     );
   }

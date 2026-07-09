@@ -11,6 +11,7 @@ Event _buildEvent({
   EventType type = EventType.tentative,
   String creatorId = 'creator-1',
   String title = '打ち合わせ',
+  String calendarId = defaultCalendarId,
 }) {
   return Event(
     id: id,
@@ -27,6 +28,7 @@ Event _buildEvent({
     createdAt: startAt,
     updatedAt: startAt,
     deleted: false,
+    calendarId: calendarId,
   );
 }
 
@@ -105,6 +107,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
+          calendarId: defaultCalendarId,
         )
         .first;
     expect(visible, isEmpty);
@@ -149,10 +152,39 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
+          calendarId: defaultCalendarId,
         )
         .first;
 
     expect(events.map((event) => event.id), ['overlap-before', 'in-1', 'in-2']);
+  });
+
+  test('watchRange は calendarId が一致する予定だけを返す', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'default-calendar',
+        startAt: DateTime.utc(2026, 7, 10, 9),
+      ),
+      updatedBy: 'me',
+    );
+    await repository.create(
+      _buildEvent(
+        id: 'other-calendar',
+        startAt: DateTime.utc(2026, 7, 10, 9),
+        calendarId: 'calendar-2',
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: 'calendar-2',
+        )
+        .first;
+
+    expect(events.map((event) => event.id), ['other-calendar']);
   });
 
   test('1件の破損ドキュメントがあってもwatchRangeは他の予定を返す', () async {
@@ -163,6 +195,7 @@ void main() {
     // 型不正など何らかの理由でパースに失敗するドキュメントを模擬する。
     await firestore.collection('events').doc('broken').set({
       'deleted': false,
+      'calendarId': defaultCalendarId,
       'startAt': Timestamp.fromDate(DateTime.utc(2026, 7, 11, 9)),
       'endAt': Timestamp.fromDate(DateTime.utc(2026, 7, 11, 10)),
       'title': 123, // String のはずが不正な型
@@ -172,6 +205,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
+          calendarId: defaultCalendarId,
         )
         .first;
 

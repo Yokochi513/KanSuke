@@ -6,6 +6,8 @@ import '../../../core/color_utils.dart';
 import '../../../core/logger.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
+import '../../calendars/application/calendar_providers.dart';
+import '../../calendars/presentation/calendar_switcher.dart';
 import '../../users/application/user_providers.dart';
 import '../application/event_ordering.dart';
 import '../application/event_providers.dart';
@@ -73,7 +75,7 @@ class _DayEventsScreenState extends ConsumerState<DayEventsScreen> {
   Widget build(BuildContext context) {
     final currentDay = _dayForPage(_currentPage);
     return Scaffold(
-      appBar: AppBar(title: const Text('日別予定')),
+      appBar: AppBar(title: const CalendarSwitcherTitle()),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.pushNamed(
           context,
@@ -115,8 +117,9 @@ class _DayPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final nextDay = day.add(const Duration(days: 1));
+    final calendarId = ref.watch(selectedCalendarIdProvider);
     final eventsAsync = ref.watch(
-      eventsInRangeProvider((start: day, end: nextDay)),
+      eventsInRangeProvider((start: day, end: nextDay, calendarId: calendarId)),
     );
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);

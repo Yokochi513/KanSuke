@@ -19,6 +19,7 @@ void main() {
       createdAt: DateTime.utc(2026, 7, 1),
       updatedAt: DateTime.utc(2026, 7, 2),
       deleted: false,
+      calendarId: 'calendar-1',
     );
   }
 
@@ -42,6 +43,7 @@ void main() {
     expect(restored.createdAt, event.createdAt);
     expect(restored.updatedAt, event.updatedAt);
     expect(restored.deleted, event.deleted);
+    expect(restored.calendarId, event.calendarId);
     expect(map['id'], event.id);
   });
 
@@ -77,6 +79,15 @@ void main() {
     expect(restored.participantIds, isEmpty);
   });
 
+  test('calendarIdが未保存の既存ドキュメントは既定カレンダーにフォールバックする', () {
+    final map = buildEvent().toFirestore(useServerTimestamp: false);
+    map.remove('calendarId');
+
+    final restored = Event.fromMap('event-1', map);
+
+    expect(restored.calendarId, defaultCalendarId);
+  });
+
   test('memberIdsは参加者を重複なく並べる', () {
     final event = buildEvent().copyWith(
       participantIds: ['user-2', 'user-1', 'user-3', 'user-2'],
@@ -105,6 +116,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'user-1',
       now: now,
+      calendarId: 'calendar-1',
     );
 
     final first = create();

@@ -1,0 +1,87 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../app/routes.dart';
+import '../../../models/models.dart';
+import '../application/calendar_providers.dart';
+
+/// 月表示・日別一覧の AppBar タイトルに置く、カレンダー切替ボタン（FR-8）。
+///
+/// タップでボトムシートを開き、自分が参加しているカレンダーの中から表示対象を
+/// 選ぶ。既定表示は既定カレンダー（わが家）。シート下部から管理画面へも遷移できる。
+class CalendarSwitcherTitle extends ConsumerWidget {
+  const CalendarSwitcherTitle({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final calendars = ref.watch(myCalendarsProvider).asData?.value ?? const [];
+    final selectedId = ref.watch(selectedCalendarIdProvider);
+    final selectedName = calendars
+        .cast<Calendar?>()
+        .firstWhere((c) => c?.id == selectedId, orElse: () => null)
+        ?.name;
+
+    return InkWell(
+      onTap: () => _openSwitcher(context, ref, calendars, selectedId),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                selectedName ?? 'カレンダー',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Icon(Icons.expand_more),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSwitcher(
+    BuildContext context,
+    WidgetRef ref,
+    List<Calendar> calendars,
+    String selectedId,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final calendar in calendars)
+                ListTile(
+                  leading: Icon(
+                    calendar.id == selectedId
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                  ),
+                  title: Text(calendar.name),
+                  onTap: () {
+                    ref.read(selectedCalendarIdProvider.notifier).state =
+                        calendar.id;
+                    Navigator.pop(sheetContext);
+                  },
+                ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('カレンダーを管理'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.pushNamed(context, AppRoutes.calendarManagement);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}

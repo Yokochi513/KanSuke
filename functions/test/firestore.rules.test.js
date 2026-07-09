@@ -1,5 +1,6 @@
 "use strict";
 
+const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -8,10 +9,14 @@ const {
   initializeTestEnvironment,
 } = require("@firebase/rules-unit-testing");
 const {
+  collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  query,
   setDoc,
+  where,
 } = require("firebase/firestore");
 
 const projectId = "demo-kansuke";
@@ -30,6 +35,13 @@ async function seedFamilyMembers() {
     });
     await setDoc(doc(context.firestore(), "users/other-family-user"), {
       name: "Other Family",
+    });
+    // FR-8: 既定カレンダー（わが家）。calendarId 未設定の予定はここに
+    // 属するものとして扱う（firestore.rules の eventCalendarId 参照）。
+    await setDoc(doc(context.firestore(), "calendars/default"), {
+      name: "わが家",
+      memberIds: ["family-user", "other-family-user"],
+      creatorId: "family-user",
     });
   });
 }
@@ -128,5 +140,140 @@ describe("Firestore Security Rules (NFR-4)", () => {
     await assertSucceeds(getDoc(ownDevice));
     await assertFails(setDoc(otherDevice, {platform: "ios"}));
     await assertFails(getDoc(otherDevice));
+  });
+
+  it("calendarId未設定の予定は既定カレンダーのメンバーとして読み書きできる（FR-8）", async () => {
+    const event = doc(dbFor("family-user"), "events/legacy-event");
+
+    await assertSucceeds(setDoc(event, {
+      title: "Legacy event",
+      deleted: false,
+    }));
+    await assertSucceeds(getDoc(event));
+  });
+
+  it("calendars は参加者だけが読み書きでき、非参加者は不可（FR-8）", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "calendars/solo"), {
+        name: "自分専用",
+        memberIds: ["family-user"],
+        creatorId: "family-user",
+      });
+    });
+
+    const memberDb = dbFor("family-user");
+    const outsiderDb = dbFor("other-family-user");
+
+    await assertSucceeds(getDoc(doc(memberDb, "calendars/solo")));
+    await assertFails(getDoc(doc(outsiderDb, "calendars/solo")));
+    await assertFails(setDoc(doc(outsiderDb, "calendars/solo"), {
+      name: "乗っ取り",
+      memberIds: ["other-family-user"],
+    }));
+  });
+
+  it("calendars の作成は自分を含む場合のみ許可する（FR-8）", async () => {
+    const familyDb = dbFor("family-user");
+
+    await assertSucceeds(setDoc(doc(familyDb, "calendars/new-calendar"), {
+      name: "新規カレンダー",
+      memberIds: ["family-user"],
+      creatorId: "family-user",
+    }));
+    await assertFails(setDoc(doc(familyDb, "calendars/no-self"), {
+      name: "自分抜き",
+      memberIds: ["other-family-user"],
+      creatorId: "family-user",
+    }));
+  });
+
+  it("既定カレンダーには非メンバーでも自分を追加(参加)できるが、それ以外の変更はできない（FR-8）", async () => {
+    const newMemberDb = dbFor("new-family-user");
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users/new-family-user"), {
+        name: "New Family",
+      });
+    });
+
+    // 追加専用（既存メンバーを維持しつつ自分を足す）は許可される。
+    await assertSucceeds(setDoc(doc(newMemberDb, "calendars/default"), {
+      name: "わが家",
+      memberIds: ["family-user", "other-family-user", "new-family-user"],
+      creatorId: "family-user",
+    }, {merge: true}));
+
+    // 既存メンバーを消す・自分を含めない・名前を変える更新は許可されない。
+    await assertFails(setDoc(doc(newMemberDb, "calendars/default"), {
+      name: "わが家",
+      memberIds: ["new-family-user"],
+      creatorId: "family-user",
+    }, {merge: true}));
+    await assertFails(setDoc(doc(newMemberDb, "calendars/default"), {
+      name: "乗っ取り",
+      memberIds: ["family-user", "other-family-user", "new-family-user"],
+      creatorId: "family-user",
+    }, {merge: true}));
+  });
+
+  it("参加していないカレンダーの予定は読み書きできない（FR-8）", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "calendars/solo"), {
+        name: "自分専用",
+        memberIds: ["family-user"],
+        creatorId: "family-user",
+      });
+      await setDoc(doc(context.firestore(), "events/solo-event"), {
+        title: "自分専用の予定",
+        deleted: false,
+        calendarId: "solo",
+      });
+    });
+
+    const memberDb = dbFor("family-user");
+    const outsiderDb = dbFor("other-family-user");
+
+    await assertSucceeds(getDoc(doc(memberDb, "events/solo-event")));
+    await assertFails(getDoc(doc(outsiderDb, "events/solo-event")));
+    await assertFails(setDoc(doc(outsiderDb, "events/solo-event"), {
+      title: "Denied",
+    }, {merge: true}));
+    await assertFails(setDoc(doc(outsiderDb, "events/other-solo-event"), {
+      title: "Denied",
+      deleted: false,
+      calendarId: "solo",
+    }));
+  });
+
+  it("カレンダーIDで絞り込んだ一覧取得は、他カレンダーの予定を含めず拒否もされない（FR-8）", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "calendars/solo"), {
+        name: "自分専用",
+        memberIds: ["family-user"],
+        creatorId: "family-user",
+      });
+      await setDoc(doc(context.firestore(), "events/default-event"), {
+        title: "わが家の予定",
+        deleted: false,
+        calendarId: "default",
+      });
+      await setDoc(doc(context.firestore(), "events/solo-event"), {
+        title: "自分専用の予定",
+        deleted: false,
+        calendarId: "solo",
+      });
+    });
+
+    const memberDb = dbFor("family-user");
+    const defaultQuery = query(
+        collection(memberDb, "events"),
+        where("calendarId", "==", "default"),
+    );
+
+    // calendarId を実クエリの where 句として絞り込んでいるため、
+    // 他カレンダー（solo）の予定が同一コレクションに存在してもクエリ全体は
+    // 拒否されず、絞り込んだカレンダーの予定だけが返る。
+    const snapshot = await assertSucceeds(getDocs(defaultQuery));
+    const ids = snapshot.docs.map((d) => d.id);
+    assert.deepStrictEqual(ids, ["default-event"]);
   });
 });
