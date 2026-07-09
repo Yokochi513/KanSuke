@@ -59,7 +59,7 @@ void main() {
     expect(raw['updatedAt'], isA<Timestamp>());
   });
 
-  test('update はフィールドを差し替え updatedBy を本人にする', () async {
+  test('update は作成者を変えずにフィールドと updatedBy を更新する', () async {
     final event = _buildEvent(
       id: 'evt-1',
       startAt: DateTime.utc(2026, 7, 10, 9),
@@ -73,7 +73,7 @@ void main() {
 
     final raw = await readRaw('evt-1');
     expect(raw['title'], '変更後');
-    expect(raw['creatorId'], 'creator-2');
+    expect(raw['creatorId'], 'creator-1');
     expect(raw['updatedBy'], 'me');
   });
 

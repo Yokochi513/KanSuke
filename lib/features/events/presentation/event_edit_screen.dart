@@ -95,7 +95,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final members = ref.watch(familyMembersProvider).asData?.value ?? const [];
+    final membersAsync = ref.watch(familyMembersProvider);
+    final members = membersAsync.asData?.value ?? const [];
     final isEditing = _editing != null;
 
     return Scaffold(
@@ -152,7 +153,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                     maxLines: 3,
                   ),
                   const SizedBox(height: 16),
-                  _buildReminderField(),
+                  _buildReminderField(membersAsync),
                 ],
               ),
             ),
@@ -186,6 +187,41 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       onSelectionChanged: (selection) =>
           setState(() => _type = selection.first),
     );
+  }
+
+  /// FR-1: 作成者は予定作成時に固定される監査情報なので、編集時は小さく読み取り専用で示す。
+  Widget _buildCreatorCaption(AsyncValue<List<User>> membersAsync) {
+    final editing = _editing;
+    if (editing == null) return const SizedBox.shrink();
+
+    final creatorName = membersAsync.when(
+      data: (members) => _creatorName(members, editing.creatorId),
+      loading: () => '読み込み中',
+      error: (_, _) => '作成者を取得できません',
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(
+          '作成者: $creatorName',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.right,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ),
+    );
+  }
+
+  String _creatorName(List<User> members, String creatorId) {
+    for (final member in members) {
+      if (member.id == creatorId) {
+        return member.name;
+      }
+    }
+    return '不明な作成者';
   }
 
   /// 参加者の複数選択（FR-1・FR-2、基本設計 §6.1・§6.3）。1人以上の選択を必須とする。
@@ -271,7 +307,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     );
   }
 
-  Widget _buildReminderField() {
+  Widget _buildReminderField(AsyncValue<List<User>> membersAsync) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -294,6 +330,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
               ),
           ],
         ),
+        _buildCreatorCaption(membersAsync),
       ],
     );
   }
