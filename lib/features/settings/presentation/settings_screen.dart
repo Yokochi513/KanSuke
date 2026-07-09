@@ -142,6 +142,14 @@ class _ColorSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final uid = ref.watch(currentUidProvider);
     final currentColorHex = ref.watch(currentUserProvider).asData?.value?.color;
+    final currentColor = currentColorHex == null
+        ? null
+        : colorFromHex(currentColorHex);
+    final selectedPaletteColor =
+        currentColor != null &&
+        MemberColors.palette.any(
+          (paletteColor) => paletteColor.toARGB32() == currentColor.toARGB32(),
+        );
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -151,6 +159,7 @@ class _ColorSection extends ConsumerWidget {
         children: [
           for (final color in MemberColors.palette)
             _ColorSwatch(
+              key: ValueKey('member-color-${hexFromColor(color)}'),
               color: color,
               selected:
                   currentColorHex != null &&
@@ -161,14 +170,44 @@ class _ColorSection extends ConsumerWidget {
                         .read(userRepositoryProvider)
                         .updateColor(uid, hexFromColor(color)),
             ),
+          _CustomColorSwatch(
+            color: currentColor ?? MemberColors.palette.first,
+            selected: currentColor != null && !selectedPaletteColor,
+            onTap: uid == null
+                ? null
+                : () => _showCustomColorPicker(
+                    context,
+                    ref,
+                    uid,
+                    currentColor ?? MemberColors.palette.first,
+                  ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _showCustomColorPicker(
+    BuildContext context,
+    WidgetRef ref,
+    String uid,
+    Color initialColor,
+  ) async {
+    final userRepository = ref.read(userRepositoryProvider);
+    final selectedColor = await showDialog<Color>(
+      context: context,
+      builder: (context) => _RgbColorPickerDialog(initialColor: initialColor),
+    );
+    if (selectedColor == null) {
+      return;
+    }
+    await userRepository.updateColor(uid, hexFromColor(selectedColor));
   }
 }
 
 class _ColorSwatch extends StatelessWidget {
   const _ColorSwatch({
+    super.key,
     required this.color,
     required this.selected,
     required this.onTap,
@@ -180,25 +219,200 @@ class _ColorSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkResponse(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected
-                ? Theme.of(context).colorScheme.onSurface
-                : Colors.transparent,
-            width: 3,
+    return Tooltip(
+      message: '色 ${hexFromColor(color)}',
+      child: InkResponse(
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Colors.transparent,
+              width: 3,
+            ),
           ),
+          child: selected
+              ? Icon(Icons.check, color: _foregroundForSwatch(color))
+              : null,
         ),
-        child: selected ? const Icon(Icons.check, color: Colors.white) : null,
       ),
     );
   }
+}
+
+class _CustomColorSwatch extends StatelessWidget {
+  const _CustomColorSwatch({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Tooltip(
+      message: '好きな色を選ぶ',
+      child: InkResponse(
+        onTap: onTap,
+        child: Container(
+          key: const ValueKey('member-custom-color'),
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: selected ? color : scheme.surface,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? scheme.onSurface : scheme.outline,
+              width: selected ? 3 : 1,
+            ),
+          ),
+          child: Icon(
+            selected ? Icons.check : Icons.palette_outlined,
+            color: selected ? _foregroundForSwatch(color) : scheme.primary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RgbColorPickerDialog extends StatefulWidget {
+  const _RgbColorPickerDialog({required this.initialColor});
+
+  final Color initialColor;
+
+  @override
+  State<_RgbColorPickerDialog> createState() => _RgbColorPickerDialogState();
+}
+
+class _RgbColorPickerDialogState extends State<_RgbColorPickerDialog> {
+  late int _redValue;
+  late int _greenValue;
+  late int _blueValue;
+
+  Color get _selectedColor =>
+      Color.fromARGB(255, _redValue, _greenValue, _blueValue);
+
+  @override
+  void initState() {
+    super.initState();
+    final initialColorValue = widget.initialColor.toARGB32();
+    _redValue = (initialColorValue >> 16) & 0xFF;
+    _greenValue = (initialColorValue >> 8) & 0xFF;
+    _blueValue = initialColorValue & 0xFF;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('色を選択'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 64,
+              decoration: BoxDecoration(
+                color: _selectedColor,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                hexFromColor(_selectedColor),
+                style: TextStyle(
+                  color: _foregroundForSwatch(_selectedColor),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _ColorChannelSlider(
+              label: '赤',
+              value: _redValue,
+              activeColor: Colors.red.shade700,
+              onChanged: (value) => setState(() => _redValue = value),
+            ),
+            _ColorChannelSlider(
+              label: '緑',
+              value: _greenValue,
+              activeColor: Colors.green.shade700,
+              onChanged: (value) => setState(() => _greenValue = value),
+            ),
+            _ColorChannelSlider(
+              label: '青',
+              value: _blueValue,
+              activeColor: Colors.blue.shade700,
+              onChanged: (value) => setState(() => _blueValue = value),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_selectedColor),
+          child: const Text('決定'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ColorChannelSlider extends StatelessWidget {
+  const _ColorChannelSlider({
+    required this.label,
+    required this.value,
+    required this.activeColor,
+    required this.onChanged,
+  });
+
+  final String label;
+  final int value;
+  final Color activeColor;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(width: 32, child: Text(label)),
+        Expanded(
+          child: Slider(
+            min: 0,
+            max: 255,
+            divisions: 255,
+            value: value.toDouble(),
+            label: value.toString(),
+            activeColor: activeColor,
+            onChanged: (sliderValue) => onChanged(sliderValue.round()),
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(value.toString(), textAlign: TextAlign.end),
+        ),
+      ],
+    );
+  }
+}
+
+Color _foregroundForSwatch(Color color) {
+  return color.computeLuminance() > 0.5 ? Colors.black : Colors.white;
 }
 
 /// 通知許可の状態表示と要求導線（実トークン登録は #13）。

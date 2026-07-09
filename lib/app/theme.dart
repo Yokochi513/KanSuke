@@ -6,6 +6,8 @@ abstract final class MemberColors {
     Color(0xFFD84315),
     Color(0xFF2E7D32),
     Color(0xFF6A1B9A),
+    Color(0xFFC2185B),
+    Color(0xFFFDD835),
   ];
 }
 
