@@ -70,6 +70,28 @@ Future<void> _openEditor(
   await tester.pumpAndSettle();
 }
 
+/// 参加者の異なる2つのカレンダー（既定＋自分専用）を投入する（FR-8）。
+Future<FakeFirebaseFirestore> _seedCalendars(
+  FakeFirebaseFirestore firestore,
+) async {
+  final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
+  await firestore.collection('calendars').doc(defaultCalendarId).set({
+    'name': 'わが家',
+    'memberIds': ['me', 'other'],
+    'creatorId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  await firestore.collection('calendars').doc('solo').set({
+    'name': '自分専用',
+    'memberIds': ['me'],
+    'creatorId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  return firestore;
+}
+
 Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _events(
   FakeFirebaseFirestore firestore,
 ) async {
@@ -216,6 +238,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: originalStartAt,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -273,6 +296,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -305,6 +329,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'other',
       now: start,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -348,6 +373,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -361,5 +387,46 @@ void main() {
 
     final data = (await _events(firestore)).single.data();
     expect(data['deleted'], true);
+  });
+
+  testWidgets('新規作成した予定にはカレンダーIDが保存される', (tester) async {
+    final firestore = await _seedCalendars(await _seedMember());
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '打ち合わせ');
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['calendarId'], defaultCalendarId);
+  });
+
+  testWidgets('カレンダーを切り替えると参加者候補がそのカレンダーの参加者に絞り込まれる', (tester) async {
+    final firestore = await _seedCalendars(await _seedMembers());
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    // 既定カレンダー（わが家）では、まま も参加者候補に含まれる。
+    expect(find.widgetWithText(FilterChip, 'まま'), findsOneWidget);
+
+    await _tapVisible(tester, find.byType(DropdownButtonFormField<String>));
+    await _tapVisible(tester, find.text('自分専用'));
+
+    // 自分専用カレンダーには自分しか参加していないため、まま は候補から消える。
+    expect(find.widgetWithText(FilterChip, 'まま'), findsNothing);
+    expect(find.widgetWithText(FilterChip, 'ぱぱ'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).first, '一人の予定');
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['calendarId'], 'solo');
+    expect(data['participantIds'], ['me']);
   });
 }

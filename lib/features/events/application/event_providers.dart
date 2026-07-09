@@ -9,6 +9,10 @@ import '../data/event_repository.dart';
 /// レコードの構造的等価性により、同じ期間なら同一ストリームを共有する。
 typedef DateRange = ({DateTime start, DateTime end});
 
+/// 期間＋対象カレンダーを表す値。`StreamProvider.family` の引数キーに用いる
+/// （FR-8）。レコードの構造的等価性により、同じ条件なら同一ストリームを共有する。
+typedef EventQuery = ({DateTime start, DateTime end, String calendarId});
+
 /// [EventRepository]。Firestore のみに依存し、認証状態には依存しない。
 ///
 /// 書き込みの `updatedBy` は呼び出し側が [currentUidProvider] を読んで渡す。
@@ -18,12 +22,17 @@ final eventRepositoryProvider = Provider<EventRepository>((ref) {
   return EventRepository(firestore: ref.watch(firestoreProvider));
 });
 
-/// 指定期間の予定をリアルタイムに供給する（FR-4 の月表示・日別一覧が購読）。
-final eventsInRangeProvider = StreamProvider.family<List<Event>, DateRange>((
+/// 指定期間・指定カレンダーの予定をリアルタイムに供給する
+/// （FR-4 の月表示・日別一覧、FR-8 のカレンダー切替が購読）。
+final eventsInRangeProvider = StreamProvider.family<List<Event>, EventQuery>((
   ref,
-  range,
+  query,
 ) {
   return ref
       .watch(eventRepositoryProvider)
-      .watchRange(start: range.start, end: range.end);
+      .watchRange(
+        start: query.start,
+        end: query.end,
+        calendarId: query.calendarId,
+      );
 });

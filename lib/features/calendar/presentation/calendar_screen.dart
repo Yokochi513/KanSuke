@@ -10,6 +10,8 @@ import '../../../core/japanese_holidays.dart';
 import '../../../core/logger.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
+import '../../calendars/application/calendar_providers.dart';
+import '../../calendars/presentation/calendar_switcher.dart';
 import '../../events/application/event_ordering.dart';
 import '../../events/application/event_providers.dart';
 import '../../users/application/user_providers.dart';
@@ -91,13 +93,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final visibleRange = _visibleCalendarRange;
-    final eventsAsync = ref.watch(eventsInRangeProvider(visibleRange));
+    final calendarId = ref.watch(selectedCalendarIdProvider);
+    final eventsAsync = ref.watch(
+      eventsInRangeProvider((
+        start: visibleRange.start,
+        end: visibleRange.end,
+        calendarId: calendarId,
+      )),
+    );
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
     final events = eventsAsync.asData?.value ?? const <Event>[];
     if (eventsAsync.hasError) {
       AppLogger.error(
-        'eventsInRangeProvider errored for $visibleRange',
+        'eventsInRangeProvider errored for $visibleRange/$calendarId',
         tag: 'CalendarScreen',
         error: eventsAsync.error,
         stackTrace: eventsAsync.stackTrace,
@@ -106,7 +115,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('カレンダー'),
+        title: const CalendarSwitcherTitle(),
         actions: [
           IconButton(
             tooltip: '設定',

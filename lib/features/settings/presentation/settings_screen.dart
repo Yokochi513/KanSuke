@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../app/routes.dart';
 import '../../../app/theme.dart';
 import '../../../core/color_utils.dart';
 import '../../auth/application/auth_state.dart';
@@ -31,6 +32,9 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('通知'),
           const _NotificationSection(),
+          const Divider(),
+          const _SectionHeader('カレンダー'),
+          const _CalendarManagementSection(),
           const Divider(),
           const _SectionHeader('フィードバック'),
           const _FeedbackSection(),
@@ -440,6 +444,22 @@ class _NotificationSection extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// カレンダーの新規作成・名前や参加者の編集画面への導線（FR-8）。
+class _CalendarManagementSection extends StatelessWidget {
+  const _CalendarManagementSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.calendar_month_outlined),
+      title: const Text('カレンダー管理'),
+      subtitle: const Text('作成・名前や参加者の編集'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.pushNamed(context, AppRoutes.calendarManagement),
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kansuke/app/routes.dart';
 import 'package:kansuke/app/theme.dart';
 import 'package:kansuke/core/color_utils.dart';
 import 'package:kansuke/core/firebase_providers.dart';
@@ -133,6 +134,11 @@ void main() {
   });
 
   testWidgets('サインアウトできる', (tester) async {
+    // FR-8: カレンダーセクション追加で一覧が伸びたため、既定のテスト表示領域では
+    // 末尾の要素がリストの描画範囲外になる。ensureVisible が要素を見つけられる
+    // よう表示領域を広げる。
+    await tester.binding.setSurfaceSize(const Size(400, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository();
     await tester.pumpWidget(
@@ -153,6 +159,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(auth.signOutCount, 1);
+  });
+
+  testWidgets('カレンダー管理をタップすると管理画面へ遷移する', (tester) async {
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: MaterialApp(
+          home: const SettingsScreen(),
+          routes: {
+            AppRoutes.calendarManagement: (_) =>
+                const Scaffold(body: Text('CALENDAR_MANAGEMENT')),
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('カレンダー管理'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('CALENDAR_MANAGEMENT'), findsOneWidget);
   });
 }
 

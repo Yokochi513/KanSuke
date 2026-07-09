@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 
+import 'calendar.dart';
 import 'firestore_serialization.dart';
 
 enum EventType {
@@ -34,6 +35,7 @@ final class Event {
     required this.createdAt,
     required this.updatedAt,
     required this.deleted,
+    required this.calendarId,
   }) : participantIds = UnmodifiableListView(participantIds),
        reminderOffsets = UnmodifiableListView(reminderOffsets);
 
@@ -49,6 +51,7 @@ final class Event {
     required List<int> reminderOffsets,
     required String updatedBy,
     required DateTime now,
+    required String calendarId,
     Uuid uuid = const Uuid(),
   }) {
     return Event(
@@ -66,6 +69,7 @@ final class Event {
       createdAt: now,
       updatedAt: now,
       deleted: false,
+      calendarId: calendarId,
     );
   }
 
@@ -109,6 +113,9 @@ final class Event {
         pendingWriteEstimate: DateTime.now().toUtc(),
       ),
       deleted: data['deleted'] as bool,
+      // FR-8: 複数カレンダー機能導入前のドキュメントには calendarId が
+      // 存在しないため、既定カレンダー（わが家）に属するものとして扱う。
+      calendarId: (data['calendarId'] as String?) ?? defaultCalendarId,
     );
   }
 
@@ -126,6 +133,7 @@ final class Event {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool deleted;
+  final String calendarId;
 
   /// 色分け表示（月表示の分割バー・日別一覧の複数ドット）で使う表示順の ID 一覧。
   ///
@@ -159,6 +167,7 @@ final class Event {
         useServerTimestamp: useServerTimestamp,
       ),
       'deleted': deleted,
+      'calendarId': calendarId,
     };
   }
 
@@ -177,6 +186,7 @@ final class Event {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? deleted,
+    String? calendarId,
   }) {
     return Event(
       id: id ?? this.id,
@@ -193,6 +203,7 @@ final class Event {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deleted: deleted ?? this.deleted,
+      calendarId: calendarId ?? this.calendarId,
     );
   }
 }

@@ -32,6 +32,7 @@ Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
     reminderOffsets: const [60],
     updatedBy: 'me',
     now: start,
+    calendarId: defaultCalendarId,
   );
   await firestore
       .collection('events')
@@ -73,6 +74,7 @@ Future<FakeFirebaseFirestore> _seedManyOnOneDay({
       reminderOffsets: const [],
       updatedBy: creator,
       now: start,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -115,6 +117,7 @@ Future<FakeFirebaseFirestore> _seedCurrentUserPriority({
       reminderOffsets: const [],
       updatedBy: participantId,
       now: start,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -145,6 +148,7 @@ Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
     reminderOffsets: const [],
     updatedBy: 'me',
     now: start,
+    calendarId: defaultCalendarId,
   );
   await firestore
       .collection('events')
@@ -178,6 +182,7 @@ Future<FakeFirebaseFirestore> _seedAdjacentMonthEvents() async {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: eventSeed.startAt,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -501,6 +506,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
