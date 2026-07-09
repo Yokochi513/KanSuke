@@ -39,12 +39,50 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 2 番目のパレット色を選ぶ。
-    await tester.tap(find.byType(InkResponse).at(1));
+    expect(MemberColors.palette, hasLength(6));
+
+    final secondPaletteColor = MemberColors.palette[1];
+    await tester.tap(
+      find.byKey(ValueKey('member-color-${hexFromColor(secondPaletteColor)}')),
+    );
     await tester.pumpAndSettle();
 
     final doc = await firestore.collection('users').doc('me').get();
-    expect(doc.data()!['color'], hexFromColor(MemberColors.palette[1]));
+    expect(doc.data()!['color'], hexFromColor(secondPaletteColor));
+  });
+
+  testWidgets('カスタム色を選ぶと users/{uid}.color が更新される', (tester) async {
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('member-custom-color')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('色を選択'), findsOneWidget);
+
+    tester.widget<Slider>(find.byType(Slider).at(0)).onChanged!(255);
+    await tester.pump();
+    tester.widget<Slider>(find.byType(Slider).at(1)).onChanged!(51);
+    await tester.pump();
+    tester.widget<Slider>(find.byType(Slider).at(2)).onChanged!(102);
+    await tester.pump();
+
+    expect(find.text('#FF3366'), findsOneWidget);
+
+    await tester.tap(find.text('決定'));
+    await tester.pumpAndSettle();
+
+    final doc = await firestore.collection('users').doc('me').get();
+    expect(doc.data()!['color'], '#FF3366');
   });
 
   testWidgets('自分の名前を変更すると users/{uid}.name が更新される', (tester) async {
