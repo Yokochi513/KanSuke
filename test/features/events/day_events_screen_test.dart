@@ -15,6 +15,7 @@ final _day = DateTime(2026, 7, 5);
 Future<FakeFirebaseFirestore> _seed({
   bool withEvent = true,
   bool withParticipant = false,
+  List<String>? participantIds,
   String memo = '',
 }) async {
   final firestore = FakeFirebaseFirestore();
@@ -36,10 +37,13 @@ Future<FakeFirebaseFirestore> _seed({
   }
   if (withEvent) {
     final start = DateTime(2026, 7, 5, 9);
+    final eventParticipantIds =
+        participantIds ??
+        (withParticipant ? const ['me', 'other'] : const ['me']);
     final event = Event.create(
       title: '打ち合わせ',
       creatorId: 'me',
-      participantIds: withParticipant ? const ['me', 'other'] : const [],
+      participantIds: eventParticipantIds,
       startAt: start,
       endAt: start.add(const Duration(hours: 1)),
       allDay: false,
@@ -111,9 +115,15 @@ Widget _wrap(
     child: MaterialApp(
       onGenerateRoute: (settings) {
         if (settings.name == AppRoutes.dayEvents) {
+          final effectiveDay = settings.arguments is DateTime
+              ? DateUtils.dateOnly(settings.arguments! as DateTime)
+              : routeDay;
           return MaterialPageRoute<void>(
             builder: (_) => const DayEventsScreen(),
-            settings: RouteSettings(name: settings.name, arguments: routeDay),
+            settings: RouteSettings(
+              name: settings.name,
+              arguments: effectiveDay,
+            ),
           );
         }
         if (settings.name == AppRoutes.eventEdit) {
@@ -159,6 +169,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('メモ: 資料を印刷して持っていく'), findsOneWidget);
+  });
+
+  testWidgets('参加者が1人の予定でも参加者名を副次表示する', (tester) async {
+    final firestore = await _seed();
+    await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('参加: ぱぱ'), findsOneWidget);
   });
 
   testWidgets('参加者が複数いる予定は参加者名を副次表示する', (tester) async {
@@ -229,6 +247,46 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('予定はありません'), findsOneWidget);
+  });
+
+  testWidgets('前日・翌日ボタンで日別一覧の日付を切り替えられる', (tester) async {
+    final firestore = await _seed(withEvent: false);
+    final nextDay = DateTime(2026, 7, 6, 9);
+    final nextDayEvent = Event.create(
+      title: '翌日の予定',
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: nextDay,
+      endAt: nextDay.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: 'me',
+      now: nextDay,
+    );
+    await firestore
+        .collection('events')
+        .doc(nextDayEvent.id)
+        .set(nextDayEvent.toFirestore(useServerTimestamp: false));
+
+    await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2026/07/05 の予定'), findsOneWidget);
+    expect(find.text('翌日の予定'), findsNothing);
+
+    await tester.tap(find.byTooltip('翌日の予定へ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2026/07/06 の予定'), findsOneWidget);
+    expect(find.text('翌日の予定'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('前日の予定へ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2026/07/05 の予定'), findsOneWidget);
+    expect(find.text('翌日の予定'), findsNothing);
   });
 
   testWidgets('項目タップで編集画面へ既存予定を渡して遷移する', (tester) async {

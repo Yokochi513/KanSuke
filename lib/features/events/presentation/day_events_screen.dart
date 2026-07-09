@@ -35,7 +35,7 @@ class DayEventsScreen extends ConsumerWidget {
     final currentUid = ref.watch(currentUidProvider);
 
     return Scaffold(
-      appBar: AppBar(title: Text('${_formatDate(day)} の予定')),
+      appBar: AppBar(title: const Text('日別予定')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.pushNamed(
           context,
@@ -45,38 +45,100 @@ class DayEventsScreen extends ConsumerWidget {
         icon: const Icon(Icons.add),
         label: const Text('新規作成'),
       ),
-      body: eventsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stackTrace) {
-          AppLogger.error(
-            'eventsInRangeProvider errored for $day-$nextDay',
-            tag: 'DayEventsScreen',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          return const Center(child: Text('予定を読み込めませんでした。通信環境を確認してください。'));
-        },
-        data: (events) {
-          if (events.isEmpty) {
-            return const _EmptyState();
-          }
-          final orderedEvents = orderEventsForDisplay(events, currentUid);
-          return ListView.separated(
-            padding: const EdgeInsets.only(bottom: 88),
-            itemCount: orderedEvents.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final event = orderedEvents[index];
-              return _EventTile(event: event, membersById: membersById);
-            },
-          );
-        },
+      body: Column(
+        children: [
+          _DayNavigationHeader(
+            day: day,
+            onPreviousDay: () => _replaceDay(context, day, -1),
+            onNextDay: () => _replaceDay(context, day, 1),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: eventsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stackTrace) {
+                AppLogger.error(
+                  'eventsInRangeProvider errored for $day-$nextDay',
+                  tag: 'DayEventsScreen',
+                  error: error,
+                  stackTrace: stackTrace,
+                );
+                return const Center(
+                  child: Text('予定を読み込めませんでした。通信環境を確認してください。'),
+                );
+              },
+              data: (events) {
+                if (events.isEmpty) {
+                  return const _EmptyState();
+                }
+                final orderedEvents = orderEventsForDisplay(events, currentUid);
+                return ListView.separated(
+                  padding: const EdgeInsets.only(bottom: 88),
+                  itemCount: orderedEvents.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final event = orderedEvents[index];
+                    return _EventTile(event: event, membersById: membersById);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  String _formatDate(DateTime day) =>
-      '${day.year}/${_two(day.month)}/${_two(day.day)}';
+  void _replaceDay(BuildContext context, DateTime day, int dayOffset) {
+    Navigator.pushReplacementNamed(
+      context,
+      AppRoutes.dayEvents,
+      arguments: _addCalendarDays(day, dayOffset),
+    );
+  }
+}
+
+/// 日別画面内で前後の日へ移動する操作を提供する（Issue #53 / NFR-1）。
+class _DayNavigationHeader extends StatelessWidget {
+  const _DayNavigationHeader({
+    required this.day,
+    required this.onPreviousDay,
+    required this.onNextDay,
+  });
+
+  final DateTime day;
+  final VoidCallback onPreviousDay;
+  final VoidCallback onNextDay;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: '前日の予定へ',
+            onPressed: onPreviousDay,
+            icon: const Icon(Icons.chevron_left),
+          ),
+          Expanded(
+            child: Text(
+              '${_formatDate(day)} の予定',
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.titleMedium,
+            ),
+          ),
+          IconButton(
+            tooltip: '翌日の予定へ',
+            onPressed: onNextDay,
+            icon: const Icon(Icons.chevron_right),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _EventTile extends StatelessWidget {
@@ -95,18 +157,26 @@ class _EventTile extends StatelessWidget {
     return ListTile(
       leading: _MemberDots(colors: memberColors),
       title: Text(event.title),
-      subtitle: Row(
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Flexible(
-            child: Text(
-              _scheduleDetailsLabel(event, participantsLabel),
+          Text(
+            _scheduleLabel(event),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (participantsLabel != null)
+            Text(
+              '参加: $participantsLabel',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
-          if (memoPreview.isNotEmpty) ...[
-            const SizedBox(width: 12),
-            Expanded(
+          if (memoPreview.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
               child: Text(
                 'メモ: $memoPreview',
                 maxLines: 1,
@@ -116,7 +186,6 @@ class _EventTile extends StatelessWidget {
                 ),
               ),
             ),
-          ],
         ],
       ),
       trailing: EventTypeBadge(event.type),
@@ -128,20 +197,15 @@ class _EventTile extends StatelessWidget {
     );
   }
 
-  String _scheduleDetailsLabel(Event event, String? participantsLabel) {
-    final scheduleLabel = _scheduleLabel(event);
-    if (participantsLabel == null) return scheduleLabel;
-    return '$scheduleLabel・参加: $participantsLabel';
-  }
-
-  /// 参加者名を「・」区切りで返す。2人以上の予定でのみ表示する（1人だけの
-  /// 予定は色ドットのみで十分判別できるため、テキストは省略する）。
+  /// 参加者名を「・」区切りで返す（FR-2、Issue #53）。
+  ///
+  /// 色だけでは誰の予定か判別しにくいため、1人予定でも名前を表示する。
   String? _participantsLabel(Event event) {
     final ids = event.memberIds;
-    if (ids.length <= 1) return null;
     final names = ids
-        .map((id) => membersById[id]?.name)
+        .map((id) => membersById[id]?.name.trim())
         .whereType<String>()
+        .where((name) => name.isNotEmpty)
         .toList();
     if (names.isEmpty) return null;
     return names.join('・');
@@ -232,3 +296,9 @@ class _EmptyState extends StatelessWidget {
 }
 
 String _two(int value) => value.toString().padLeft(2, '0');
+
+String _formatDate(DateTime day) =>
+    '${day.year}/${_two(day.month)}/${_two(day.day)}';
+
+DateTime _addCalendarDays(DateTime day, int days) =>
+    DateTime(day.year, day.month, day.day + days);
