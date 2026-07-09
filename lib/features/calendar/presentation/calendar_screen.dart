@@ -457,6 +457,10 @@ class _DayCell extends StatelessWidget {
                     type: segment.event.type,
                     roundLeft: segment.roundLeft,
                     roundRight: segment.roundRight,
+                    // Issue #56: 複数日にまたがる予定は、週内で最初に現れる日
+                    // （roundLeft、実際の開始日または週の折り返し先頭）にのみ
+                    // タイトルを出す。毎日同じ名前が並ぶと煩わしいため。
+                    showTitle: segment.roundLeft,
                   ),
                 ),
             if (hidden > 0)
@@ -562,6 +566,10 @@ class _HolidayLabel extends StatelessWidget {
 /// [roundLeft] / [roundRight] は、複数日にまたがる予定（Issue #56）で
 /// 実際の開始・終了日以外の角丸/枠線を外すために使う。これにより隣接
 /// する日のマスに描かれた同じ予定のバーと視覚的につながって見える。
+///
+/// [showTitle] を false にするとタイトルを描画しない。複数日にまたがる
+/// 予定は毎日同じ名前が並ぶと煩わしいため、週内で最初に現れる日にのみ
+/// 表示する運用にしている（呼び出し側で制御）。
 class EventBar extends StatelessWidget {
   const EventBar({
     required this.title,
@@ -569,6 +577,7 @@ class EventBar extends StatelessWidget {
     required this.type,
     this.roundLeft = true,
     this.roundRight = true,
+    this.showTitle = true,
     super.key,
   });
 
@@ -577,6 +586,7 @@ class EventBar extends StatelessWidget {
   final EventType type;
   final bool roundLeft;
   final bool roundRight;
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -639,23 +649,24 @@ class EventBar extends StatelessWidget {
               },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.0,
-                  fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
-                  color: textColor,
+          if (showTitle)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.0,
+                    fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
+                    color: textColor,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
