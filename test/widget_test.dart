@@ -8,6 +8,7 @@ import 'package:kansuke/app/app.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/auth/data/auth_repository.dart';
+import 'package:kansuke/features/notifications/application/notification_providers.dart';
 
 void main() {
   testWidgets('未ログインならサインイン画面を表示しGoogle認証後はカレンダーへ切り替わる', (tester) async {
@@ -123,6 +124,11 @@ Widget _testApp(
       appleSignInAvailableProvider.overrideWithValue(appleSignInAvailable),
       // カレンダーが購読する Firestore はテスト用の fake に差し替える。
       firestoreProvider.overrideWithValue(FakeFirebaseFirestore()),
+      // FR-5: 実 FirebaseMessaging には触れず、通知ブートストラップを無効化する。
+      notificationBootstrapProvider.overrideWith((ref) async {}),
+      deviceRegistrationServiceProvider.overrideWithValue(
+        _NoopDeviceRegistrationService(),
+      ),
     ],
     child: const KanSukeApp(),
   );
@@ -181,4 +187,12 @@ class FakeAuthRepository implements AuthRepository {
     _session = null;
     _controller.add(null);
   }
+}
+
+class _NoopDeviceRegistrationService implements DeviceRegistrationService {
+  @override
+  Future<void> registerCurrentToken(String uid) async {}
+
+  @override
+  Future<void> unregisterForSignOut(String uid) async {}
 }

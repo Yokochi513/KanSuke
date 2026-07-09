@@ -10,6 +10,7 @@ import '../features/calendars/presentation/calendar_edit_screen.dart';
 import '../features/calendars/presentation/calendar_management_screen.dart';
 import '../features/events/presentation/day_events_screen.dart';
 import '../features/events/presentation/event_edit_screen.dart';
+import '../features/notifications/application/notification_providers.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/version_check/presentation/version_check_gate.dart';
 import 'routes.dart';
@@ -43,6 +44,8 @@ class KanSukeApp extends ConsumerWidget {
           if (session != null) {
             // FR-8: 既定カレンダーの存在を保証する副作用。画面はブロックしない。
             ref.watch(calendarBootstrapProvider);
+            // FR-5: 通知権限リクエストと FCM トークン登録。画面はブロックしない。
+            ref.watch(notificationBootstrapProvider);
           }
           return session == null
               ? const SignInScreen()

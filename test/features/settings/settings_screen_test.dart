@@ -11,6 +11,7 @@ import 'package:kansuke/core/color_utils.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/auth/data/auth_repository.dart';
+import 'package:kansuke/features/notifications/application/notification_providers.dart';
 import 'package:kansuke/features/settings/application/notification_permission.dart';
 import 'package:kansuke/features/settings/presentation/settings_screen.dart';
 
@@ -119,6 +120,9 @@ void main() {
           notificationPermissionGatewayProvider.overrideWithValue(
             _FakeGateway(afterRequest: NotificationPermissionStatus.granted),
           ),
+          deviceRegistrationServiceProvider.overrideWithValue(
+            _FakeDeviceRegistrationService(),
+          ),
         ],
         child: const MaterialApp(home: SettingsScreen()),
       ),
@@ -198,6 +202,14 @@ class _FakeGateway implements NotificationPermissionGateway {
 
   @override
   Future<NotificationPermissionStatus> request() async => afterRequest;
+}
+
+class _FakeDeviceRegistrationService implements DeviceRegistrationService {
+  @override
+  Future<void> registerCurrentToken(String uid) async {}
+
+  @override
+  Future<void> unregisterForSignOut(String uid) async {}
 }
 
 class _FakeAuthRepository implements AuthRepository {
