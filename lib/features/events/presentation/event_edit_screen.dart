@@ -348,12 +348,26 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     if (picked != null) {
       setState(() {
         if (isStart) {
-          _startTime = picked;
+          _setStartTimeKeepingDuration(picked);
         } else {
           _endTime = picked;
         }
       });
     }
+  }
+
+  void _setStartTimeKeepingDuration(TimeOfDay picked) {
+    final currentDuration = _endAt.difference(_startAt);
+    final durationToKeep = currentDuration.isNegative
+        ? Duration.zero
+        : currentDuration;
+
+    _startTime = picked;
+    final shiftedEndAt = _startAt.add(durationToKeep);
+
+    // NFR-1 / Issue #55: 開始時刻だけを動かしたい操作では、設定済みの時間幅を保つ。
+    _endDate = DateUtils.dateOnly(shiftedEndAt);
+    _endTime = TimeOfDay.fromDateTime(shiftedEndAt);
   }
 
   DateTime get _startAt => _allDay
