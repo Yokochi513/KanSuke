@@ -153,6 +153,40 @@ Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
   return firestore;
 }
 
+Future<FakeFirebaseFirestore> _seedAdjacentMonthEvents() async {
+  final firestore = FakeFirebaseFirestore();
+  await firestore.collection('users').doc('me').set({
+    'name': 'ぱぱ',
+    'email': 'me@example.com',
+    'color': '#1565C0',
+    'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+  });
+
+  for (final eventSeed in [
+    (title: '前月末の予定', startAt: DateTime(2025, 12, 31, 9)),
+    (title: '翌月初の予定', startAt: DateTime(2026, 2, 1, 9)),
+  ]) {
+    final event = Event.create(
+      title: eventSeed.title,
+      creatorId: 'me',
+      startAt: eventSeed.startAt,
+      endAt: eventSeed.startAt.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: 'me',
+      now: eventSeed.startAt,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+  }
+  return firestore;
+}
+
 Widget _wrap(FakeFirebaseFirestore firestore, {DateTime? initialFocusedDay}) {
   return ProviderScope(
     overrides: [
@@ -483,5 +517,18 @@ void main() {
     );
 
     expect(bar.colors, [const Color(0xFF1565C0), const Color(0xFFD84315)]);
+  });
+
+  testWidgets('月表示は前後月セルにある予定も表示する（Issue #59）', (tester) async {
+    final firestore = await _seedAdjacentMonthEvents();
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 1, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2026年1月'), findsOneWidget);
+    expect(find.text('前月末の予定'), findsOneWidget);
+    expect(find.text('翌月初の予定'), findsOneWidget);
   });
 }

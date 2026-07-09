@@ -47,11 +47,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     _focusedDay = widget.initialFocusedDay ?? DateTime.now();
   }
 
-  /// 表示中の月の範囲 `[月初, 翌月初)`。月切替時のみ差し替わる（差分取得）。
-  DateRange get _monthRange => (
-    start: DateTime(_focusedDay.year, _focusedDay.month, 1),
-    end: DateTime(_focusedDay.year, _focusedDay.month + 1, 1),
-  );
+  /// 画面に実際に見えている 6 週グリッドの範囲 `[先頭日, 最終日の翌日)`。
+  ///
+  /// Issue #59 / FR-4: 前後月の日付セルも表示しているため、そのセルの予定も
+  /// 読み込む。当月だけではなく 42 日分に限定して取得し、月切替の軽さを保つ。
+  DateRange get _visibleCalendarRange {
+    final monthStart = DateTime(_focusedDay.year, _focusedDay.month, 1);
+    final firstVisibleDay = monthStart.subtract(
+      Duration(days: monthStart.weekday % 7),
+    );
+    return (
+      start: firstVisibleDay,
+      end: firstVisibleDay.add(const Duration(days: _weekRows * 7)),
+    );
+  }
 
   void _changeMonth(int delta) {
     setState(
@@ -81,13 +90,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final eventsAsync = ref.watch(eventsInRangeProvider(_monthRange));
+    final visibleRange = _visibleCalendarRange;
+    final eventsAsync = ref.watch(eventsInRangeProvider(visibleRange));
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
     final events = eventsAsync.asData?.value ?? const <Event>[];
     if (eventsAsync.hasError) {
       AppLogger.error(
-        'eventsInRangeProvider errored for $_monthRange',
+        'eventsInRangeProvider errored for $visibleRange',
         tag: 'CalendarScreen',
         error: eventsAsync.error,
         stackTrace: eventsAsync.stackTrace,
@@ -155,7 +165,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   ) {
     final byDay = _groupByDay(
       events,
-      range: _monthRange,
+      range: _visibleCalendarRange,
       currentUid: currentUid,
     );
 
