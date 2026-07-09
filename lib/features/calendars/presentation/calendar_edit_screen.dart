@@ -24,6 +24,10 @@ class _CalendarEditScreenState extends ConsumerState<CalendarEditScreen> {
   bool _initialized = false;
   Calendar? _editing;
   final Set<String> _memberIds = {};
+  // 編集画面を開いた時点のメンバー集合。保存時にここからの差分だけを
+  // サーバーへ送ることで、開いてから保存するまでの間に他デバイスが加えた
+  // 変更を上書きしないようにする（[CalendarRepository.updateNameAndMembers]）。
+  Set<String> _originalMemberIds = const {};
   bool _saving = false;
 
   @override
@@ -48,6 +52,7 @@ class _CalendarEditScreenState extends ConsumerState<CalendarEditScreen> {
       _editing = calendar;
       _nameController.text = calendar.name;
       _memberIds.addAll(calendar.memberIds);
+      _originalMemberIds = Set.of(calendar.memberIds);
     } else {
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
@@ -187,7 +192,8 @@ class _CalendarEditScreenState extends ConsumerState<CalendarEditScreen> {
         await repository.updateNameAndMembers(
           editing.id,
           name: name,
-          memberIds: memberIds,
+          addedMemberIds: _memberIds.difference(_originalMemberIds),
+          removedMemberIds: _originalMemberIds.difference(_memberIds),
         );
       }
       if (mounted) Navigator.pop(context);
