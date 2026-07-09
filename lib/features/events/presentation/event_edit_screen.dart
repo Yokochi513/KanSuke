@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/logger.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
+import '../../calendars/application/calendar_providers.dart';
 import '../../users/application/user_providers.dart';
 import '../application/event_providers.dart';
 import 'event_edit_args.dart';
@@ -43,6 +44,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   late TimeOfDay _endTime;
   bool _allDay = false;
   EventType _type = EventType.tentative;
+  late String _calendarId;
   final Set<String> _participantIds = {};
   final Set<int> _reminderOffsets = {};
   bool _saving = false;
@@ -73,6 +75,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _memoController.text = event.memo;
       _allDay = event.allDay;
       _type = event.type;
+      _calendarId = event.calendarId;
       _participantIds.addAll(event.participantIds);
       final start = event.startAt.toLocal();
       final end = event.endAt.toLocal();
@@ -86,6 +89,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _endDate = _startDate;
       _startTime = const TimeOfDay(hour: 9, minute: 0);
       _endTime = const TimeOfDay(hour: 10, minute: 0);
+      // FR-8: 新規作成時は、遷移元で表示していたカレンダーを初期値にする。
+      _calendarId = ref.read(selectedCalendarIdProvider);
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
         _participantIds.add(uid);
@@ -95,7 +100,9 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final members = ref.watch(familyMembersProvider).asData?.value ?? const [];
+    final membersAsync = ref.watch(familyMembersProvider);
+    final members = membersAsync.asData?.value ?? const [];
+    final calendars = ref.watch(myCalendarsProvider).asData?.value ?? const [];
     final isEditing = _editing != null;
 
     return Scaffold(
@@ -131,9 +138,11 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                         : null,
                   ),
                   const SizedBox(height: 16),
+                  _buildCalendarField(calendars),
+                  const SizedBox(height: 16),
                   _buildTypeToggle(),
                   const SizedBox(height: 8),
-                  _buildParticipantsField(members),
+                  _buildParticipantsField(_eligibleMembers(members, calendars)),
                   const SizedBox(height: 8),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -152,7 +161,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                     maxLines: 3,
                   ),
                   const SizedBox(height: 16),
-                  _buildReminderField(),
+                  _buildReminderField(membersAsync),
                 ],
               ),
             ),
@@ -186,6 +195,85 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       onSelectionChanged: (selection) =>
           setState(() => _type = selection.first),
     );
+  }
+
+  /// FR-1: 作成者は予定作成時に固定される監査情報なので、編集時は小さく読み取り専用で示す。
+  Widget _buildCreatorCaption(AsyncValue<List<User>> membersAsync) {
+    final editing = _editing;
+    if (editing == null) return const SizedBox.shrink();
+
+    final creatorName = membersAsync.when(
+      data: (members) => _creatorName(members, editing.creatorId),
+      loading: () => '読み込み中',
+      error: (_, _) => '作成者を取得できません',
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(
+          '作成者: $creatorName',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.right,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ),
+    );
+  }
+
+  String _creatorName(List<User> members, String creatorId) {
+    for (final member in members) {
+      if (member.id == creatorId) {
+        return member.name;
+      }
+    }
+    return '不明な作成者';
+  }
+
+  /// カレンダー選択（FR-8）。参加者候補は選択中カレンダーの参加者に限定する。
+  Widget _buildCalendarField(List<Calendar> calendars) {
+    if (calendars.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final hasSelection = calendars.any(
+      (calendar) => calendar.id == _calendarId,
+    );
+    return DropdownButtonFormField<String>(
+      initialValue: hasSelection ? _calendarId : null,
+      decoration: const InputDecoration(
+        labelText: 'カレンダー',
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        for (final calendar in calendars)
+          DropdownMenuItem(value: calendar.id, child: Text(calendar.name)),
+      ],
+      onChanged: (value) {
+        if (value == null) return;
+        final calendar = calendars.firstWhere(
+          (calendar) => calendar.id == value,
+        );
+        setState(() {
+          _calendarId = value;
+          // FR-8: カレンダー変更後は、新しいカレンダーの参加者ではない
+          // メンバーを選択から外す。
+          _participantIds.removeWhere((id) => !calendar.memberIds.contains(id));
+        });
+      },
+    );
+  }
+
+  /// 参加者候補を選択中カレンダーの参加者に限定する（FR-8）。カレンダーが
+  /// まだ読み込み中・未選択の間は全家族メンバーを候補にする。
+  List<User> _eligibleMembers(List<User> members, List<Calendar> calendars) {
+    final index = calendars.indexWhere(
+      (calendar) => calendar.id == _calendarId,
+    );
+    if (index == -1) return members;
+    final memberIds = calendars[index].memberIds;
+    return members.where((member) => memberIds.contains(member.id)).toList();
   }
 
   /// 参加者の複数選択（FR-1・FR-2、基本設計 §6.1・§6.3）。1人以上の選択を必須とする。
@@ -271,7 +359,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     );
   }
 
-  Widget _buildReminderField() {
+  Widget _buildReminderField(AsyncValue<List<User>> membersAsync) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -294,6 +382,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
               ),
           ],
         ),
+        _buildCreatorCaption(membersAsync),
       ],
     );
   }
@@ -348,12 +437,26 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     if (picked != null) {
       setState(() {
         if (isStart) {
-          _startTime = picked;
+          _setStartTimeKeepingDuration(picked);
         } else {
           _endTime = picked;
         }
       });
     }
+  }
+
+  void _setStartTimeKeepingDuration(TimeOfDay picked) {
+    final currentDuration = _endAt.difference(_startAt);
+    final durationToKeep = currentDuration.isNegative
+        ? Duration.zero
+        : currentDuration;
+
+    _startTime = picked;
+    final shiftedEndAt = _startAt.add(durationToKeep);
+
+    // NFR-1 / Issue #55: 開始時刻だけを動かしたい操作では、設定済みの時間幅を保つ。
+    _endDate = DateUtils.dateOnly(shiftedEndAt);
+    _endTime = TimeOfDay.fromDateTime(shiftedEndAt);
   }
 
   DateTime get _startAt => _allDay
@@ -408,6 +511,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           reminderOffsets: offsets,
           updatedBy: uid,
           now: DateTime.now(),
+          calendarId: _calendarId,
         );
         await repository.create(event, updatedBy: uid);
       } else {
@@ -418,6 +522,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           endAt: _endAt,
           allDay: _allDay,
           type: _type,
+          calendarId: _calendarId,
           memo: _memoController.text.trim(),
           reminderOffsets: offsets,
         );
@@ -488,8 +593,13 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // NFR-1: 「英語圏の表記」に見えるという指摘（Issue #58）を受け、
+  // スラッシュ区切りではなく年月日＋曜日の日本語表記にする。
+  static const _weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
+
   String _formatDate(DateTime day) =>
-      '${day.year}/${_two(day.month)}/${_two(day.day)}';
+      '${day.year}年${day.month}月${day.day}日'
+      '（${_weekdayLabels[day.weekday - 1]}）';
 
   String _formatTime(TimeOfDay time) =>
       '${_two(time.hour)}:${_two(time.minute)}';

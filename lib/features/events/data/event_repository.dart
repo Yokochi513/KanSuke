@@ -42,10 +42,12 @@ class EventRepository {
     });
   }
 
-  /// 既存予定を全フィールド更新する。`updatedBy`/`updatedAt` を更新する。
+  /// 既存予定を更新する。`updatedBy`/`updatedAt` を更新する。
   Future<void> update(Event event, {required String updatedBy}) {
     final data = event.copyWith(updatedBy: updatedBy).toFirestore();
-    return _events.doc(event.id).set(data).catchError((
+    // FR-1: 作成者は予定を作った人の固定情報なので、編集保存では上書きしない。
+    data.remove('creatorId');
+    return _events.doc(event.id).update(data).catchError((
       Object error,
       StackTrace stackTrace,
     ) {
@@ -103,19 +105,28 @@ class EventRepository {
         });
   }
 
-  /// 期間 `[start, end)` の予定をリアルタイムに監視する（FR-4 の月表示に利用）。
+  /// 期間 `[start, end)` かつ指定カレンダーの予定をリアルタイムに監視する
+  /// （FR-4 の月表示に利用、FR-8 のカレンダー切替に対応）。
   ///
-  /// `deleted==false` かつ `[startAt, endAt]` が指定期間と重なる予定を取得し
-  /// `startAt` 昇順で返す。
-  /// 複合インデックス（deleted ASC, startAt ASC, endAt ASC）を前提とする。
+  /// `deleted==false`・`calendarId` 一致・`[startAt, endAt]` が指定期間と
+  /// 重なる予定を取得し `startAt` 昇順で返す。
+  /// 複合インデックス（deleted ASC, calendarId ASC, startAt ASC, endAt ASC）を前提とする。
+  ///
+  /// `calendarId` は実際の `where` 句として絞り込む（クライアント側フィルタでは
+  /// 不十分）。Firestore Security Rules は複数件取得クエリに対し、クエリの
+  /// `where` 句だけでルール適合を静的に証明できない場合はクエリ全体を拒否する。
+  /// `calendarId` を絞り込まずに取得すると、他カレンダーの予定が1件でも
+  /// 期間内にあった時点でルールがクエリ全体を拒否してしまう（FR-8）。
   /// Firestore の既定でローカルキャッシュ起点に描画される（NFR-1）。
   Stream<List<Event>> watchRange({
     required DateTime start,
     required DateTime end,
+    required String calendarId,
   }) {
     // 既存の終日単日予定は startAt == endAt のため、終了境界は含める。
     return _events
         .where('deleted', isEqualTo: false)
+        .where('calendarId', isEqualTo: calendarId)
         .where('startAt', isLessThan: Timestamp.fromDate(end))
         .where('endAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .orderBy('startAt')

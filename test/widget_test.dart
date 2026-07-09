@@ -22,7 +22,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.googleSignInCount, 1);
-    expect(find.text('カレンダー'), findsOneWidget);
+    // FR-8: 初回サインイン後、既定カレンダー（わが家）の自動生成が完了し
+    // カレンダー切替タイトルにその名前が表示される。
+    expect(find.text('わが家'), findsOneWidget);
     expect(find.text('サインイン'), findsNothing);
   });
 
@@ -35,7 +37,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.appleSignInCount, 1);
-    expect(find.text('カレンダー'), findsOneWidget);
+    expect(find.text('わが家'), findsOneWidget);
   });
 
   testWidgets('allowlist外ユーザーには利用権限エラーを表示する', (tester) async {
@@ -53,6 +55,11 @@ void main() {
   });
 
   testWidgets('サインアウトするとサインイン画面へ戻る', (tester) async {
+    // FR-8: 設定画面にカレンダーセクションが増え、既定のテスト表示領域では
+    // 末尾の要素が描画範囲外になる。ensureVisible が要素を見つけられるよう
+    // 表示領域を広げる。
+    await tester.binding.setSurfaceSize(const Size(400, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final repository = FakeAuthRepository(initiallySignedIn: true);
     await tester.pumpWidget(_testApp(repository));
     await tester.pump();
@@ -82,6 +89,27 @@ void main() {
     await tester.tap(today);
     await tester.pumpAndSettle();
     expect(find.text('予定はありません'), findsOneWidget);
+  });
+
+  testWidgets('予定作成の日付ピッカーが日本語表記になる（Issue #58）', (tester) async {
+    final repository = FakeAuthRepository(initiallySignedIn: true);
+    await tester.pumpWidget(_testApp(repository));
+    await tester.pump();
+
+    final today = find.text('${DateTime.now().day}').first;
+    await tester.tap(today);
+    await tester.pump();
+    await tester.tap(today);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ListTile, '開始日'));
+    await tester.pumpAndSettle();
+
+    // 曜日ヘッダが日本語（例:「月」）で描画され、英語表記（S/M/T...）にならないこと。
+    expect(find.text('月'), findsWidgets);
   });
 }
 

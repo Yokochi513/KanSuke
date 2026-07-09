@@ -70,6 +70,28 @@ Future<void> _openEditor(
   await tester.pumpAndSettle();
 }
 
+/// 参加者の異なる2つのカレンダー（既定＋自分専用）を投入する（FR-8）。
+Future<FakeFirebaseFirestore> _seedCalendars(
+  FakeFirebaseFirestore firestore,
+) async {
+  final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
+  await firestore.collection('calendars').doc(defaultCalendarId).set({
+    'name': 'わが家',
+    'memberIds': ['me', 'other'],
+    'creatorId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  await firestore.collection('calendars').doc('solo').set({
+    'name': '自分専用',
+    'memberIds': ['me'],
+    'creatorId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  return firestore;
+}
+
 Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _events(
   FakeFirebaseFirestore firestore,
 ) async {
@@ -201,6 +223,48 @@ void main() {
     expect(find.text('13:45'), findsOneWidget);
   });
 
+  testWidgets('開始時刻を変更すると時間幅を保って終了時刻も更新する', (tester) async {
+    final firestore = await _seedMember();
+    final originalStartAt = DateTime(2026, 7, 5, 12);
+    final event = Event.create(
+      title: '昼の予定',
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: originalStartAt,
+      endAt: originalStartAt.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.tentative,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: 'me',
+      now: originalStartAt,
+      calendarId: defaultCalendarId,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+
+    await _openEditor(tester, firestore, EventEditArgs.edit(event));
+    await _tapVisible(tester, find.widgetWithText(ListTile, '開始時刻'));
+
+    final picker = tester.widget<CupertinoDatePicker>(
+      find.byType(CupertinoDatePicker),
+    );
+    picker.onDateTimeChanged(DateTime(2026, 7, 5, 17));
+    await tester.tap(find.text('完了'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('17:00'), findsOneWidget);
+    expect(find.text('18:00'), findsOneWidget);
+
+    await _tapVisible(tester, find.text('保存'));
+
+    final data = (await _events(firestore)).single.data();
+    expect((data['startAt'] as Timestamp).toDate(), DateTime(2026, 7, 5, 17));
+    expect((data['endAt'] as Timestamp).toDate(), DateTime(2026, 7, 5, 18));
+  });
+
   testWidgets('参加者を複数選択して保存する', (tester) async {
     final firestore = await _seedMembers();
     await _openEditor(
@@ -232,6 +296,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -249,6 +314,51 @@ void main() {
     expect(data['id'], event.id); // 同一ドキュメント
   });
 
+  testWidgets('編集画面は作成者を表示し保存しても変更しない', (tester) async {
+    final firestore = await _seedMembers();
+    final start = DateTime(2026, 7, 5, 9);
+    final event = Event.create(
+      title: '別の人が入れた予定',
+      creatorId: 'other',
+      participantIds: const ['me'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.tentative,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: 'other',
+      now: start,
+      calendarId: defaultCalendarId,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+
+    await _openEditor(tester, firestore, EventEditArgs.edit(event));
+
+    expect(find.text('作成者: まま'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('作成者: まま'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Align && widget.alignment == Alignment.centerRight,
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, 'タイトル変更');
+    await _tapVisible(tester, find.text('保存'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['title'], 'タイトル変更');
+    expect(data['creatorId'], 'other');
+    expect(data['updatedBy'], 'me');
+  });
+
   testWidgets('編集画面から削除するとソフト削除される', (tester) async {
     final firestore = await _seedMember();
     final start = DateTime(2026, 7, 5, 9);
@@ -263,6 +373,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
+      calendarId: defaultCalendarId,
     );
     await firestore
         .collection('events')
@@ -276,5 +387,46 @@ void main() {
 
     final data = (await _events(firestore)).single.data();
     expect(data['deleted'], true);
+  });
+
+  testWidgets('新規作成した予定にはカレンダーIDが保存される', (tester) async {
+    final firestore = await _seedCalendars(await _seedMember());
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '打ち合わせ');
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['calendarId'], defaultCalendarId);
+  });
+
+  testWidgets('カレンダーを切り替えると参加者候補がそのカレンダーの参加者に絞り込まれる', (tester) async {
+    final firestore = await _seedCalendars(await _seedMembers());
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    // 既定カレンダー（わが家）では、まま も参加者候補に含まれる。
+    expect(find.widgetWithText(FilterChip, 'まま'), findsOneWidget);
+
+    await _tapVisible(tester, find.byType(DropdownButtonFormField<String>));
+    await _tapVisible(tester, find.text('自分専用'));
+
+    // 自分専用カレンダーには自分しか参加していないため、まま は候補から消える。
+    expect(find.widgetWithText(FilterChip, 'まま'), findsNothing);
+    expect(find.widgetWithText(FilterChip, 'ぱぱ'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).first, '一人の予定');
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['calendarId'], 'solo');
+    expect(data['participantIds'], ['me']);
   });
 }
