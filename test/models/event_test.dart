@@ -20,6 +20,8 @@ void main() {
       updatedAt: DateTime.utc(2026, 7, 2),
       deleted: false,
       calendarId: 'calendar-1',
+      recurrenceFrequency: EventRecurrenceFrequency.weekly,
+      recurrenceCount: 5,
     );
   }
 
@@ -44,6 +46,8 @@ void main() {
     expect(restored.updatedAt, event.updatedAt);
     expect(restored.deleted, event.deleted);
     expect(restored.calendarId, event.calendarId);
+    expect(restored.recurrenceFrequency, event.recurrenceFrequency);
+    expect(restored.recurrenceCount, event.recurrenceCount);
     expect(map['id'], event.id);
   });
 
@@ -86,6 +90,30 @@ void main() {
     final restored = Event.fromMap('event-1', map);
 
     expect(restored.calendarId, defaultCalendarId);
+  });
+
+  test('recurrenceFrequencyが未保存の既存ドキュメントは単発予定として扱う', () {
+    final map = buildEvent().toFirestore(useServerTimestamp: false);
+    map.remove('recurrenceFrequency');
+    map.remove('recurrenceCount');
+
+    final restored = Event.fromMap('event-1', map);
+
+    expect(restored.recurrenceFrequency, isNull);
+    expect(restored.recurrenceCount, isNull);
+  });
+
+  test('表示用の繰り返し発生日は編集時に元の日時へ戻せる', () {
+    final event = buildEvent();
+    final occurrence = event.occurrenceAt(
+      startAt: DateTime.utc(2026, 7, 17, 1),
+      endAt: DateTime.utc(2026, 7, 17, 2),
+    );
+
+    expect(occurrence.startAt, DateTime.utc(2026, 7, 17, 1));
+    expect(occurrence.recurrenceMasterStartAt, event.startAt);
+    expect(occurrence.masterEventForEditing.startAt, event.startAt);
+    expect(occurrence.masterEventForEditing.endAt, event.endAt);
   });
 
   test('memberIdsは参加者を重複なく並べる', () {
