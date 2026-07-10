@@ -8,8 +8,14 @@ import 'package:kansuke/app/app.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/auth/data/auth_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    // KanSukeApp が表示テーマの設定を読むため、メモリ上のモックを差し込む。
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('未ログインならサインイン画面を表示しGoogle認証後はカレンダーへ切り替わる', (tester) async {
     final repository = FakeAuthRepository();
     await tester.pumpWidget(_testApp(repository));
