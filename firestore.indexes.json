@@ -29,10 +29,6 @@
         {
           "fieldPath": "startAt",
           "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "endAt",
-          "order": "ASCENDING"
         }
       ]
     }
