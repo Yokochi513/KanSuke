@@ -130,6 +130,69 @@ void main() {
     expect(docs.single.id, data['id']); // クライアント生成UUID
   });
 
+  testWidgets('新規作成: 毎月の繰り返しを無限で保存する', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '習い事');
+    await _tapVisible(tester, find.text('なし'));
+    await _tapVisible(tester, find.text('毎月').last);
+    await _tapVisible(tester, find.text('作成'));
+
+    final docs = await _events(firestore);
+    final data = docs.single.data();
+
+    expect(docs, hasLength(1));
+    expect(data['title'], '習い事');
+    expect(data['participantIds'], ['me']);
+    expect(data['recurrenceFrequency'], 'monthly');
+    expect(data['recurrenceCount'], isNull);
+    expect(data['id'], docs.single.id); // クライアント生成UUID
+  });
+
+  testWidgets('新規作成: 回数指定の毎年繰り返しを数値入力で保存する', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '記念日');
+    await _tapVisible(tester, find.text('なし'));
+    await _tapVisible(tester, find.text('毎年').last);
+    await _tapVisible(tester, find.text('回数指定'));
+    await tester.enterText(find.widgetWithText(TextFormField, '回数'), '5');
+    await _tapVisible(tester, find.text('作成'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['recurrenceFrequency'], 'yearly');
+    expect(data['recurrenceCount'], 5);
+  });
+
+  testWidgets('新規作成: 回数指定が不正なら保存しない', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, '記念日');
+    await _tapVisible(tester, find.text('なし'));
+    await _tapVisible(tester, find.text('毎週').last);
+    await _tapVisible(tester, find.text('回数指定'));
+    await tester.enterText(find.widgetWithText(TextFormField, '回数'), '0');
+    await _tapVisible(tester, find.text('作成'));
+
+    expect(find.text('回数は1以上で入力してください'), findsOneWidget);
+    expect(await _events(firestore), isEmpty);
+  });
+
   testWidgets('新規作成: 開始日と終了日を分けて期間予定を保存する', (tester) async {
     final firestore = await _seedMember();
     await _openEditor(

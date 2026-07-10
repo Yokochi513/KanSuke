@@ -20,6 +20,10 @@ const _reminderPresets = <int, String>{
   1440: '1日前',
 };
 
+enum _RecurrenceFrequencyOption { none, weekly, monthly, yearly }
+
+enum _RecurrenceCountMode { infinite, specified }
+
 /// 予定編集画面（FR-1 / FR-3 / FR-5、基本設計 §6.1・§6.3・§3.2）。
 ///
 /// 予定の作成・編集・ソフト削除を行う。仮↔確定はトグル1操作で切替、
@@ -35,6 +39,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _memoController = TextEditingController();
+  final _recurrenceCountController = TextEditingController(text: '10');
 
   bool _initialized = false;
   Event? _editing; // 編集対象（新規は null）
@@ -47,12 +52,16 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   late String _calendarId;
   final Set<String> _participantIds = {};
   final Set<int> _reminderOffsets = {};
+  _RecurrenceFrequencyOption _recurrenceOption =
+      _RecurrenceFrequencyOption.none;
+  _RecurrenceCountMode _recurrenceCountMode = _RecurrenceCountMode.infinite;
   bool _saving = false;
 
   @override
   void dispose() {
     _titleController.dispose();
     _memoController.dispose();
+    _recurrenceCountController.dispose();
     super.dispose();
   }
 
@@ -70,20 +79,22 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
     final event = args.event;
     if (event != null) {
-      _editing = event;
-      _titleController.text = event.title;
-      _memoController.text = event.memo;
-      _allDay = event.allDay;
-      _type = event.type;
-      _calendarId = event.calendarId;
-      _participantIds.addAll(event.participantIds);
-      final start = event.startAt.toLocal();
-      final end = event.endAt.toLocal();
+      final editingEvent = event.masterEventForEditing;
+      _editing = editingEvent;
+      _titleController.text = editingEvent.title;
+      _memoController.text = editingEvent.memo;
+      _allDay = editingEvent.allDay;
+      _type = editingEvent.type;
+      _calendarId = editingEvent.calendarId;
+      _participantIds.addAll(editingEvent.participantIds);
+      _setRecurrenceState(editingEvent);
+      final start = editingEvent.startAt.toLocal();
+      final end = editingEvent.endAt.toLocal();
       _startDate = DateUtils.dateOnly(start);
       _endDate = DateUtils.dateOnly(end);
       _startTime = TimeOfDay.fromDateTime(start);
       _endTime = TimeOfDay.fromDateTime(end);
-      _reminderOffsets.addAll(event.reminderOffsets);
+      _reminderOffsets.addAll(editingEvent.reminderOffsets);
     } else {
       _startDate = DateUtils.dateOnly(args.initialDate!);
       _endDate = _startDate;
@@ -151,6 +162,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                     onChanged: (value) => setState(() => _allDay = value),
                   ),
                   _buildDateTimeFields(),
+                  const SizedBox(height: 16),
+                  _buildRecurrenceFields(),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _memoController,
@@ -359,6 +372,73 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     );
   }
 
+  Widget _buildRecurrenceFields() {
+    return Column(
+      children: [
+        DropdownButtonFormField<_RecurrenceFrequencyOption>(
+          initialValue: _recurrenceOption,
+          decoration: const InputDecoration(
+            labelText: 'くり返し設定',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(
+              value: _RecurrenceFrequencyOption.none,
+              child: Text('なし'),
+            ),
+            DropdownMenuItem(
+              value: _RecurrenceFrequencyOption.weekly,
+              child: Text('毎週'),
+            ),
+            DropdownMenuItem(
+              value: _RecurrenceFrequencyOption.monthly,
+              child: Text('毎月'),
+            ),
+            DropdownMenuItem(
+              value: _RecurrenceFrequencyOption.yearly,
+              child: Text('毎年'),
+            ),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() => _recurrenceOption = value);
+          },
+        ),
+        if (_recurrenceOption != _RecurrenceFrequencyOption.none) ...[
+          const SizedBox(height: 16),
+          SegmentedButton<_RecurrenceCountMode>(
+            segments: const [
+              ButtonSegment(
+                value: _RecurrenceCountMode.infinite,
+                label: Text('無限'),
+              ),
+              ButtonSegment(
+                value: _RecurrenceCountMode.specified,
+                label: Text('回数指定'),
+              ),
+            ],
+            selected: {_recurrenceCountMode},
+            onSelectionChanged: (selection) =>
+                setState(() => _recurrenceCountMode = selection.first),
+          ),
+          if (_recurrenceCountMode == _RecurrenceCountMode.specified) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _recurrenceCountController,
+              decoration: const InputDecoration(
+                labelText: '回数',
+                suffixText: '回',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              validator: _validateRecurrenceCount,
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
   Widget _buildReminderField(AsyncValue<List<User>> membersAsync) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -512,6 +592,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           updatedBy: uid,
           now: DateTime.now(),
           calendarId: _calendarId,
+          recurrenceFrequency: _recurrenceFrequencyForSave(),
+          recurrenceCount: _recurrenceCountForSave(),
         );
         await repository.create(event, updatedBy: uid);
       } else {
@@ -525,6 +607,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           calendarId: _calendarId,
           memo: _memoController.text.trim(),
           reminderOffsets: offsets,
+          recurrenceFrequency: _recurrenceFrequencyForSave(),
+          recurrenceCount: _recurrenceCountForSave(),
         );
         await repository.update(updated, updatedBy: uid);
       }
@@ -541,6 +625,57 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
         _showSnack('保存に失敗しました。通信環境を確認してください。');
       }
     }
+  }
+
+  void _setRecurrenceState(Event event) {
+    _recurrenceOption = switch (event.recurrenceFrequency) {
+      null => _RecurrenceFrequencyOption.none,
+      EventRecurrenceFrequency.weekly => _RecurrenceFrequencyOption.weekly,
+      EventRecurrenceFrequency.monthly => _RecurrenceFrequencyOption.monthly,
+      EventRecurrenceFrequency.yearly => _RecurrenceFrequencyOption.yearly,
+    };
+
+    final recurrenceCount = event.recurrenceCount;
+    if (event.recurrenceFrequency != null && recurrenceCount != null) {
+      _recurrenceCountMode = _RecurrenceCountMode.specified;
+      _recurrenceCountController.text = recurrenceCount.toString();
+    } else {
+      _recurrenceCountMode = _RecurrenceCountMode.infinite;
+    }
+  }
+
+  EventRecurrenceFrequency? _recurrenceFrequencyForSave() {
+    return switch (_recurrenceOption) {
+      _RecurrenceFrequencyOption.none => null,
+      _RecurrenceFrequencyOption.weekly => EventRecurrenceFrequency.weekly,
+      _RecurrenceFrequencyOption.monthly => EventRecurrenceFrequency.monthly,
+      _RecurrenceFrequencyOption.yearly => EventRecurrenceFrequency.yearly,
+    };
+  }
+
+  int? _recurrenceCountForSave() {
+    if (_recurrenceOption == _RecurrenceFrequencyOption.none ||
+        _recurrenceCountMode == _RecurrenceCountMode.infinite) {
+      return null;
+    }
+    return int.tryParse(_recurrenceCountController.text.trim());
+  }
+
+  String? _validateRecurrenceCount(String? value) {
+    if (_recurrenceOption == _RecurrenceFrequencyOption.none ||
+        _recurrenceCountMode == _RecurrenceCountMode.infinite) {
+      return null;
+    }
+    final text = value?.trim() ?? '';
+    // ユーザー入力は文字列なので、int 変換に失敗する境界を明示して止める。
+    final count = int.tryParse(text);
+    if (count == null) {
+      return '回数を半角数字で入力してください';
+    }
+    if (count <= 0) {
+      return '回数は1以上で入力してください';
+    }
+    return null;
   }
 
   Future<void> _confirmDelete() async {
