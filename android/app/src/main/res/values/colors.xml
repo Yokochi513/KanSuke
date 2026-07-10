@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 生成り（和紙の地）。Flutter 側 WashiColors.kinari と揃える。 -->
+    <color name="washi_base">#F7F3E8</color>
+</resources>

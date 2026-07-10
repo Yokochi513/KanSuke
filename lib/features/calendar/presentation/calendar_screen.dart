@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../app/routes.dart';
+import '../../../app/theme.dart';
 import '../../../core/color_utils.dart';
 import '../../../core/japanese_holidays.dart';
 import '../../../core/logger.dart';
@@ -241,6 +242,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         }
       },
       calendarBuilders: CalendarBuilders<Event>(
+        // 曜日ヘッダも日曜＝朱・土曜＝縹に揃え、マスの日付色と対応させる。
+        dowBuilder: (context, day) => _DayOfWeekLabel(day: day),
         defaultBuilder: (context, day, _) => cellBuilder(day),
         todayBuilder: (context, day, _) => cellBuilder(day, isToday: true),
         selectedBuilder: (context, day, _) =>
@@ -380,6 +383,41 @@ class _EventSegment {
   final bool roundRight;
 }
 
+/// 曜日ヘッダの 1 マス（「日」〜「土」）。
+class _DayOfWeekLabel extends StatelessWidget {
+  const _DayOfWeekLabel({required this.day});
+
+  static const _names = ['日', '月', '火', '水', '木', '金', '土'];
+
+  final DateTime day;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final washiColors = KanSukeColors.of(context);
+    final Color color;
+    if (day.weekday == DateTime.sunday) {
+      color = washiColors.sunday;
+    } else if (day.weekday == DateTime.saturday) {
+      color = washiColors.saturday;
+    } else {
+      color = scheme.onSurfaceVariant;
+    }
+
+    return Center(
+      child: Text(
+        // DateTime.weekday は月曜=1・日曜=7。日曜始まりの並びに合わせる。
+        _names[day.weekday % 7],
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
 /// カレンダーの 1 マス（1 日分のセル）。
 ///
 /// 枠線でグリッドを形成し、日付とその日の予定バーを縦に並べる。マスに
@@ -409,6 +447,7 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final washiColors = KanSukeColors.of(context);
     final holidayName = isOutside ? null : japaneseHolidayName(day);
 
     // マスの高さから、表示できるバー本数を見積もる。
@@ -452,7 +491,7 @@ class _DayCell extends StatelessWidget {
             // FR-4: 祝日は日付色とチップで強調し、月表示で見落としにくくする。
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: _dayLabel(scheme, holidayName),
+              child: _dayLabel(scheme, washiColors, holidayName),
             ),
             for (final segment in visible)
               if (segment == null)
@@ -500,15 +539,19 @@ class _DayCell extends StatelessWidget {
     );
   }
 
-  Widget _dayLabel(ColorScheme scheme, String? holidayName) {
+  Widget _dayLabel(
+    ColorScheme scheme,
+    KanSukeColors washiColors,
+    String? holidayName,
+  ) {
     final isHoliday = holidayName != null;
     final Color numberColor;
     if (isOutside) {
       numberColor = scheme.onSurface.withValues(alpha: 0.35);
     } else if (isHoliday || day.weekday == DateTime.sunday) {
-      numberColor = Colors.red.shade400;
+      numberColor = washiColors.sunday;
     } else if (day.weekday == DateTime.saturday) {
-      numberColor = Colors.blue.shade400;
+      numberColor = washiColors.saturday;
     } else {
       numberColor = scheme.onSurface;
     }
@@ -568,7 +611,7 @@ class _HolidayLabel extends StatelessWidget {
             fontSize: 9,
             height: 1,
             fontWeight: FontWeight.w600,
-            color: Colors.red.shade400,
+            color: KanSukeColors.of(context).holiday,
           ),
         ),
       ),

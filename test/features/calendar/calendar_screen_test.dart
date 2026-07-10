@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/app/routes.dart';
+import 'package:kansuke/app/theme.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/calendar/presentation/calendar_screen.dart';
@@ -199,6 +200,7 @@ Widget _wrap(FakeFirebaseFirestore firestore, {DateTime? initialFocusedDay}) {
       currentUidProvider.overrideWithValue('me'),
     ],
     child: MaterialApp(
+      theme: buildKanSukeTheme(),
       home: CalendarScreen(initialFocusedDay: initialFocusedDay),
       routes: {
         AppRoutes.dayEvents: (_) =>
@@ -221,7 +223,7 @@ void main() {
     expect(find.text('ぱぱ'), findsOneWidget); // 凡例
   });
 
-  testWidgets('祝日は日曜日と同じ赤字・セル色なしで祝日名を表示する', (tester) async {
+  testWidgets('祝日は日曜日と同じ朱色・セル色なしで祝日名を表示する', (tester) async {
     final focusedDay = DateTime(2024, 7, 1);
     final firestore = await _seed(today: focusedDay);
 
@@ -230,7 +232,7 @@ void main() {
 
     final holidayDayText = tester.widget<Text>(find.text('15').first);
 
-    expect(holidayDayText.style?.color, Colors.red.shade400);
+    expect(holidayDayText.style?.color, KanSukeColors.light.holiday);
     expect(find.text('海の日'), findsOneWidget);
     expect(find.byTooltip('海の日'), findsOneWidget);
   });
