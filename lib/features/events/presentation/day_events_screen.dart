@@ -9,10 +9,12 @@ import '../../auth/application/auth_state.dart';
 import '../../calendars/application/calendar_providers.dart';
 import '../../calendars/presentation/calendar_switcher.dart';
 import '../../users/application/user_providers.dart';
+import '../application/event_filter.dart';
 import '../application/event_ordering.dart';
 import '../application/event_providers.dart';
 import 'event_edit_args.dart';
 import 'event_type_badge.dart';
+import 'member_filter_button.dart';
 
 /// 日別予定一覧（FR-1 / FR-2 / FR-3、基本設計 §6.1）。
 ///
@@ -75,7 +77,10 @@ class _DayEventsScreenState extends ConsumerState<DayEventsScreen> {
   Widget build(BuildContext context) {
     final currentDay = _dayForPage(_currentPage);
     return Scaffold(
-      appBar: AppBar(title: const CalendarSwitcherTitle()),
+      appBar: AppBar(
+        title: const CalendarSwitcherTitle(),
+        actions: const [MemberFilterButton()],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.pushNamed(
           context,
@@ -123,6 +128,7 @@ class _DayPage extends ConsumerWidget {
     );
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
+    final memberFilter = ref.watch(memberFilterProvider);
 
     return Column(
       children: [
@@ -144,7 +150,10 @@ class _DayPage extends ConsumerWidget {
               );
               return const Center(child: Text('予定を読み込めませんでした。通信環境を確認してください。'));
             },
-            data: (events) {
+            data: (allEvents) {
+              // Issue #78: 参加者フィルタが有効なら、選択メンバーを含む予定だけに
+              // 絞る（表示上の絞り込みのみ。データは変更しない）。
+              final events = filterEventsByMembers(allEvents, memberFilter);
               if (events.isEmpty) {
                 return const _EmptyState();
               }

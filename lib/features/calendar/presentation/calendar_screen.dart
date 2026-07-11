@@ -13,11 +13,13 @@ import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
 import '../../calendars/application/calendar_providers.dart';
 import '../../calendars/presentation/calendar_switcher.dart';
+import '../../events/application/event_filter.dart';
 import '../../events/application/event_grouping.dart';
 import '../../events/application/event_ordering.dart';
 import '../../events/application/event_providers.dart';
 import '../../events/presentation/event_edit_args.dart';
 import '../../events/presentation/event_type_badge.dart';
+import '../../events/presentation/member_filter_button.dart';
 import '../../settings/application/event_merge_provider.dart';
 import '../../users/application/user_providers.dart';
 
@@ -131,7 +133,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
     final mergeEnabled = ref.watch(resolvedEventMergeEnabledProvider);
-    final events = eventsAsync.asData?.value ?? const <Event>[];
+    // Issue #78: 参加者フィルタが有効なら、選択メンバーを含む予定だけに絞る
+    // （表示上の絞り込みのみ。データは変更しない）。
+    final memberFilter = ref.watch(memberFilterProvider);
+    final events = filterEventsByMembers(
+      eventsAsync.asData?.value ?? const <Event>[],
+      memberFilter,
+    );
     if (eventsAsync.hasError) {
       AppLogger.error(
         'eventsInRangeProvider errored for $visibleRange/$calendarId',
@@ -145,6 +153,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       appBar: AppBar(
         title: const CalendarSwitcherTitle(),
         actions: [
+          const MemberFilterButton(),
           IconButton(
             tooltip: '設定',
             onPressed: () => Navigator.pushNamed(context, AppRoutes.settings),
