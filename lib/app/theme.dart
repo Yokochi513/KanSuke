@@ -121,8 +121,9 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
     holiday: WashiColors.shu,
     washiBase: WashiColors.kinari,
     washiFiber: Color(0x0D231E14),
-    // 鼠色系の中立グレー。和紙の生成り地に載せても沈まず、メンバー色とも被らない。
-    mergedBar: Color(0xFFBFC6CB),
+    // 生成り系の暖色ベージュ（枯色寄り）。生成りの地色味を保ちつつ、背景より
+    // 一段濃くして沈まないようにする。彩度は低くメンバー色とは被らない。
+    mergedBar: Color(0xFFCFBE92),
   );
 
   static const dark = KanSukeColors(
@@ -131,7 +132,8 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
     holiday: WashiColors.araishu,
     washiBase: WashiColors.sumi,
     washiFiber: Color(0x0BF7F3E8),
-    mergedBar: Color(0xFF4C5157),
+    // 墨地でも生成りの暖色味を残した、沈まない濃いベージュ。
+    mergedBar: Color(0xFF5C5342),
   );
 
   static KanSukeColors of(BuildContext context) =>
