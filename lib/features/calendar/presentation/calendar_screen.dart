@@ -972,24 +972,30 @@ class MergedEventBar extends StatelessWidget {
   final bool roundLeft;
   final bool roundRight;
 
-  /// 下辺の日別ドット帯の高さ。タイトル行を潰さないよう小さく取る。
-  static const double _dotBandHeight = 6;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final confirmed = type == EventType.confirmed;
+    // タイトル/バッジのチップ地色。ドットと重なっても読めるよう、バー本体と
+    // 同じ不透明色を敷いて背面のドットを隠す。
+    final barColor = scheme.surfaceContainerHighest;
     final textColor = scheme.onSurfaceVariant;
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);
+
+    Widget chip(Widget child) => ColoredBox(
+      color: barColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: child,
+      ),
+    );
 
     return Container(
       height: 16,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: confirmed
-            ? scheme.surfaceContainerHighest
-            : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        color: barColor,
         // 仮が混じるグループは枠付きで種別を区別する（FR-3、安全側）。
         border: confirmed
             ? null
@@ -1006,44 +1012,46 @@ class MergedEventBar extends StatelessWidget {
           bottomRight: roundRight ? radius : Radius.zero,
         ),
       ),
-      child: Column(
+      child: Stack(
         children: [
-          Expanded(
+          // 背面: 予定が入っている日に、その日の参加者色の〇をバー高いっぱいに
+          // 近いサイズで並べる（FR-2）。
+          Positioned.fill(child: _DayDots(dayColors: dayColors)),
+          // 前面: タイトル（先頭に 1 回）と人数バッジ。チップでドットの上に載せる。
+          Positioned.fill(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 2),
               child: Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        height: 1.0,
-                        fontWeight: FontWeight.w600,
-                        color: textColor,
+                  Flexible(
+                    child: chip(
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.0,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 2),
-                  Text(
-                    '👥$participantCount',
-                    style: TextStyle(
-                      fontSize: 10,
-                      height: 1.0,
-                      color: textColor,
+                  const Spacer(),
+                  chip(
+                    Text(
+                      '👥$participantCount',
+                      style: TextStyle(
+                        fontSize: 10,
+                        height: 1.0,
+                        color: textColor,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          // 下辺に日別のドットを並べる。予定が入っている日にだけ、その日の
-          // 参加者色の〇を描き、誰がどの日に関わるかを示す（FR-2）。
-          SizedBox(
-            height: _dotBandHeight,
-            child: _DayDots(dayColors: dayColors),
           ),
         ],
       ),
@@ -1054,14 +1062,15 @@ class MergedEventBar extends StatelessWidget {
 /// 束ねたバーの日別ドット（Issue #76）。
 ///
 /// 幅を日数で等分し、予定が入っている日にだけ、その日の参加者色の〇を横並びで
-/// 描く。予定のない日は空ける。
+/// 描く。予定のない日は空ける。〇はバー高と同等〜気持ち小さいサイズにし、
+/// 一目で判別できるようにする。
 class _DayDots extends StatelessWidget {
   const _DayDots({required this.dayColors});
 
   final List<List<Color>> dayColors;
 
-  /// 〇の直径。ドット帯の高さに収める。
-  static const double _dotSize = 5;
+  /// 〇の直径。バー高（16）より気持ち小さくして上下に少し余白を残す。
+  static const double _dotSize = 12;
 
   @override
   Widget build(BuildContext context) {
@@ -1086,7 +1095,7 @@ class _DayDots extends StatelessWidget {
                             for (final color in colors)
                               Padding(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 0.5,
+                                  horizontal: 1,
                                 ),
                                 child: Container(
                                   width: _dotSize,
