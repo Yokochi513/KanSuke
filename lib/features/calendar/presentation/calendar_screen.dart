@@ -13,8 +13,12 @@ import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
 import '../../calendars/application/calendar_providers.dart';
 import '../../calendars/presentation/calendar_switcher.dart';
+import '../../events/application/event_grouping.dart';
 import '../../events/application/event_ordering.dart';
 import '../../events/application/event_providers.dart';
+import '../../events/presentation/event_edit_args.dart';
+import '../../events/presentation/event_type_badge.dart';
+import '../../settings/application/event_merge_provider.dart';
 import '../../users/application/user_providers.dart';
 
 /// カレンダー月表示（FR-4）。
@@ -126,6 +130,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
+    final mergeEnabled = ref.watch(resolvedEventMergeEnabledProvider);
     final events = eventsAsync.asData?.value ?? const <Event>[];
     if (eventsAsync.hasError) {
       AppLogger.error(
@@ -171,8 +176,16 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 final rowHeight =
                     (constraints.maxHeight - _daysOfWeekHeight) / _weekRows;
                 final colWidth = constraints.maxWidth / 7;
+                // Issue #76: マージ ON なら同名・期間が連なる予定を 1 グループに
+                // 束ね、OFF なら従来どおり 1 予定 = 1 グループとして扱う。以降の
+                // レーン配置・「+N」計算はグループ単位で行う。
+                final groups = mergeEnabled
+                    ? groupEventsForMerge(events)
+                    : [
+                        for (final event in events) EventGroup([event]),
+                      ];
                 final layout = _computeBarLayout(
-                  events,
+                  groups,
                   range: _visibleCalendarRange,
                   currentUid: currentUid,
                   rowHeight: rowHeight,
@@ -194,21 +207,21 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   child: Stack(
                     children: [
                       _buildCalendar(),
-                      // バーはグリッドの上に載せる。タップは下のマスへ通し、
-                      // 「日を選択→再タップで日別一覧」の操作を保つ。
+                      // バーはグリッドの上に載せる。普通のバー・「+N」は
+                      // [IgnorePointer] でタップを下のマスへ通し、「日を選択→
+                      // 再タップで日別一覧」の操作を保つ。束ねたバー（Issue #76）
+                      // だけは自身でタップを受け、内訳シートを開く。
                       Positioned.fill(
-                        child: IgnorePointer(
-                          child: _EventBarsOverlay(
-                            bars: layout.bars,
-                            markers: layout.markers,
-                            membersById: membersById,
-                            daysOfWeekHeight: _daysOfWeekHeight,
-                            rowHeight: rowHeight,
-                            colWidth: colWidth,
-                            dayNumberHeight: _dayNumberHeight,
-                            barSlot: _barSlot,
-                            barHeight: _barHeight,
-                          ),
+                        child: _EventBarsOverlay(
+                          bars: layout.bars,
+                          markers: layout.markers,
+                          membersById: membersById,
+                          daysOfWeekHeight: _daysOfWeekHeight,
+                          rowHeight: rowHeight,
+                          colWidth: colWidth,
+                          dayNumberHeight: _dayNumberHeight,
+                          barSlot: _barSlot,
+                          barHeight: _barHeight,
                         ),
                       ),
                     ],
@@ -299,13 +312,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  /// 表示中 6 週分の予定バー配置を計算する（Issue #56 / #72）。
+  /// 表示中 6 週分の予定バー配置を計算する（Issue #56 / #72 / #76）。
   ///
   /// 複数日にまたがる予定は、日〜土の週単位で同じレーン（縦位置）を保つように
   /// 割り当て、週ごとに 1 本の連続バーとして描く。マスに収まらないレーンは
-  /// 各日の「+N」に集約する。
+  /// 各日の「+N」に集約する。Issue #76: 束ねた予定グループは期間の和集合を
+  /// 1 区間とし、1 レーンに畳む（「+N」計算でも 1 本と数える）。
   _BarLayout _computeBarLayout(
-    List<Event> events, {
+    List<EventGroup> groups, {
     required DateRange range,
     required String? currentUid,
     required double rowHeight,
@@ -319,32 +333,32 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final available = rowHeight - _dayNumberHeight - 2;
     final capacity = available <= 0 ? 0 : (available ~/ _barSlot);
 
-    // イベントごとに表示範囲でクリップした開始・終了日を求める。
-    final clippedRanges = <Event, ({DateTime start, DateTime end})>{};
-    for (final event in events) {
-      final eventStartDay = _dateKey(event.startAt.toLocal());
-      final eventEndDay = _dateKey(event.endAt.toLocal());
-      final start = eventStartDay.isBefore(firstVisibleDay)
+    // グループごとに表示範囲でクリップした開始・終了日（期間の和集合）を求める。
+    final clippedRanges = <EventGroup, ({DateTime start, DateTime end})>{};
+    for (final group in groups) {
+      final groupStartDay = _dateKey(group.startAt.toLocal());
+      final groupEndDay = _dateKey(group.endAt.toLocal());
+      final start = groupStartDay.isBefore(firstVisibleDay)
           ? firstVisibleDay
-          : eventStartDay;
-      final end = eventEndDay.isAfter(lastVisibleDay)
+          : groupStartDay;
+      final end = groupEndDay.isAfter(lastVisibleDay)
           ? lastVisibleDay
-          : eventEndDay;
+          : groupEndDay;
       // FR-4: 既存の終日単日予定（startAt == endAt）を保つため終了日も含める。
       if (end.isBefore(start)) continue;
-      clippedRanges[event] = (start: start, end: end);
+      clippedRanges[group] = (start: start, end: end);
     }
 
     DateTime weekStart(DateTime day) =>
         day.subtract(Duration(days: day.weekday % 7));
 
-    // 週（日曜始まり）ごとに、その週に登場する予定を集める。
-    final eventsByWeek = <DateTime, List<Event>>{};
+    // 週（日曜始まり）ごとに、その週に登場するグループを集める。
+    final groupsByWeek = <DateTime, List<EventGroup>>{};
     for (final entry in clippedRanges.entries) {
       var week = weekStart(entry.value.start);
       final lastWeek = weekStart(entry.value.end);
       while (!week.isAfter(lastWeek)) {
-        eventsByWeek.putIfAbsent(week, () => []).add(entry.key);
+        groupsByWeek.putIfAbsent(week, () => []).add(entry.key);
         week = week.add(const Duration(days: 7));
       }
     }
@@ -352,15 +366,16 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final bars = <_BarSegment>[];
     final markers = <_OverflowMarker>[];
 
-    for (final weekEntry in eventsByWeek.entries) {
+    for (final weekEntry in groupsByWeek.entries) {
       final week = weekEntry.key;
       final weekEnd = week.add(const Duration(days: 6));
       final weekIndex = week.difference(firstVisibleDay).inDays ~/ 7;
 
-      // 週内で区間グラフの貪欲彩色を行い、重ならない予定同士でレーンを
+      // 週内で区間グラフの貪欲彩色を行い、重ならないグループ同士でレーンを
       // 使い回す。開始日が早い順、次いで表示優先度順に詰めることで、
       // 同日に複数の予定がある場合の見た目の順序も既存挙動を保つ。
-      final weekEvents = weekEntry.value.toList()
+      // グループの表示優先度は代表（先頭）予定で判定する。
+      final weekGroups = weekEntry.value.toList()
         ..sort((a, b) {
           final aStart = clippedRanges[a]!.start.isBefore(week)
               ? week
@@ -370,14 +385,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               : clippedRanges[b]!.start;
           final byStart = aStart.compareTo(bStart);
           if (byStart != 0) return byStart;
-          return compareEventsForDisplay(a, b, currentUid);
+          return compareEventsForDisplay(
+            a.events.first,
+            b.events.first,
+            currentUid,
+          );
         });
 
       final laneEndDay = <int, DateTime>{};
-      final laneByEvent = <Event, int>{};
+      final laneByGroup = <EventGroup, int>{};
       var laneCount = 0;
-      for (final event in weekEvents) {
-        final r = clippedRanges[event]!;
+      for (final group in weekGroups) {
+        final r = clippedRanges[group]!;
         final start = r.start.isBefore(week) ? week : r.start;
         final end = r.end.isAfter(weekEnd) ? weekEnd : r.end;
         var lane = 0;
@@ -385,7 +404,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           lane++;
         }
         laneEndDay[lane] = end;
-        laneByEvent[event] = lane;
+        laneByGroup[group] = lane;
         if (lane + 1 > laneCount) laneCount = lane + 1;
       }
 
@@ -395,18 +414,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           : (capacity - 1).clamp(0, laneCount);
 
       final hiddenPerCol = List<int>.filled(7, 0);
-      for (final event in weekEvents) {
-        final r = clippedRanges[event]!;
+      for (final group in weekGroups) {
+        final r = clippedRanges[group]!;
         final segStart = r.start.isBefore(week) ? week : r.start;
         final segEnd = r.end.isAfter(weekEnd) ? weekEnd : r.end;
         final startCol = segStart.weekday % 7;
         final endCol = segEnd.weekday % 7;
-        final lane = laneByEvent[event]!;
+        final lane = laneByGroup[group]!;
 
         if (lane < maxVisibleLanes) {
           bars.add(
             _BarSegment(
-              event: event,
+              group: group,
               weekIndex: weekIndex,
               startCol: startCol,
               endCol: endCol,
@@ -415,6 +434,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               // 継続端（週頭・週末）は角を落として次週へ連結して見せる。
               roundLeft: segStart.isAtSameMomentAs(r.start),
               roundRight: segEnd.isAtSameMomentAs(r.end),
+              // 束ねたバーは日別ストリップ用に、この週スライスの各日で実際に
+              // 参加しているメンバーを求める（Issue #76）。
+              perDayMemberIds: group.isMerged
+                  ? activeMemberIdsPerDay(group, segStart, segEnd)
+                  : const [],
             ),
           );
         } else {
@@ -453,30 +477,36 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   DateTime _dateKey(DateTime day) => DateTime(day.year, day.month, day.day);
 }
 
-/// 週内 1 本分の予定バーの配置情報（Issue #72）。
+/// 週内 1 本分の予定バーの配置情報（Issue #72 / #76）。
 ///
 /// [weekIndex] は表示中 6 週のうちの行（0〜5）、[startCol] / [endCol] は
 /// その週での開始・終了列（0＝日曜〜6＝土曜）、[lane] は縦位置。
 /// [roundLeft] / [roundRight] は、その端が予定の実際の開始・終了日
-/// （＝週をまたぐ継続端ではない）かどうかを表す。
+/// （＝週をまたぐ継続端ではない）かどうかを表す。[group] は 1 件のみなら
+/// 普通の予定、2 件以上なら束ねた予定グループ（Issue #76）。
 class _BarSegment {
   const _BarSegment({
-    required this.event,
+    required this.group,
     required this.weekIndex,
     required this.startCol,
     required this.endCol,
     required this.lane,
     required this.roundLeft,
     required this.roundRight,
+    this.perDayMemberIds = const [],
   });
 
-  final Event event;
+  final EventGroup group;
   final int weekIndex;
   final int startCol;
   final int endCol;
   final int lane;
   final bool roundLeft;
   final bool roundRight;
+
+  /// 束ねたバーの各日（この週スライスの [startCol]〜[endCol]）で実際に参加して
+  /// いるメンバー ID。日別ストリップを描くために使う（Issue #76）。普通の予定は空。
+  final List<List<String>> perDayMemberIds;
 }
 
 /// マスに収まらなかった予定を集約する「+N」マーカー（Issue #72）。
@@ -557,15 +587,7 @@ class _EventBarsOverlay extends StatelessWidget {
                 (bar.roundLeft ? _endInset : 0) -
                 (bar.roundRight ? _endInset : 0),
             height: barHeight,
-            child: EventBar(
-              title: bar.event.title,
-              colors: bar.event.memberIds
-                  .map((id) => colorFromHex(membersById[id]?.color ?? ''))
-                  .toList(),
-              type: bar.event.type,
-              roundLeft: bar.roundLeft,
-              roundRight: bar.roundRight,
-            ),
+            child: _buildBar(context, bar),
           ),
         for (final marker in markers)
           Positioned(
@@ -573,19 +595,61 @@ class _EventBarsOverlay extends StatelessWidget {
             top: _rowTop(marker.weekIndex) + marker.lane * barSlot,
             width: colWidth - _endInset * 2,
             height: barHeight,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '+${marker.count}',
-                style: TextStyle(
-                  fontSize: 10,
-                  height: 1.1,
-                  color: scheme.onSurfaceVariant,
+            // 「+N」はタップを下のマスへ通す（日選択の操作を保つ）。
+            child: IgnorePointer(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '+${marker.count}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.1,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildBar(BuildContext context, _BarSegment bar) {
+    final group = bar.group;
+
+    // 束ねた予定（Issue #76）は代表 1 本＋人数バッジで描き、タップで内訳シートを
+    // 開く。1 件だけの普通の予定はこれまでどおり [EventBar] で描き、タップは
+    // [IgnorePointer] で下のマスへ通す。
+    if (group.isMerged) {
+      // 日別ストリップ: この週スライスの各日で active なメンバーの色を積む。
+      final dayColors = [
+        for (final ids in bar.perDayMemberIds)
+          [for (final id in ids) colorFromHex(membersById[id]?.color ?? '')],
+      ];
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _showEventGroupSheet(context, group, membersById),
+        child: MergedEventBar(
+          title: group.title,
+          dayColors: dayColors,
+          type: group.type,
+          roundLeft: bar.roundLeft,
+          roundRight: bar.roundRight,
+        ),
+      );
+    }
+
+    final colors = group.memberIds
+        .map((id) => colorFromHex(membersById[id]?.color ?? ''))
+        .toList();
+    return IgnorePointer(
+      child: EventBar(
+        title: group.title,
+        colors: colors,
+        type: group.type,
+        roundLeft: bar.roundLeft,
+        roundRight: bar.roundRight,
+      ),
     );
   }
 }
@@ -874,6 +938,287 @@ class EventBar extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// 束ねた予定グループを表す代表 1 本のバー（Issue #76、Form B）。
+///
+/// 人ごとに期間が違う同名予定を 1 本に畳むため、参加者色で全面を塗る代わりに
+/// 中立色（surfaceVariant）を地にする。タイトルはグループ共通なので先頭に
+/// 1 回だけ表示する。仮/確定が混在する
+/// 場合は [type] を仮として渡し、[EventBar] と同じ枠付き・半透明の仮スタイルにする
+/// （FR-3、安全側）。
+///
+/// [dayColors] は「このバースライスの各日で実際に参加しているメンバーの色」で、
+/// 1 要素 = 1 日（列）に対応する。予定が入っている日にだけ、その日の参加者色の
+/// 〇（ドット）を並べて描く。長い予定に短い予定が重なるケースでも、「7/18 始まり
+/// ＝全員」という誤解を避け、誰がどの日に関わるかを一目で示す（FR-2）。
+class MergedEventBar extends StatelessWidget {
+  const MergedEventBar({
+    required this.title,
+    required this.dayColors,
+    required this.type,
+    this.roundLeft = true,
+    this.roundRight = true,
+    super.key,
+  });
+
+  final String title;
+  final List<List<Color>> dayColors;
+  final EventType type;
+  final bool roundLeft;
+  final bool roundRight;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final confirmed = type == EventType.confirmed;
+    // 束ねたバーの地色は、メンバー色（誰の予定か）と混同されないよう専用の
+    // 中立色をテーマから引く（既定は KanSukeColors.mergedBar、Issue #76）。
+    // タイトルのチップも同じ地色を敷き、背面のドットを隠して読めるようにする。
+    final barColor = KanSukeColors.of(context).mergedBar;
+    final textColor = scheme.onSurfaceVariant;
+    const radius = Radius.circular(3);
+    final border = BorderSide(color: scheme.outline, width: 1);
+
+    Widget chip(Widget child) => ColoredBox(
+      color: barColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: child,
+      ),
+    );
+
+    return Container(
+      height: 16,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: barColor,
+        // 仮が混じるグループは枠付きで種別を区別する（FR-3、安全側）。
+        border: confirmed
+            ? null
+            : Border(
+                top: border,
+                bottom: border,
+                left: roundLeft ? border : BorderSide.none,
+                right: roundRight ? border : BorderSide.none,
+              ),
+        borderRadius: BorderRadius.only(
+          topLeft: roundLeft ? radius : Radius.zero,
+          bottomLeft: roundLeft ? radius : Radius.zero,
+          topRight: roundRight ? radius : Radius.zero,
+          bottomRight: roundRight ? radius : Radius.zero,
+        ),
+      ),
+      child: Stack(
+        children: [
+          // 背面: 予定が入っている日に、その日の参加者色の〇をバー高いっぱいに
+          // 近いサイズで並べる（FR-2）。
+          Positioned.fill(child: _DayDots(dayColors: dayColors)),
+          // 前面: タイトル（先頭に 1 回）。チップでドットの上に載せる。
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: chip(
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.0,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 束ねたバーの日別ドット（Issue #76）。
+///
+/// 幅を日数で等分し、予定が入っている日にだけ、その日の参加者色の〇を横並びで
+/// 描く。予定のない日は空ける。〇はバー高と同等〜気持ち小さいサイズにし、
+/// 一目で判別できるようにする。
+class _DayDots extends StatelessWidget {
+  const _DayDots({required this.dayColors});
+
+  final List<List<Color>> dayColors;
+
+  /// 〇の直径。バー高（16）より気持ち小さくして上下に少し余白を残す。
+  static const double _dotSize = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    if (dayColors.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dayWidth = constraints.maxWidth / dayColors.length;
+        return Row(
+          children: [
+            for (final colors in dayColors)
+              SizedBox(
+                width: dayWidth,
+                height: constraints.maxHeight,
+                child: colors.isEmpty
+                    ? null
+                    : Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final color in colors)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 1,
+                                ),
+                                child: Container(
+                                  width: _dotSize,
+                                  height: _dotSize,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 束ねた予定グループの内訳ボトムシート（Issue #76）。
+///
+/// グループ内の各予定を参加者・期間・仮/確定つきで一覧し、行タップで既存の
+/// 予定編集画面へ遷移する。マージは表示上の導出なので、編集は各予定に対して
+/// 個別に行う（データは各自のまま）。
+Future<void> _showEventGroupSheet(
+  BuildContext context,
+  EventGroup group,
+  Map<String, User> membersById,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                group.title,
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 8),
+                itemCount: group.events.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final event = group.events[index];
+                  return _EventGroupSheetTile(
+                    event: event,
+                    membersById: membersById,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+/// 内訳シートの 1 行（1 予定）。行タップで予定編集画面へ遷移する（Issue #76）。
+class _EventGroupSheetTile extends StatelessWidget {
+  const _EventGroupSheetTile({required this.event, required this.membersById});
+
+  final Event event;
+  final Map<String, User> membersById;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = event.memberIds
+        .map((id) => colorFromHex(membersById[id]?.color ?? ''))
+        .toList();
+    final names = event.memberIds
+        .map((id) => membersById[id]?.name.trim())
+        .whereType<String>()
+        .where((name) => name.isNotEmpty)
+        .toList();
+
+    return ListTile(
+      leading: Wrap(
+        spacing: 3,
+        runSpacing: 3,
+        children: [
+          for (final color in colors)
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+        ],
+      ),
+      title: Text(names.isEmpty ? '（参加者なし）' : names.join('・')),
+      subtitle: Text(_periodLabel(event)),
+      trailing: EventTypeBadge(event.type),
+      onTap: () {
+        // シートを閉じてから編集画面へ遷移する（シートを残さない）。
+        Navigator.pop(context);
+        Navigator.pushNamed(
+          context,
+          AppRoutes.eventEdit,
+          arguments: EventEditArgs.edit(event),
+        );
+      },
+    );
+  }
+
+  String _periodLabel(Event event) {
+    final start = event.startAt.toLocal();
+    final end = event.endAt.toLocal();
+    final sameDay =
+        start.year == end.year &&
+        start.month == end.month &&
+        start.day == end.day;
+    String two(int value) => value.toString().padLeft(2, '0');
+    String monthDay(DateTime dt) => '${dt.month}/${dt.day}';
+    String time(DateTime dt) => '${two(dt.hour)}:${two(dt.minute)}';
+
+    if (event.allDay) {
+      return sameDay
+          ? '${monthDay(start)}・終日'
+          : '${monthDay(start)}〜${monthDay(end)}・終日';
+    }
+    if (!sameDay) {
+      return '${monthDay(start)} ${time(start)}〜${monthDay(end)} ${time(end)}';
+    }
+    return '${monthDay(start)} ${time(start)}〜${time(end)}';
   }
 }
 

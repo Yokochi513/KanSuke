@@ -9,6 +9,8 @@ import 'package:kansuke/app/theme.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/calendar/presentation/calendar_screen.dart';
+import 'package:kansuke/features/events/presentation/event_type_badge.dart';
+import 'package:kansuke/features/settings/application/event_merge_provider.dart';
 import 'package:kansuke/models/models.dart';
 import 'package:table_calendar/table_calendar.dart';
 
@@ -223,11 +225,66 @@ Future<FakeFirebaseFirestore> _seedAdjacentMonthEvents() async {
   return firestore;
 }
 
-Widget _wrap(FakeFirebaseFirestore firestore, {DateTime? initialFocusedDay}) {
+/// 同名で期間が連なる予定（マージ表示の検証用）。各 seed の (title, creator,
+/// start, end, type) を投入する。
+Future<FakeFirebaseFirestore> _seedTitledEvents(
+  List<
+    ({
+      String title,
+      String creator,
+      DateTime start,
+      DateTime end,
+      EventType type,
+    })
+  >
+  seeds,
+) async {
+  final firestore = FakeFirebaseFirestore();
+  for (final (id, name, color) in const [
+    ('me', 'ぱぱ', '#1565C0'),
+    ('mama', 'まま', '#D84315'),
+  ]) {
+    await firestore.collection('users').doc(id).set({
+      'name': name,
+      'email': '$id@example.com',
+      'color': color,
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
+  for (final seed in seeds) {
+    final event = Event.create(
+      title: seed.title,
+      creatorId: seed.creator,
+      participantIds: [seed.creator],
+      startAt: seed.start,
+      endAt: seed.end,
+      allDay: false,
+      type: seed.type,
+      memo: '',
+      reminderOffsets: const [],
+      updatedBy: seed.creator,
+      now: seed.start,
+      calendarId: defaultCalendarId,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+  }
+  return firestore;
+}
+
+Widget _wrap(
+  FakeFirebaseFirestore firestore, {
+  DateTime? initialFocusedDay,
+  bool mergeEnabled = true,
+}) {
   return ProviderScope(
     overrides: [
       firestoreProvider.overrideWithValue(firestore),
       currentUidProvider.overrideWithValue('me'),
+      resolvedEventMergeEnabledProvider.overrideWithValue(mergeEnabled),
     ],
     child: MaterialApp(
       theme: buildKanSukeTheme(),
@@ -236,6 +293,8 @@ Widget _wrap(FakeFirebaseFirestore firestore, {DateTime? initialFocusedDay}) {
         AppRoutes.dayEvents: (_) =>
             const Scaffold(body: Text('DAY_LIST_SCREEN')),
         AppRoutes.settings: (_) => const Scaffold(body: Text('SETTINGS')),
+        AppRoutes.eventEdit: (_) =>
+            const Scaffold(body: Text('EVENT_EDIT_SCREEN')),
       },
     ),
   );
@@ -587,5 +646,187 @@ void main() {
     expect(find.text('2026年1月'), findsOneWidget);
     expect(find.text('前月末の予定'), findsOneWidget);
     expect(find.text('翌月初の予定'), findsOneWidget);
+  });
+
+  testWidgets('同名で期間が重なる予定は1本に束ねて表示する（Issue #76）', (tester) async {
+    // 7/5(日)〜7/7 と 7/6〜7/8 は同名・期間が重なるため 1 本（和集合）に束ねる。
+    final firestore = await _seedTitledEvents([
+      (
+        title: '旅行',
+        creator: 'me',
+        start: DateTime(2026, 7, 5, 9),
+        end: DateTime(2026, 7, 7, 18),
+        type: EventType.confirmed,
+      ),
+      (
+        title: '旅行',
+        creator: 'mama',
+        start: DateTime(2026, 7, 6, 9),
+        end: DateTime(2026, 7, 8, 18),
+        type: EventType.confirmed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MergedEventBar), findsOneWidget);
+    // 束ねた予定は普通の [EventBar] では描かない。
+    expect(find.byType(EventBar), findsNothing);
+    // タイトルは先頭に 1 回だけ表示する（人数バッジは廃止、Issue #76）。
+    expect(find.text('旅行'), findsOneWidget);
+    expect(find.textContaining('👥'), findsNothing);
+
+    // 予定が入っている日に、参加者色の〇（ドット）が描かれる。
+    final dotColors = tester
+        .widgetList<Container>(
+          find.descendant(
+            of: find.byType(MergedEventBar),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>()
+        .where((decoration) => decoration.shape == BoxShape.circle)
+        .map((decoration) => decoration.color)
+        .toSet();
+    // ぱぱ(青)・まま(橙)の色が両方ドットに現れる。
+    expect(dotColors, contains(const Color(0xFF1565C0)));
+    expect(dotColors, contains(const Color(0xFFD84315)));
+  });
+
+  testWidgets('期間が離れた同名予定は束ねない（Issue #76）', (tester) async {
+    // 7/5〜7/6 と 7/9〜7/10 は間に空き日（7/7・7/8）があるため別グループのまま。
+    final firestore = await _seedTitledEvents([
+      (
+        title: '帰省',
+        creator: 'me',
+        start: DateTime(2026, 7, 5, 9),
+        end: DateTime(2026, 7, 6, 18),
+        type: EventType.confirmed,
+      ),
+      (
+        title: '帰省',
+        creator: 'mama',
+        start: DateTime(2026, 7, 9, 9),
+        end: DateTime(2026, 7, 10, 18),
+        type: EventType.confirmed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MergedEventBar), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is EventBar && widget.title == '帰省',
+      ),
+      findsNWidgets(2),
+    );
+  });
+
+  testWidgets('マージOFFなら同名予定を束ねず従来表示に戻す（Issue #76）', (tester) async {
+    final firestore = await _seedTitledEvents([
+      (
+        title: '旅行',
+        creator: 'me',
+        start: DateTime(2026, 7, 5, 9),
+        end: DateTime(2026, 7, 7, 18),
+        type: EventType.confirmed,
+      ),
+      (
+        title: '旅行',
+        creator: 'mama',
+        start: DateTime(2026, 7, 6, 9),
+        end: DateTime(2026, 7, 8, 18),
+        type: EventType.confirmed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(
+        firestore,
+        initialFocusedDay: DateTime(2026, 7, 1),
+        mergeEnabled: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MergedEventBar), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is EventBar && widget.title == '旅行',
+      ),
+      findsNWidgets(2),
+    );
+  });
+
+  testWidgets('仮/確定が混在するグループは仮スタイルで束ねる（Issue #76）', (tester) async {
+    final firestore = await _seedTitledEvents([
+      (
+        title: '旅行',
+        creator: 'me',
+        start: DateTime(2026, 7, 5, 9),
+        end: DateTime(2026, 7, 7, 18),
+        type: EventType.confirmed,
+      ),
+      (
+        title: '旅行',
+        creator: 'mama',
+        start: DateTime(2026, 7, 6, 9),
+        end: DateTime(2026, 7, 8, 18),
+        type: EventType.tentative,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final bar = tester.widget<MergedEventBar>(find.byType(MergedEventBar));
+    // 1 件でも仮があれば仮スタイル（安全側、FR-3）。
+    expect(bar.type, EventType.tentative);
+  });
+
+  testWidgets('束ねたバーのタップで内訳シートを開き、行から編集へ遷移する（Issue #76）', (tester) async {
+    final firestore = await _seedTitledEvents([
+      (
+        title: '旅行',
+        creator: 'me',
+        start: DateTime(2026, 7, 5, 9),
+        end: DateTime(2026, 7, 7, 18),
+        type: EventType.confirmed,
+      ),
+      (
+        title: '旅行',
+        creator: 'mama',
+        start: DateTime(2026, 7, 6, 9),
+        end: DateTime(2026, 7, 8, 18),
+        type: EventType.confirmed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(MergedEventBar));
+    await tester.pumpAndSettle();
+
+    // 内訳シートに各予定（2 件）の種別バッジが並ぶ。
+    expect(find.byType(EventTypeBadge), findsNWidgets(2));
+
+    // 行タップで予定編集画面へ遷移する。
+    await tester.tap(find.byType(ListTile).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('EVENT_EDIT_SCREEN'), findsOneWidget);
   });
 }

@@ -60,6 +60,32 @@ void main() {
     expect(container.read(resolvedThemeModeProvider), ThemeMode.dark);
   });
 
+  testWidgets('まとめ表示トグルを切り替えると保存される（Issue #76）', (tester) async {
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 既定は ON。トグルを操作するとスクロールで表示してから OFF に切り替わる。
+    await tester.scrollUntilVisible(
+      find.text('同じ予定をまとめる'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('settings.event_merge_enabled'), isFalse);
+  });
+
   testWidgets('自分の色を選ぶと users/{uid}.color が更新される', (tester) async {
     final firestore = await _seedUser();
     await tester.pumpWidget(
