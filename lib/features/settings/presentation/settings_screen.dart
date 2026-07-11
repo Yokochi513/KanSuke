@@ -7,6 +7,7 @@ import '../../../app/theme.dart';
 import '../../../core/color_utils.dart';
 import '../../auth/application/auth_state.dart';
 import '../../users/application/user_providers.dart';
+import '../application/event_merge_provider.dart';
 import '../application/notification_permission.dart';
 import '../application/theme_mode_provider.dart';
 
@@ -39,6 +40,9 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('カレンダー'),
           const _CalendarManagementSection(),
+          const Divider(),
+          const _SectionHeader('予定のまとめ表示'),
+          const _EventMergeSection(),
           const Divider(),
           const _SectionHeader('フィードバック'),
           const _FeedbackSection(),
@@ -474,6 +478,29 @@ class _ThemeModeSection extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 月表示のマージ表示（同名・期間が連なる予定を 1 本に束ねる）の ON/OFF
+/// （Issue #76、FR-2 / FR-4）。
+///
+/// 暗黙グルーピングの誤爆に備えた保険として切り替えられるようにする。既定は ON。
+/// 端末ローカルの設定のため、家族の他のメンバーの表示には影響しない。
+class _EventMergeSection extends ConsumerWidget {
+  const _EventMergeSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(resolvedEventMergeEnabledProvider);
+
+    return SwitchListTile(
+      secondary: const Icon(Icons.merge_type),
+      title: const Text('同じ予定をまとめる'),
+      subtitle: const Text('同名で期間が重なる予定を月表示で1本に束ねます。'),
+      value: enabled,
+      onChanged: (value) =>
+          ref.read(eventMergeEnabledProvider.notifier).setEnabled(value),
     );
   }
 }
