@@ -1074,7 +1074,11 @@ class _DayStrip extends StatelessWidget {
               SizedBox(
                 width: dayWidth,
                 height: constraints.maxHeight,
+                // 各日は active なメンバーの色を縦に等分割して積む。ColoredBox は
+                // 固有幅を持たないため、stretch で日セル幅いっぱいに広げる
+                // （既定の center だと幅 0 になり色が描画されない）。
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     for (final color in colors)
                       Expanded(child: ColoredBox(color: color)),
