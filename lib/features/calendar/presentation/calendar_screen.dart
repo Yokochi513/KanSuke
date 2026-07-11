@@ -945,15 +945,15 @@ class EventBar extends StatelessWidget {
 /// 束ねた予定グループを表す代表 1 本のバー（Issue #76、Form B）。
 ///
 /// 人ごとに期間が違う同名予定を 1 本に畳むため、参加者色で全面を塗る代わりに
-/// 中立色（surfaceVariant）を地にし、下辺に参加者色のストリップを敷いて FR-2 の
-/// 色判別を最低限残す。末尾に `👥N`（N = のべ参加者の重複排除数）を出し、タイトルは
-/// グループ共通なので先頭に 1 回だけ表示する。仮/確定が混在する場合は [type] を仮
-/// として渡し、[EventBar] と同じ枠付き・半透明の仮スタイルにする（FR-3、安全側）。
+/// 中立色（surfaceVariant）を地にする。末尾に `👥N`（N = のべ参加者の重複排除数）を
+/// 出し、タイトルはグループ共通なので先頭に 1 回だけ表示する。仮/確定が混在する
+/// 場合は [type] を仮として渡し、[EventBar] と同じ枠付き・半透明の仮スタイルにする
+/// （FR-3、安全側）。
 ///
 /// [dayColors] は「このバースライスの各日で実際に参加しているメンバーの色」で、
-/// 1 要素 = 1 日（列）に対応する。長い予定に短い予定が重なるケースでも、各日に
-/// active な色だけを縦に積んで描くことで、「7/18 始まり＝全員」という誤解を避け、
-/// 誰がどの期間に関わるかを一目で示す。
+/// 1 要素 = 1 日（列）に対応する。予定が入っている日にだけ、その日の参加者色の
+/// 〇（ドット）を並べて描く。長い予定に短い予定が重なるケースでも、「7/18 始まり
+/// ＝全員」という誤解を避け、誰がどの日に関わるかを一目で示す（FR-2）。
 class MergedEventBar extends StatelessWidget {
   const MergedEventBar({
     required this.title,
@@ -972,9 +972,8 @@ class MergedEventBar extends StatelessWidget {
   final bool roundLeft;
   final bool roundRight;
 
-  /// 下辺の参加者色ストリップの高さ。複数人の日を縦に積んでも判別できるよう、
-  /// 単日バー（[EventBar]）の分割より気持ち高くする。
-  static const double _stripHeight = 5;
+  /// 下辺の日別ドット帯の高さ。タイトル行を潰さないよう小さく取る。
+  static const double _dotBandHeight = 6;
 
   @override
   Widget build(BuildContext context) {
@@ -1040,11 +1039,11 @@ class MergedEventBar extends StatelessWidget {
               ),
             ),
           ),
-          // 下辺に日別の参加者色ストリップを敷く。各日は active なメンバーの色を
-          // 縦に積み、色（人）がどの期間に存在するかを横方向で示す（FR-2）。
+          // 下辺に日別のドットを並べる。予定が入っている日にだけ、その日の
+          // 参加者色の〇を描き、誰がどの日に関わるかを示す（FR-2）。
           SizedBox(
-            height: _stripHeight,
-            child: _DayStrip(dayColors: dayColors),
+            height: _dotBandHeight,
+            child: _DayDots(dayColors: dayColors),
           ),
         ],
       ),
@@ -1052,13 +1051,17 @@ class MergedEventBar extends StatelessWidget {
   }
 }
 
-/// 束ねたバーの日別ストリップ（Issue #76）。
+/// 束ねたバーの日別ドット（Issue #76）。
 ///
-/// 幅を日数で等分し、各日に active なメンバーの色を縦に等分割して積む。
-class _DayStrip extends StatelessWidget {
-  const _DayStrip({required this.dayColors});
+/// 幅を日数で等分し、予定が入っている日にだけ、その日の参加者色の〇を横並びで
+/// 描く。予定のない日は空ける。
+class _DayDots extends StatelessWidget {
+  const _DayDots({required this.dayColors});
 
   final List<List<Color>> dayColors;
+
+  /// 〇の直径。ドット帯の高さに収める。
+  static const double _dotSize = 5;
 
   @override
   Widget build(BuildContext context) {
@@ -1074,16 +1077,29 @@ class _DayStrip extends StatelessWidget {
               SizedBox(
                 width: dayWidth,
                 height: constraints.maxHeight,
-                // 各日は active なメンバーの色を縦に等分割して積む。ColoredBox は
-                // 固有幅を持たないため、stretch で日セル幅いっぱいに広げる
-                // （既定の center だと幅 0 になり色が描画されない）。
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final color in colors)
-                      Expanded(child: ColoredBox(color: color)),
-                  ],
-                ),
+                child: colors.isEmpty
+                    ? null
+                    : Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final color in colors)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 0.5,
+                                ),
+                                child: Container(
+                                  width: _dotSize,
+                                  height: _dotSize,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
               ),
           ],
         );

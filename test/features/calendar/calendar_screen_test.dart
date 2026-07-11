@@ -679,24 +679,22 @@ void main() {
     expect(find.text('旅行'), findsOneWidget);
     expect(find.text('👥2'), findsOneWidget);
 
-    // 日別ストリップに参加者色が「幅を持って」描かれる（幅 0 で消える回帰を防ぐ）。
-    final stripBoxFinder = find.descendant(
-      of: find.byType(MergedEventBar),
-      matching: find.byType(ColoredBox),
-    );
-    final stripBoxes = tester.renderObjectList(stripBoxFinder);
-    expect(stripBoxes, isNotEmpty);
-    expect(
-      stripBoxes.every((box) => (box as RenderBox).size.width > 0),
-      isTrue,
-    );
-    final stripColors = tester
-        .widgetList<ColoredBox>(stripBoxFinder)
-        .map((box) => box.color)
+    // 予定が入っている日に、参加者色の〇（ドット）が描かれる。
+    final dotColors = tester
+        .widgetList<Container>(
+          find.descendant(
+            of: find.byType(MergedEventBar),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>()
+        .where((decoration) => decoration.shape == BoxShape.circle)
+        .map((decoration) => decoration.color)
         .toSet();
-    // ぱぱ(青)・まま(橙)の色が両方ストリップに現れる。
-    expect(stripColors, contains(const Color(0xFF1565C0)));
-    expect(stripColors, contains(const Color(0xFFD84315)));
+    // ぱぱ(青)・まま(橙)の色が両方ドットに現れる。
+    expect(dotColors, contains(const Color(0xFF1565C0)));
+    expect(dotColors, contains(const Color(0xFFD84315)));
   });
 
   testWidgets('期間が離れた同名予定は束ねない（Issue #76）', (tester) async {
