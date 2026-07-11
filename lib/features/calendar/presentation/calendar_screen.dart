@@ -976,9 +976,10 @@ class MergedEventBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final confirmed = type == EventType.confirmed;
-    // タイトル/バッジのチップ地色。ドットと重なっても読めるよう、バー本体と
-    // 同じ不透明色を敷いて背面のドットを隠す。
-    final barColor = scheme.surfaceContainerHighest;
+    // 束ねたバーの地色は、メンバー色（誰の予定か）と混同されないよう専用の
+    // 中立色をテーマから引く（既定は KanSukeColors.mergedBar、Issue #76）。
+    // タイトル/バッジのチップも同じ地色を敷き、背面のドットを隠して読めるようにする。
+    final barColor = KanSukeColors.of(context).mergedBar;
     final textColor = scheme.onSurfaceVariant;
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);

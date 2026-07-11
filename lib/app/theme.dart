@@ -90,6 +90,7 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
     required this.holiday,
     required this.washiBase,
     required this.washiFiber,
+    required this.mergedBar,
   });
 
   /// 日曜の日付色（朱）。
@@ -107,12 +108,21 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
   /// 和紙テクスチャに漉き込まれた繊維の色。
   final Color washiFiber;
 
+  /// 束ねた予定バー（Issue #76）の地色。
+  ///
+  /// 「誰の予定か」を表すメンバー色（[MemberColors.palette]）と混同されないよう、
+  /// あえて彩度を落とした中立グレーにする。地色を変えたいときはここ 1 箇所を
+  /// 差し替える（メンバー色と被らない色を選ぶこと）。
+  final Color mergedBar;
+
   static const light = KanSukeColors(
     sunday: WashiColors.shu,
     saturday: WashiColors.hanada,
     holiday: WashiColors.shu,
     washiBase: WashiColors.kinari,
     washiFiber: Color(0x0D231E14),
+    // 鼠色系の中立グレー。和紙の生成り地に載せても沈まず、メンバー色とも被らない。
+    mergedBar: Color(0xFFBFC6CB),
   );
 
   static const dark = KanSukeColors(
@@ -121,6 +131,7 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
     holiday: WashiColors.araishu,
     washiBase: WashiColors.sumi,
     washiFiber: Color(0x0BF7F3E8),
+    mergedBar: Color(0xFF4C5157),
   );
 
   static KanSukeColors of(BuildContext context) =>
@@ -133,6 +144,7 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
     Color? holiday,
     Color? washiBase,
     Color? washiFiber,
+    Color? mergedBar,
   }) {
     return KanSukeColors(
       sunday: sunday ?? this.sunday,
@@ -140,6 +152,7 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
       holiday: holiday ?? this.holiday,
       washiBase: washiBase ?? this.washiBase,
       washiFiber: washiFiber ?? this.washiFiber,
+      mergedBar: mergedBar ?? this.mergedBar,
     );
   }
 
@@ -152,6 +165,7 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
       holiday: Color.lerp(holiday, other.holiday, t)!,
       washiBase: Color.lerp(washiBase, other.washiBase, t)!,
       washiFiber: Color.lerp(washiFiber, other.washiFiber, t)!,
+      mergedBar: Color.lerp(mergedBar, other.mergedBar, t)!,
     );
   }
 
@@ -163,11 +177,12 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
           other.saturday == saturday &&
           other.holiday == holiday &&
           other.washiBase == washiBase &&
-          other.washiFiber == washiFiber;
+          other.washiFiber == washiFiber &&
+          other.mergedBar == mergedBar;
 
   @override
   int get hashCode =>
-      Object.hash(sunday, saturday, holiday, washiBase, washiFiber);
+      Object.hash(sunday, saturday, holiday, washiBase, washiFiber, mergedBar);
 }
 
 /// 和紙の生成り地に紺・墨・朱を載せたライトテーマの配色。
