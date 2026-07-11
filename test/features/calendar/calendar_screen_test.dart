@@ -648,7 +648,7 @@ void main() {
     expect(find.text('翌月初の予定'), findsOneWidget);
   });
 
-  testWidgets('同名で期間が重なる予定は1本に束ね、人数バッジを表示する（Issue #76）', (tester) async {
+  testWidgets('同名で期間が重なる予定は1本に束ねて表示する（Issue #76）', (tester) async {
     // 7/5(日)〜7/7 と 7/6〜7/8 は同名・期間が重なるため 1 本（和集合）に束ねる。
     final firestore = await _seedTitledEvents([
       (
@@ -675,9 +675,9 @@ void main() {
     expect(find.byType(MergedEventBar), findsOneWidget);
     // 束ねた予定は普通の [EventBar] では描かない。
     expect(find.byType(EventBar), findsNothing);
-    // タイトルは先頭に 1 回だけ、人数バッジはのべ参加者の重複排除数（ぱぱ＋まま＝2）。
+    // タイトルは先頭に 1 回だけ表示する（人数バッジは廃止、Issue #76）。
     expect(find.text('旅行'), findsOneWidget);
-    expect(find.text('👥2'), findsOneWidget);
+    expect(find.textContaining('👥'), findsNothing);
 
     // 予定が入っている日に、参加者色の〇（ドット）が描かれる。
     final dotColors = tester

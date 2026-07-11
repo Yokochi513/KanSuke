@@ -632,7 +632,6 @@ class _EventBarsOverlay extends StatelessWidget {
         child: MergedEventBar(
           title: group.title,
           dayColors: dayColors,
-          participantCount: group.participantCount,
           type: group.type,
           roundLeft: bar.roundLeft,
           roundRight: bar.roundRight,
@@ -945,8 +944,8 @@ class EventBar extends StatelessWidget {
 /// 束ねた予定グループを表す代表 1 本のバー（Issue #76、Form B）。
 ///
 /// 人ごとに期間が違う同名予定を 1 本に畳むため、参加者色で全面を塗る代わりに
-/// 中立色（surfaceVariant）を地にする。末尾に `👥N`（N = のべ参加者の重複排除数）を
-/// 出し、タイトルはグループ共通なので先頭に 1 回だけ表示する。仮/確定が混在する
+/// 中立色（surfaceVariant）を地にする。タイトルはグループ共通なので先頭に
+/// 1 回だけ表示する。仮/確定が混在する
 /// 場合は [type] を仮として渡し、[EventBar] と同じ枠付き・半透明の仮スタイルにする
 /// （FR-3、安全側）。
 ///
@@ -958,7 +957,6 @@ class MergedEventBar extends StatelessWidget {
   const MergedEventBar({
     required this.title,
     required this.dayColors,
-    required this.participantCount,
     required this.type,
     this.roundLeft = true,
     this.roundRight = true,
@@ -967,7 +965,6 @@ class MergedEventBar extends StatelessWidget {
 
   final String title;
   final List<List<Color>> dayColors;
-  final int participantCount;
   final EventType type;
   final bool roundLeft;
   final bool roundRight;
@@ -978,7 +975,7 @@ class MergedEventBar extends StatelessWidget {
     final confirmed = type == EventType.confirmed;
     // 束ねたバーの地色は、メンバー色（誰の予定か）と混同されないよう専用の
     // 中立色をテーマから引く（既定は KanSukeColors.mergedBar、Issue #76）。
-    // タイトル/バッジのチップも同じ地色を敷き、背面のドットを隠して読めるようにする。
+    // タイトルのチップも同じ地色を敷き、背面のドットを隠して読めるようにする。
     final barColor = KanSukeColors.of(context).mergedBar;
     final textColor = scheme.onSurfaceVariant;
     const radius = Radius.circular(3);
@@ -1018,7 +1015,7 @@ class MergedEventBar extends StatelessWidget {
           // 背面: 予定が入っている日に、その日の参加者色の〇をバー高いっぱいに
           // 近いサイズで並べる（FR-2）。
           Positioned.fill(child: _DayDots(dayColors: dayColors)),
-          // 前面: タイトル（先頭に 1 回）と人数バッジ。チップでドットの上に載せる。
+          // 前面: タイトル（先頭に 1 回）。チップでドットの上に載せる。
           Positioned.fill(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -1036,17 +1033,6 @@ class MergedEventBar extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: textColor,
                         ),
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  chip(
-                    Text(
-                      '👥$participantCount',
-                      style: TextStyle(
-                        fontSize: 10,
-                        height: 1.0,
-                        color: textColor,
                       ),
                     ),
                   ),
