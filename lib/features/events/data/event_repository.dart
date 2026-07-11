@@ -110,13 +110,19 @@ class EventRepository {
   ///
   /// `deleted==false`・`calendarId` 一致・`[startAt, endAt]` が指定期間と
   /// 重なる予定を取得し `startAt` 昇順で返す。
-  /// 複合インデックス（deleted ASC, calendarId ASC, startAt ASC, endAt ASC）を前提とする。
+  /// 複合インデックス（deleted ASC, calendarId ASC, startAt ASC）を前提とする。
   ///
   /// `calendarId` は実際の `where` 句として絞り込む（クライアント側フィルタでは
   /// 不十分）。Firestore Security Rules は複数件取得クエリに対し、クエリの
   /// `where` 句だけでルール適合を静的に証明できない場合はクエリ全体を拒否する。
   /// `calendarId` を絞り込まずに取得すると、他カレンダーの予定が1件でも
   /// 期間内にあった時点でルールがクエリ全体を拒否してしまう（FR-8）。
+  ///
+  /// Issue #60: 繰り返し予定は元の `startAt` が表示月より前でも将来月に
+  /// 出現するため、`endAt >= start` は Firestore の where 句に入れず、
+  /// 取得後に表示範囲内の発生日だけへ展開する。家庭内少人数運用前提の
+  /// シンプルな実装で、将来ユーザー数や件数が増える場合は専用インデックスや
+  /// 派生 occurrence コレクションを検討する。
   /// Firestore の既定でローカルキャッシュ起点に描画される（NFR-1）。
   Stream<List<Event>> watchRange({
     required DateTime start,
@@ -128,15 +134,19 @@ class EventRepository {
         .where('deleted', isEqualTo: false)
         .where('calendarId', isEqualTo: calendarId)
         .where('startAt', isLessThan: Timestamp.fromDate(end))
-        .where('endAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .orderBy('startAt')
-        .orderBy('endAt')
         .snapshots()
         .map((snapshot) {
           final events = <Event>[];
           for (final doc in snapshot.docs) {
             try {
-              events.add(Event.fromFirestore(doc));
+              events.addAll(
+                _expandForRange(
+                  Event.fromFirestore(doc),
+                  start: start,
+                  end: end,
+                ),
+              );
             } catch (error, stackTrace) {
               // 1件のドキュメントの変換失敗（未移行フィールドの欠落・不正な
               // 型など）で月表示全体がエラーにならないよう、当該ドキュメント
@@ -149,7 +159,129 @@ class EventRepository {
               );
             }
           }
+          events.sort(_compareBySchedule);
           return events;
         });
+  }
+
+  Iterable<Event> _expandForRange(
+    Event event, {
+    required DateTime start,
+    required DateTime end,
+  }) sync* {
+    final frequency = event.recurrenceFrequency;
+    if (frequency == null) {
+      if (_overlaps(event.startAt, event.endAt, start, end)) {
+        yield event;
+      }
+      return;
+    }
+
+    final recurrenceCount = event.recurrenceCount;
+    for (
+      var occurrenceIndex = 0;
+      recurrenceCount == null || occurrenceIndex < recurrenceCount;
+      occurrenceIndex += 1
+    ) {
+      final occurrenceStart = _addRecurrenceOffset(
+        event.startAt,
+        frequency,
+        occurrenceIndex,
+      );
+      final occurrenceEnd = _addRecurrenceOffset(
+        event.endAt,
+        frequency,
+        occurrenceIndex,
+      );
+
+      if (!occurrenceStart.isBefore(end)) {
+        break;
+      }
+      if (_overlaps(occurrenceStart, occurrenceEnd, start, end)) {
+        yield event.occurrenceAt(
+          startAt: occurrenceStart,
+          endAt: occurrenceEnd,
+        );
+      }
+    }
+  }
+
+  bool _overlaps(
+    DateTime eventStart,
+    DateTime eventEnd,
+    DateTime rangeStart,
+    DateTime rangeEnd,
+  ) {
+    return eventStart.isBefore(rangeEnd) && !eventEnd.isBefore(rangeStart);
+  }
+
+  DateTime _addRecurrenceOffset(
+    DateTime dateTime,
+    EventRecurrenceFrequency frequency,
+    int occurrenceIndex,
+  ) {
+    return switch (frequency) {
+      EventRecurrenceFrequency.weekly => dateTime.add(
+        Duration(days: DateTime.daysPerWeek * occurrenceIndex),
+      ),
+      EventRecurrenceFrequency.monthly => _addMonthsClamped(
+        dateTime,
+        occurrenceIndex,
+      ),
+      EventRecurrenceFrequency.yearly => _addMonthsClamped(
+        dateTime,
+        occurrenceIndex * DateTime.monthsPerYear,
+      ),
+    };
+  }
+
+  DateTime _addMonthsClamped(DateTime dateTime, int months) {
+    final monthIndex = dateTime.month - 1 + months;
+    final targetYear = dateTime.year + monthIndex ~/ DateTime.monthsPerYear;
+    final targetMonth = monthIndex % DateTime.monthsPerYear + 1;
+    final targetDay = _clampDayToMonth(
+      year: targetYear,
+      month: targetMonth,
+      day: dateTime.day,
+    );
+    if (dateTime.isUtc) {
+      return DateTime.utc(
+        targetYear,
+        targetMonth,
+        targetDay,
+        dateTime.hour,
+        dateTime.minute,
+        dateTime.second,
+        dateTime.millisecond,
+        dateTime.microsecond,
+      );
+    }
+    return DateTime(
+      targetYear,
+      targetMonth,
+      targetDay,
+      dateTime.hour,
+      dateTime.minute,
+      dateTime.second,
+      dateTime.millisecond,
+      dateTime.microsecond,
+    );
+  }
+
+  int _clampDayToMonth({
+    required int year,
+    required int month,
+    required int day,
+  }) {
+    final lastDay = DateTime(year, month + 1, 0).day;
+    return day > lastDay ? lastDay : day;
+  }
+
+  int _compareBySchedule(Event first, Event second) {
+    final byStart = first.startAt.compareTo(second.startAt);
+    if (byStart != 0) return byStart;
+    final byEnd = first.endAt.compareTo(second.endAt);
+    if (byEnd != 0) return byEnd;
+    return first.id.compareTo(second.id);
   }
 }

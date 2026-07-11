@@ -33,7 +33,7 @@ void main() {
     expect(raw['creatorId'], 'me');
   });
 
-  test('updateNameAndMembers は名前と参加者を更新する', () async {
+  test('updateNameAndMembers は名前を更新し、参加者は追加・削除の差分だけ反映する', () async {
     final calendar = Calendar.create(
       name: '旧名前',
       memberIds: const ['me'],
@@ -45,12 +45,40 @@ void main() {
     await repository.updateNameAndMembers(
       calendar.id,
       name: '新しい名前',
-      memberIds: const ['me', 'other'],
+      addedMemberIds: {'other'},
+      removedMemberIds: {},
     );
 
     final raw = await readRaw(calendar.id);
     expect(raw['name'], '新しい名前');
     expect(raw['memberIds'], ['me', 'other']);
+  });
+
+  test('updateNameAndMembers は保存前に他デバイスが加えたメンバーをサーバー側の最新状態から消さない', () async {
+    final calendar = Calendar.create(
+      name: '旧名前',
+      memberIds: const ['me'],
+      creatorId: 'me',
+      now: DateTime.utc(2026, 7, 1),
+    );
+    await repository.create(calendar);
+
+    // 編集画面を開いた後、保存前に他デバイスが 'other' を追加したことを再現する。
+    await firestore.collection('calendars').doc(calendar.id).update({
+      'memberIds': ['me', 'other'],
+    });
+
+    // この端末では 'me' のみを見たまま、名前だけを変更して保存する。
+    await repository.updateNameAndMembers(
+      calendar.id,
+      name: '新しい名前',
+      addedMemberIds: {},
+      removedMemberIds: {},
+    );
+
+    final raw = await readRaw(calendar.id);
+    expect(raw['name'], '新しい名前');
+    expect((raw['memberIds'] as List).toSet(), {'me', 'other'});
   });
 
   test('watchMine は自分が参加しているカレンダーだけを返す', () async {

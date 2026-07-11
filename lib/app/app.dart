@@ -10,10 +10,12 @@ import '../features/calendars/presentation/calendar_edit_screen.dart';
 import '../features/calendars/presentation/calendar_management_screen.dart';
 import '../features/events/presentation/day_events_screen.dart';
 import '../features/events/presentation/event_edit_screen.dart';
+import '../features/settings/application/theme_mode_provider.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/version_check/presentation/version_check_gate.dart';
 import 'routes.dart';
 import 'theme.dart';
+import 'washi_background.dart';
 
 class KanSukeApp extends ConsumerWidget {
   const KanSukeApp({super.key});
@@ -26,6 +28,12 @@ class KanSukeApp extends ConsumerWidget {
       title: 'KanSuke',
       debugShowCheckedModeBanner: false,
       theme: buildKanSukeTheme(),
+      darkTheme: buildKanSukeDarkTheme(),
+      // 設定画面での選択に従う（未設定なら端末のダークモード設定に追従）。
+      themeMode: ref.watch(resolvedThemeModeProvider),
+      // 和紙の地は全画面共通の背景として Navigator の背後に一度だけ敷く。
+      builder: (context, child) =>
+          WashiBackground(child: child ?? const SizedBox.shrink()),
       // NFR-1: 日付ピッカー等の標準UIが英語表記になる不具合を解消する（Issue #58）。
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,

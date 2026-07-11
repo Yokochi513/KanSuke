@@ -63,17 +63,33 @@ class CalendarRepository {
   }
 
   /// 名前・参加者を更新する。
+  ///
+  /// `memberIds` は編集画面を開いた時点のスナップショットに対する差分
+  /// （[addedMemberIds] / [removedMemberIds]）として受け取り、`runTransaction`
+  /// でサーバー上の最新 `memberIds` にその差分だけを適用する。編集画面が
+  /// 保持するメンバー一覧全体をそのまま上書きすると、画面を開いてから保存
+  /// するまでの間に他デバイスが加えたメンバー変更（例: 誰かの参加）を
+  /// サイレントに消してしまうため（read-modify-write の競合）。
   Future<void> updateNameAndMembers(
     String id, {
     required String name,
-    required List<String> memberIds,
+    required Set<String> addedMemberIds,
+    required Set<String> removedMemberIds,
   }) {
-    return _calendars
-        .doc(id)
-        .update({
-          'name': name,
-          'memberIds': memberIds,
-          'updatedAt': FieldValue.serverTimestamp(),
+    final ref = _calendars.doc(id);
+    return _firestore
+        .runTransaction((transaction) async {
+          final snapshot = await transaction.get(ref);
+          final current = ((snapshot.data()?['memberIds'] as List?) ?? const [])
+              .map((id) => id as String)
+              .toSet();
+          final memberIds = {...current, ...addedMemberIds}
+            ..removeAll(removedMemberIds);
+          transaction.update(ref, {
+            'name': name,
+            'memberIds': memberIds.toList()..sort(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
         })
         .catchError((Object error, StackTrace stackTrace) {
           AppLogger.error(

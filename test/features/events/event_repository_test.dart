@@ -12,6 +12,8 @@ Event _buildEvent({
   String creatorId = 'creator-1',
   String title = '打ち合わせ',
   String calendarId = defaultCalendarId,
+  EventRecurrenceFrequency? recurrenceFrequency,
+  int? recurrenceCount,
 }) {
   return Event(
     id: id,
@@ -29,6 +31,8 @@ Event _buildEvent({
     updatedAt: startAt,
     deleted: false,
     calendarId: calendarId,
+    recurrenceFrequency: recurrenceFrequency,
+    recurrenceCount: recurrenceCount,
   );
 }
 
@@ -185,6 +189,95 @@ void main() {
         .first;
 
     expect(events.map((event) => event.id), ['other-calendar']);
+  });
+
+  test('watchRange は毎週の無限繰り返しを表示範囲内に展開する', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        title: '習い事',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 19),
+          end: DateTime.utc(2026, 7, 20),
+          calendarId: defaultCalendarId,
+        )
+        .first;
+
+    expect(events, hasLength(1));
+    expect(events.single.title, '習い事');
+    expect(events.single.startAt, DateTime.utc(2026, 7, 19, 9));
+    expect(events.single.recurrenceMasterStartAt, DateTime.utc(2026, 7, 5, 9));
+  });
+
+  test('watchRange は指定回数を超えた繰り返しを返さない', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+        recurrenceCount: 2,
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 19),
+          end: DateTime.utc(2026, 7, 20),
+          calendarId: defaultCalendarId,
+        )
+        .first;
+
+    expect(events, isEmpty);
+  });
+
+  test('watchRange は月末の毎月繰り返しを存在する月末日に丸める', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'monthly',
+        startAt: DateTime.utc(2026, 1, 31, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.monthly,
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 2, 1),
+          end: DateTime.utc(2026, 3, 1),
+          calendarId: defaultCalendarId,
+        )
+        .first;
+
+    expect(events.single.startAt, DateTime.utc(2026, 2, 28, 9));
+  });
+
+  test('watchRange はうるう日の毎年繰り返しを通常年の2月末日に丸める', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'yearly',
+        startAt: DateTime.utc(2024, 2, 29, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.yearly,
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2025, 2, 1),
+          end: DateTime.utc(2025, 3, 1),
+          calendarId: defaultCalendarId,
+        )
+        .first;
+
+    expect(events.single.startAt, DateTime.utc(2025, 2, 28, 9));
   });
 
   test('1件の破損ドキュメントがあってもwatchRangeは他の予定を返す', () async {
