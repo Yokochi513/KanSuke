@@ -158,6 +158,36 @@ Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
   return firestore;
 }
 
+/// 週（土→日）を跨ぐ期間予定を投入する（Issue #72 の連結表示検証用）。
+Future<FakeFirebaseFirestore> _seedCrossWeekEvent() async {
+  final firestore = FakeFirebaseFirestore();
+  await firestore.collection('users').doc('me').set({
+    'name': 'ぱぱ',
+    'email': 'me@example.com',
+    'color': '#1565C0',
+    'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+  });
+  final event = Event.create(
+    title: '週またぎ',
+    creatorId: 'me',
+    startAt: DateTime(2026, 7, 4, 9),
+    endAt: DateTime(2026, 7, 6, 10),
+    allDay: false,
+    type: EventType.confirmed,
+    memo: '',
+    reminderOffsets: const [],
+    updatedBy: 'me',
+    now: DateTime(2026, 7, 4, 9),
+    calendarId: defaultCalendarId,
+  );
+  await firestore
+      .collection('events')
+      .doc(event.id)
+      .set(event.toFirestore(useServerTimestamp: false));
+  return firestore;
+}
+
 Future<FakeFirebaseFirestore> _seedAdjacentMonthEvents() async {
   final firestore = FakeFirebaseFirestore();
   await firestore.collection('users').doc('me').set({
@@ -297,7 +327,7 @@ void main() {
     expect(titles.take(2), ['自分の夜予定', '他人の朝予定']);
   });
 
-  testWidgets('期間予定は重なる各日のマスにバーを表示するが、タイトルは週内の最初の日のみ表示する', (tester) async {
+  testWidgets('期間予定は週内で1本の連続バーとして描き、題名を全幅で表示する（Issue #72）', (tester) async {
     final firestore = await _seedPeriodEvent();
 
     await tester.pumpWidget(
@@ -305,21 +335,48 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // バー自体は 3 日分（7/5〜7/7）描画されるが、毎日同じ名前が並ぶと
-    // 煩わしいため、タイトル文字は週内で最初に現れる日（7/5）にのみ表示する。
-    expect(
+    // Issue #72: 7/5〜7/7 は同じ週に収まるため、日ごとに分割せず 1 本の帯として
+    // 描く。題名は span 全幅を使って 1 回だけ表示する。
+    final barFinder = find.byWidgetPredicate(
+      (widget) => widget is EventBar && widget.title == 'テスト週間',
+    );
+    expect(barFinder, findsOneWidget);
+    expect(find.text('テスト週間'), findsOneWidget);
+
+    // 3 列（日〜火）にまたがるため、バー幅は 1 列幅（カレンダー幅 / 7）を
+    // はるかに超える。オーバーレイの座標計算が崩れると検知できる。
+    final calendarWidth = tester
+        .getSize(find.byType(TableCalendar<Event>))
+        .width;
+    final barWidth = tester.getSize(barFinder).width;
+    expect(barWidth, greaterThan(calendarWidth / 7 * 2));
+  });
+
+  testWidgets('週内に収まる期間予定は開始端・終了端とも角丸の1本のバーになる（Issue #72）', (tester) async {
+    // 2026/7/5(日)〜7/7(火) は同じ週（行）内に収まるため、開始端・終了端とも
+    // 角丸・枠線を付けた 1 本のバーとして描く。
+    final firestore = await _seedPeriodEvent();
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final bar = tester.widget<EventBar>(
       find.byWidgetPredicate(
         (widget) => widget is EventBar && widget.title == 'テスト週間',
       ),
-      findsNWidgets(3),
     );
-    expect(find.text('テスト週間'), findsOneWidget);
+
+    expect(bar.roundLeft, isTrue);
+    expect(bar.roundRight, isTrue);
+    expect(bar.showTitle, isTrue);
   });
 
-  testWidgets('期間予定は開始日・終了日以外の角丸/枠線を外して連結して見える（Issue #56）', (tester) async {
-    // 2026/7/5(日)〜7/7(火) は同じ週（行）内に収まるため、中日は
-    // 左右とも角丸なし、開始日は左のみ・終了日は右のみ角丸になるはず。
-    final firestore = await _seedPeriodEvent();
+  testWidgets('週をまたぐ期間予定は週ごとに分かれ、継続端の角丸を外す（Issue #72）', (tester) async {
+    // 2026/7/4(土)〜7/6(月) は土→日で週（行）を跨ぐため、前の週と次の週で
+    // 2 本に分かれる。跨ぎ目（週末・週頭）の角は落として連結して見せる。
+    final firestore = await _seedCrossWeekEvent();
 
     await tester.pumpWidget(
       _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
@@ -329,26 +386,18 @@ void main() {
     final bars = tester
         .widgetList<EventBar>(
           find.byWidgetPredicate(
-            (widget) => widget is EventBar && widget.title == 'テスト週間',
+            (widget) => widget is EventBar && widget.title == '週またぎ',
           ),
         )
         .toList();
 
-    expect(bars, hasLength(3));
-    // 開始日（7/5）：左端は実際の開始日として角丸、右は翌日へ連結するため角丸なし。
-    // 週内で最初に現れる日でもあるためタイトルも表示する。
+    expect(bars, hasLength(2));
+    // 前の週（7/4・土）：開始端は角丸、週末側は次週へ連結するため角丸なし。
     expect(bars[0].roundLeft, isTrue);
     expect(bars[0].roundRight, isFalse);
-    expect(bars[0].showTitle, isTrue);
-    // 中日（7/6）：前後どちらにも連結するため両側とも角丸なし、タイトルも非表示。
+    // 次の週（7/5〜7/6）：週頭側は前週から連結するため角丸なし、終了端は角丸。
     expect(bars[1].roundLeft, isFalse);
-    expect(bars[1].roundRight, isFalse);
-    expect(bars[1].showTitle, isFalse);
-    // 終了日（7/7）：右端は実際の終了日として角丸、左は前日から連結するため角丸なし。
-    // タイトルは既に表示済みのため非表示。
-    expect(bars[2].roundLeft, isFalse);
-    expect(bars[2].roundRight, isTrue);
-    expect(bars[2].showTitle, isFalse);
+    expect(bars[1].roundRight, isTrue);
   });
 
   testWidgets('EventBar は確定=塗り・仮=枠付きで種別を区別する', (tester) async {

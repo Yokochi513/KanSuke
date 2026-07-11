@@ -24,6 +24,15 @@ import '../../users/application/user_providers.dart';
 /// （FR-2 / FR-3、基本設計 §6.1・§6.3）。マス目形式にすることで、複数人の
 /// 予定が同じ日に入っても一目で誰の予定かを判別できる。表示は
 /// [eventsInRangeProvider] のスナップショット（ローカルキャッシュ起点）に従う（NFR-1）。
+///
+/// Issue #72: 複数日にまたがる予定は、マスの上に重ねた 1 本の連続バー
+/// （[_EventBarsOverlay]）として週の該当マス幅いっぱいに描画する。これにより
+/// 題名を全幅で表示でき、参加者の色分けも 1 日単位で分断されず span 全体で
+/// 1 回だけ見えるようになる。グリッド（マス目・日付・祝日・タップ判定）は
+/// [TableCalendar] が担い、バーはその上に絶対座標で載せる。TableCalendar は
+/// 6 週固定（sixWeekMonthsEnforced）かつ高さいっぱい（shouldFillViewport）で
+/// 描くため、行高 =（利用可能高 − 曜日ヘッダ高）/ 6、列幅 = 幅 / 7 と
+/// 決定論的に定まり、オーバーレイと画素単位で一致させられる。
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key, this.initialFocusedDay});
 
@@ -43,6 +52,19 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// グリッドの行数。常に 6 週で固定し（sixWeekMonthsEnforced）、月による
   /// 高さのばらつきをなくす。行の高さ計算に使う。
   static const int _weekRows = 6;
+
+  /// マス内で日付番号（＋祝日名）が占める高さ。バーはこの下に載せる。
+  /// [_DayCell] の上パディング（1）＋日付ラベル高（21）に合わせる。
+  static const double _dayNumberHeight = 22;
+
+  /// バー 1 本分の縦スロット（バー高 16 ＋下マージン 2）。
+  static const double _barSlot = 18;
+
+  /// バーの高さ。
+  static const double _barHeight = 16;
+
+  /// 横スワイプを月送りと判定する速度しきい値（論理px/秒）。
+  static const double _swipeVelocityThreshold = 200;
 
   @override
   void initState() {
@@ -143,19 +165,54 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // 常に 6 週グリッドで描画する（sixWeekMonthsEnforced）ので、
-                // 曜日行を除いた残りを 6 で割れば行高が決まる。切り捨てにより
-                // 6×行高 ≤ 残り高となりオーバーフローしない。
-                final available = constraints.maxHeight - _daysOfWeekHeight;
-                final rowHeight = (available / _weekRows).floorToDouble().clamp(
-                  52.0,
-                  240.0,
-                );
-                return _buildCalendar(
+                // TableCalendar は高さいっぱい（shouldFillViewport）かつ 6 週固定で
+                // 描くため、実際の行高＝（利用可能高 − 曜日ヘッダ高）/ 6、列幅＝
+                // 幅 / 7 と決まる。オーバーレイもこの値で座標を合わせる。
+                final rowHeight =
+                    (constraints.maxHeight - _daysOfWeekHeight) / _weekRows;
+                final colWidth = constraints.maxWidth / 7;
+                final layout = _computeBarLayout(
                   events,
-                  membersById,
-                  rowHeight,
-                  currentUid,
+                  range: _visibleCalendarRange,
+                  currentUid: currentUid,
+                  rowHeight: rowHeight,
+                );
+                // Issue #72: TableCalendar 内蔵の横スワイプ（PageView）は
+                // オーバーレイと同期しないため無効化し、代わりに横フリックを
+                // 自前で拾って月送りする。月切替は setState による瞬時の
+                // 差し替えとなり、グリッドとバーがずれない。
+                return GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (velocity < -_swipeVelocityThreshold) {
+                      _changeMonth(1);
+                    } else if (velocity > _swipeVelocityThreshold) {
+                      _changeMonth(-1);
+                    }
+                  },
+                  child: Stack(
+                    children: [
+                      _buildCalendar(),
+                      // バーはグリッドの上に載せる。タップは下のマスへ通し、
+                      // 「日を選択→再タップで日別一覧」の操作を保つ。
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: _EventBarsOverlay(
+                            bars: layout.bars,
+                            markers: layout.markers,
+                            membersById: membersById,
+                            daysOfWeekHeight: _daysOfWeekHeight,
+                            rowHeight: rowHeight,
+                            colWidth: colWidth,
+                            dayNumberHeight: _dayNumberHeight,
+                            barSlot: _barSlot,
+                            barHeight: _barHeight,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 );
               },
             ),
@@ -167,18 +224,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _buildCalendar(
-    List<Event> events,
-    Map<String, User> membersById,
-    double rowHeight,
-    String? currentUid,
-  ) {
-    final byDay = _groupByDay(
-      events,
-      range: _visibleCalendarRange,
-      currentUid: currentUid,
-    );
-
+  Widget _buildCalendar() {
     Widget cellBuilder(
       DateTime day, {
       bool isToday = false,
@@ -187,9 +233,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     }) {
       return _DayCell(
         day: day,
-        segments: byDay[_dateKey(day)] ?? const [],
-        membersById: membersById,
-        rowHeight: rowHeight,
         isToday: isToday,
         isSelected: isSelected,
         isOutside: isOutside,
@@ -200,7 +243,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       firstDay: DateTime.utc(2020, 1, 1),
       lastDay: DateTime.utc(2035, 12, 31),
       focusedDay: _focusedDay,
-      rowHeight: rowHeight,
       daysOfWeekHeight: _daysOfWeekHeight,
       // 月ナビゲーションは自前ヘッダで描画するため内蔵ヘッダは非表示にする。
       headerVisible: false,
@@ -208,6 +250,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       sixWeekMonthsEnforced: true,
       // Expanded で与えた高さぴったりにマスを敷き詰める（行高は内部で算出）。
       shouldFillViewport: true,
+      // Issue #72: 横スワイプ／ページ送りアニメーションはオーバーレイと
+      // 同期しないため止める。月送りは自前の横フリックとヘッダのボタンで行う。
+      availableGestures: AvailableGestures.none,
+      pageAnimationEnabled: false,
       selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
       calendarFormat: CalendarFormat.month,
       availableCalendarFormats: const {CalendarFormat.month: '月'},
@@ -253,21 +299,25 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  /// 日付ごとの表示レーン割り当てを求める（Issue #56）。
+  /// 表示中 6 週分の予定バー配置を計算する（Issue #56 / #72）。
   ///
-  /// 複数日にまたがる予定は、日〜土の週単位で同じレーン（縦位置）を
-  /// 保つように割り当てる。これにより [_DayCell] は日をまたいでも
-  /// 同じ高さにバーを描画でき、実際の開始・終了日以外は角丸/枠線を
-  /// 外すことで隣接する日のマスと連結して見えるようになる。
-  Map<DateTime, List<_EventSegment?>> _groupByDay(
+  /// 複数日にまたがる予定は、日〜土の週単位で同じレーン（縦位置）を保つように
+  /// 割り当て、週ごとに 1 本の連続バーとして描く。マスに収まらないレーンは
+  /// 各日の「+N」に集約する。
+  _BarLayout _computeBarLayout(
     List<Event> events, {
     required DateRange range,
     required String? currentUid,
+    required double rowHeight,
   }) {
     final firstVisibleDay = _dateKey(range.start);
     final lastVisibleDay = _dateKey(
       range.end,
     ).subtract(const Duration(days: 1));
+
+    // マスの高さから、表示できるバー本数を見積もる（[_DayCell] と同じ基準）。
+    final available = rowHeight - _dayNumberHeight - 2;
+    final capacity = available <= 0 ? 0 : (available ~/ _barSlot);
 
     // イベントごとに表示範囲でクリップした開始・終了日を求める。
     final clippedRanges = <Event, ({DateTime start, DateTime end})>{};
@@ -299,13 +349,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       }
     }
 
-    // 週内で区間グラフの貪欲彩色を行い、重ならない予定同士でレーンを
-    // 使い回す。開始日が早い順、次いで表示優先度順に詰めることで、
-    // 同日に複数の予定がある場合の見た目の順序も既存挙動を保つ。
-    final laneByEventPerWeek = <DateTime, Map<Event, int>>{};
+    final bars = <_BarSegment>[];
+    final markers = <_OverflowMarker>[];
+
     for (final weekEntry in eventsByWeek.entries) {
       final week = weekEntry.key;
       final weekEnd = week.add(const Duration(days: 6));
+      final weekIndex = week.difference(firstVisibleDay).inDays ~/ 7;
+
+      // 週内で区間グラフの貪欲彩色を行い、重ならない予定同士でレーンを
+      // 使い回す。開始日が早い順、次いで表示優先度順に詰めることで、
+      // 同日に複数の予定がある場合の見た目の順序も既存挙動を保つ。
       final weekEvents = weekEntry.value.toList()
         ..sort((a, b) {
           final aStart = clippedRanges[a]!.start.isBefore(week)
@@ -320,67 +374,220 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         });
 
       final laneEndDay = <int, DateTime>{};
-      final lanes = <Event, int>{};
+      final laneByEvent = <Event, int>{};
+      var laneCount = 0;
       for (final event in weekEvents) {
-        final range = clippedRanges[event]!;
-        final start = range.start.isBefore(week) ? week : range.start;
-        final end = range.end.isAfter(weekEnd) ? weekEnd : range.end;
+        final r = clippedRanges[event]!;
+        final start = r.start.isBefore(week) ? week : r.start;
+        final end = r.end.isAfter(weekEnd) ? weekEnd : r.end;
         var lane = 0;
         while (laneEndDay[lane] != null && !laneEndDay[lane]!.isBefore(start)) {
           lane++;
         }
         laneEndDay[lane] = end;
-        lanes[event] = lane;
+        laneByEvent[event] = lane;
+        if (lane + 1 > laneCount) laneCount = lane + 1;
       }
-      laneByEventPerWeek[week] = lanes;
+
+      // 全レーンが収まらないときは、最後の 1 行を「+N」用に空ける。
+      final maxVisibleLanes = laneCount <= capacity
+          ? laneCount
+          : (capacity - 1).clamp(0, laneCount);
+
+      final hiddenPerCol = List<int>.filled(7, 0);
+      for (final event in weekEvents) {
+        final r = clippedRanges[event]!;
+        final segStart = r.start.isBefore(week) ? week : r.start;
+        final segEnd = r.end.isAfter(weekEnd) ? weekEnd : r.end;
+        final startCol = segStart.weekday % 7;
+        final endCol = segEnd.weekday % 7;
+        final lane = laneByEvent[event]!;
+
+        if (lane < maxVisibleLanes) {
+          bars.add(
+            _BarSegment(
+              event: event,
+              weekIndex: weekIndex,
+              startCol: startCol,
+              endCol: endCol,
+              lane: lane,
+              // 実際の開始・終了日にあたる端だけ角丸/枠線を付け、週をまたぐ
+              // 継続端（週頭・週末）は角を落として次週へ連結して見せる。
+              roundLeft: segStart.isAtSameMomentAs(r.start),
+              roundRight: segEnd.isAtSameMomentAs(r.end),
+            ),
+          );
+        } else {
+          for (var col = startCol; col <= endCol; col++) {
+            hiddenPerCol[col]++;
+          }
+        }
+      }
+
+      for (var col = 0; col < 7; col++) {
+        if (hiddenPerCol[col] > 0) {
+          markers.add(
+            _OverflowMarker(
+              weekIndex: weekIndex,
+              col: col,
+              lane: maxVisibleLanes,
+              count: hiddenPerCol[col],
+            ),
+          );
+        }
+      }
     }
 
-    final map = <DateTime, List<_EventSegment?>>{};
-    for (final entry in clippedRanges.entries) {
-      final event = entry.key;
-      final range = entry.value;
-      for (
-        var day = range.start;
-        !day.isAfter(range.end);
-        day = day.add(const Duration(days: 1))
-      ) {
-        final lane = laneByEventPerWeek[weekStart(day)]![event]!;
-        final slots = map.putIfAbsent(day, () => []);
-        while (slots.length <= lane) {
-          slots.add(null);
-        }
-        slots[lane] = _EventSegment(
-          event: event,
-          roundLeft:
-              day.isAtSameMomentAs(range.start) ||
-              day.weekday == DateTime.sunday,
-          roundRight:
-              day.isAtSameMomentAs(range.end) ||
-              day.weekday == DateTime.saturday,
-        );
-      }
-    }
-    return map;
+    // (週, レーン, 開始列) 順に整え、描画順（＝レーンの優先順）を安定させる。
+    bars.sort((a, b) {
+      final byWeek = a.weekIndex.compareTo(b.weekIndex);
+      if (byWeek != 0) return byWeek;
+      final byLane = a.lane.compareTo(b.lane);
+      if (byLane != 0) return byLane;
+      return a.startCol.compareTo(b.startCol);
+    });
+
+    return _BarLayout(bars: bars, markers: markers);
   }
 
   DateTime _dateKey(DateTime day) => DateTime(day.year, day.month, day.day);
 }
 
-/// ある日のマスに描画する予定 1 件分の情報（Issue #56）。
+/// 週内 1 本分の予定バーの配置情報（Issue #72）。
 ///
-/// [roundLeft] / [roundRight] は、その日が予定の実際の開始・終了日
-/// （または週の先頭・末尾で行が折り返す境界）かどうかを表す。false の
-/// 場合は角丸・枠線を外し、隣接する日のバーと連結して見えるようにする。
-class _EventSegment {
-  const _EventSegment({
+/// [weekIndex] は表示中 6 週のうちの行（0〜5）、[startCol] / [endCol] は
+/// その週での開始・終了列（0＝日曜〜6＝土曜）、[lane] は縦位置。
+/// [roundLeft] / [roundRight] は、その端が予定の実際の開始・終了日
+/// （＝週をまたぐ継続端ではない）かどうかを表す。
+class _BarSegment {
+  const _BarSegment({
     required this.event,
+    required this.weekIndex,
+    required this.startCol,
+    required this.endCol,
+    required this.lane,
     required this.roundLeft,
     required this.roundRight,
   });
 
   final Event event;
+  final int weekIndex;
+  final int startCol;
+  final int endCol;
+  final int lane;
   final bool roundLeft;
   final bool roundRight;
+}
+
+/// マスに収まらなかった予定を集約する「+N」マーカー（Issue #72）。
+class _OverflowMarker {
+  const _OverflowMarker({
+    required this.weekIndex,
+    required this.col,
+    required this.lane,
+    required this.count,
+  });
+
+  final int weekIndex;
+  final int col;
+  final int lane;
+  final int count;
+}
+
+/// 予定バー配置の計算結果（Issue #72）。
+class _BarLayout {
+  const _BarLayout({required this.bars, required this.markers});
+
+  final List<_BarSegment> bars;
+  final List<_OverflowMarker> markers;
+}
+
+/// グリッドの上に予定バー（[EventBar]）と「+N」を絶対座標で載せるオーバーレイ
+/// （Issue #72）。
+///
+/// TableCalendar のセル描画は 1 マス幅で切り取られてしまうため、複数日に
+/// またがるバーは列をまたいだ帯として描けない。そこで同じ座標系の Stack に
+/// バーを重ね、週の該当マス幅いっぱいの 1 本の帯として描く。これにより題名を
+/// 全幅で表示でき、参加者色も span 全体で 1 回だけ見える。タップは
+/// [IgnorePointer] で下のマスへ通す。
+class _EventBarsOverlay extends StatelessWidget {
+  const _EventBarsOverlay({
+    required this.bars,
+    required this.markers,
+    required this.membersById,
+    required this.daysOfWeekHeight,
+    required this.rowHeight,
+    required this.colWidth,
+    required this.dayNumberHeight,
+    required this.barSlot,
+    required this.barHeight,
+  });
+
+  final List<_BarSegment> bars;
+  final List<_OverflowMarker> markers;
+  final Map<String, User> membersById;
+  final double daysOfWeekHeight;
+  final double rowHeight;
+  final double colWidth;
+  final double dayNumberHeight;
+  final double barSlot;
+  final double barHeight;
+
+  /// バーの実開始・終了端に付ける左右の余白（マス目境界に触れないように）。
+  static const double _endInset = 2;
+
+  double _rowTop(int weekIndex) =>
+      daysOfWeekHeight + weekIndex * rowHeight + dayNumberHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    if (colWidth <= 0 || rowHeight <= 0) {
+      return const SizedBox.shrink();
+    }
+    final scheme = Theme.of(context).colorScheme;
+
+    return Stack(
+      children: [
+        for (final bar in bars)
+          Positioned(
+            left: bar.startCol * colWidth + (bar.roundLeft ? _endInset : 0),
+            top: _rowTop(bar.weekIndex) + bar.lane * barSlot,
+            width:
+                (bar.endCol - bar.startCol + 1) * colWidth -
+                (bar.roundLeft ? _endInset : 0) -
+                (bar.roundRight ? _endInset : 0),
+            height: barHeight,
+            child: EventBar(
+              title: bar.event.title,
+              colors: bar.event.memberIds
+                  .map((id) => colorFromHex(membersById[id]?.color ?? ''))
+                  .toList(),
+              type: bar.event.type,
+              roundLeft: bar.roundLeft,
+              roundRight: bar.roundRight,
+            ),
+          ),
+        for (final marker in markers)
+          Positioned(
+            left: marker.col * colWidth + _endInset,
+            top: _rowTop(marker.weekIndex) + marker.lane * barSlot,
+            width: colWidth - _endInset * 2,
+            height: barHeight,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '+${marker.count}',
+                style: TextStyle(
+                  fontSize: 10,
+                  height: 1.1,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 /// 曜日ヘッダの 1 マス（「日」〜「土」）。
@@ -420,51 +627,29 @@ class _DayOfWeekLabel extends StatelessWidget {
 
 /// カレンダーの 1 マス（1 日分のセル）。
 ///
-/// 枠線でグリッドを形成し、日付とその日の予定バーを縦に並べる。マスに
-/// 収まらない分は「+N」で省略表示する（FR-4）。
+/// 枠線でグリッドを形成し、上部に日付（＋祝日名）を描く。予定バーはこのマスの
+/// 上に載る [_EventBarsOverlay] が描くため、マス自体は日付ラベルのみを持つ
+/// （Issue #72）。
 class _DayCell extends StatelessWidget {
   const _DayCell({
     required this.day,
-    required this.segments,
-    required this.membersById,
-    required this.rowHeight,
     required this.isToday,
     required this.isSelected,
     required this.isOutside,
   });
 
   final DateTime day;
-  final List<_EventSegment?> segments;
-  final Map<String, User> membersById;
-  final double rowHeight;
   final bool isToday;
   final bool isSelected;
   final bool isOutside;
 
   static const double _headerHeight = 22;
-  static const double _barSlot = 18; // バー高さ + 下マージン
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final washiColors = KanSukeColors.of(context);
     final holidayName = isOutside ? null : japaneseHolidayName(day);
-
-    // マスの高さから、表示できるバー本数を見積もる。
-    final available = rowHeight - _headerHeight - 2;
-    final capacity = available <= 0 ? 0 : (available ~/ _barSlot);
-
-    final List<_EventSegment?> visible;
-    final int hidden;
-    if (segments.length <= capacity) {
-      visible = segments;
-      hidden = 0;
-    } else {
-      // 「+N」の 1 行分を確保するため、表示本数を 1 つ減らす。
-      final show = (capacity - 1).clamp(0, segments.length);
-      visible = segments.take(show).toList();
-      hidden = segments.skip(show).whereType<_EventSegment>().length;
-    }
 
     final border = BorderSide(color: scheme.outlineVariant, width: 0.5);
     final Color? backgroundColor;
@@ -493,46 +678,6 @@ class _DayCell extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 2),
               child: _dayLabel(scheme, washiColors, holidayName),
             ),
-            for (final segment in visible)
-              if (segment == null)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 2),
-                  child: SizedBox(height: 16),
-                )
-              else
-                Padding(
-                  // Issue #56: 実際の開始・終了日以外は左右の余白を詰め、
-                  // 隣接する日のバーと隙間なく連結して見えるようにする。
-                  padding: EdgeInsets.only(
-                    left: segment.roundLeft ? 2 : 0,
-                    right: segment.roundRight ? 2 : 0,
-                  ),
-                  child: EventBar(
-                    title: segment.event.title,
-                    colors: segment.event.memberIds
-                        .map((id) => colorFromHex(membersById[id]?.color ?? ''))
-                        .toList(),
-                    type: segment.event.type,
-                    roundLeft: segment.roundLeft,
-                    roundRight: segment.roundRight,
-                    // Issue #56: 複数日にまたがる予定は、週内で最初に現れる日
-                    // （roundLeft、実際の開始日または週の折り返し先頭）にのみ
-                    // タイトルを出す。毎日同じ名前が並ぶと煩わしいため。
-                    showTitle: segment.roundLeft,
-                  ),
-                ),
-            if (hidden > 0)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Text(
-                  '+$hidden',
-                  style: TextStyle(
-                    fontSize: 10,
-                    height: 1.1,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
           ],
         ),
       ),
@@ -623,15 +768,13 @@ class _HolidayLabel extends StatelessWidget {
 ///
 /// 参加メンバーの色で等分割して塗り、確定＝塗りつぶし・
 /// 仮＝枠線＋半透明で種別を区別する。参加者が 1 人ならこれまで通り単色になる。
-/// 幅は親（マスの縦積み）に合わせて広がる。
+/// 幅は親（[_EventBarsOverlay] の Positioned）に合わせて広がる。
 ///
-/// [roundLeft] / [roundRight] は、複数日にまたがる予定（Issue #56）で
-/// 実際の開始・終了日以外の角丸/枠線を外すために使う。これにより隣接
-/// する日のマスに描かれた同じ予定のバーと視覚的につながって見える。
+/// [roundLeft] / [roundRight] は、複数日にまたがる予定（Issue #56 / #72）で
+/// 週をまたぐ継続端の角丸/枠線を外すために使う。これにより次週へ描かれた
+/// 同じ予定のバーと視覚的につながって見える。
 ///
-/// [showTitle] を false にするとタイトルを描画しない。複数日にまたがる
-/// 予定は毎日同じ名前が並ぶと煩わしいため、週内で最初に現れる日にのみ
-/// 表示する運用にしている（呼び出し側で制御）。
+/// [showTitle] を false にするとタイトルを描画しない。
 class EventBar extends StatelessWidget {
   const EventBar({
     required this.title,
@@ -663,7 +806,6 @@ class EventBar extends StatelessWidget {
 
     return Container(
       height: 16,
-      margin: const EdgeInsets.only(bottom: 2),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         border: confirmed
