@@ -61,24 +61,25 @@ void main() {
     expect(group.participantCount, 2);
   });
 
-  test('前の終了日+1に始まる隣接予定は束ねる', () {
+  test('背中合わせ（1日も重ならない隣接）の同名予定は束ねない', () {
+    // 部活 8/5 終日 → 8/6 終日 のように連日でも重複日がなければ別バーにする。
     final groups = groupEventsForMerge([
       _event(
         id: 'a',
-        title: '合宿',
-        start: DateTime(2026, 7, 5),
-        end: DateTime(2026, 7, 6),
+        title: '部活',
+        start: DateTime(2026, 8, 5),
+        end: DateTime(2026, 8, 5),
       ),
       _event(
         id: 'b',
-        title: '合宿',
-        start: DateTime(2026, 7, 7),
-        end: DateTime(2026, 7, 8),
+        title: '部活',
+        start: DateTime(2026, 8, 6),
+        end: DateTime(2026, 8, 6),
       ),
     ]);
 
-    expect(groups, hasLength(1));
-    expect(groups.single.isMerged, isTrue);
+    expect(groups, hasLength(2));
+    expect(groups.every((group) => !group.isMerged), isTrue);
   });
 
   test('空き日が1日以上ある同名予定は束ねない', () {
