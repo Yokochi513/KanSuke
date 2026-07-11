@@ -123,7 +123,7 @@ class KanSukeColors extends ThemeExtension<KanSukeColors> {
     washiFiber: Color(0x0D231E14),
     // 生成り系の暖色ベージュ（枯色寄り）。生成りの地色味を保ちつつ、背景より
     // 一段濃くして沈まないようにする。彩度は低くメンバー色とは被らない。
-    mergedBar: Color(0xFFCFBE92),
+    mergedBar: Color.fromARGB(255, 241, 226, 189),
   );
 
   static const dark = KanSukeColors(
