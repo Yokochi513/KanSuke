@@ -9,6 +9,7 @@ import 'package:kansuke/app/app.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/auth/data/auth_repository.dart';
+import 'package:kansuke/features/invites/application/invite_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -135,6 +136,9 @@ Future<Widget> _testApp(
       appleSignInAvailableProvider.overrideWithValue(appleSignInAvailable),
       // カレンダーが購読する Firestore はテスト用の fake に差し替える。
       firestoreProvider.overrideWithValue(await _signedUpFirestore()),
+      // FR-9: 招待リンクの受け口（Issue #90）はプラットフォームのプラグインを
+      // 使うため、テストではリンクが来ない空のストリームにする。
+      inviteLinkStreamProvider.overrideWith((ref) => const Stream<Uri>.empty()),
     ],
     child: const KanSukeApp(),
   );

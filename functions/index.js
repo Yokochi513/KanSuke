@@ -8,6 +8,7 @@ const {onCall} = require("firebase-functions/v2/https");
 const {setGlobalOptions} = require("firebase-functions/v2");
 
 const {handleBeforeCreate} = require("./handlers");
+const invites = require("./invites");
 const membership = require("./membership");
 
 admin.initializeApp();
@@ -62,4 +63,54 @@ exports.transferownership = onCall(async (request) => {
     },
     serverTimestamp,
   );
+});
+
+// 招待リンク（FR-9 / Issue #90）。`invites` はクライアントから read/write 全面禁止
+// のため（`firestore.rules`）、発行・確認・受諾・取り消し・一覧の経路はこの
+// Callable のみ。関数名は 2nd gen の制約に合わせて小文字。
+exports.createinvite = onCall(async (request) => {
+  return invites.createInvite(
+    admin.firestore(),
+    {
+      uid: request.auth && request.auth.uid,
+      calendarId: request.data && request.data.calendarId,
+    },
+    serverTimestamp,
+  );
+});
+
+exports.previewinvite = onCall(async (request) => {
+  return invites.previewInvite(admin.firestore(), {
+    uid: request.auth && request.auth.uid,
+    token: request.data && request.data.token,
+  });
+});
+
+exports.acceptinvite = onCall(async (request) => {
+  return invites.acceptInvite(
+    admin.firestore(),
+    {
+      uid: request.auth && request.auth.uid,
+      token: request.data && request.data.token,
+    },
+    serverTimestamp,
+  );
+});
+
+exports.revokeinvite = onCall(async (request) => {
+  await invites.revokeInvite(
+    admin.firestore(),
+    {
+      uid: request.auth && request.auth.uid,
+      inviteId: request.data && request.data.inviteId,
+    },
+    serverTimestamp,
+  );
+});
+
+exports.listinvites = onCall(async (request) => {
+  return invites.listInvites(admin.firestore(), {
+    uid: request.auth && request.auth.uid,
+    calendarId: request.data && request.data.calendarId,
+  });
 });

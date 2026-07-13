@@ -62,6 +62,15 @@ service cloud.firestore {
         && request.resource.data.ownerId == request.auth.uid;
     }
 
+    // FR-9: 招待リンク（Issue #90）。トークンのハッシュ・発行者・有効期限などを持つ
+    // ため、クライアントからは read も write も一切許可しない。発行・確認・受諾・
+    // 取り消し・一覧は Callable Function（`functions/invites.js`、Admin SDK）が
+    // 唯一の経路。受諾では memberIds が書き換わるため、この制限が権限モデル
+    // （Issue #89）の前提になる。
+    match /invites/{inviteId} {
+      allow read, write: if false;
+    }
+
     match /events/{eventId} {
       allow read, update, delete: if isCalendarMember(eventCalendarId(resource.data));
       allow create: if isCalendarMember(eventCalendarId(request.resource.data));

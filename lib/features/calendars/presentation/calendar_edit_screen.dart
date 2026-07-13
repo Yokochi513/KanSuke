@@ -5,6 +5,7 @@ import '../../../core/color_utils.dart';
 import '../../../core/logger.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
+import '../../invites/presentation/calendar_invites_section.dart';
 import '../../users/application/user_providers.dart';
 import '../application/calendar_providers.dart';
 import '../data/calendar_membership_repository.dart';
@@ -106,6 +107,9 @@ class _CalendarEditScreenState extends ConsumerState<CalendarEditScreen> {
                   const SizedBox(height: 24),
                   if (calendar != null) ...[
                     _buildMembers(calendar, uid, isOwner: isOwner),
+                    const SizedBox(height: 24),
+                    // FR-9: メンバーを増やす唯一の手段（Issue #90）。
+                    CalendarInvitesSection(calendar: calendar),
                     const SizedBox(height: 24),
                     _buildLeaveButton(calendar),
                   ],

@@ -336,4 +336,47 @@ describe("Firestore Security Rules (NFR-4)", () => {
     const ids = snapshot.docs.map((d) => d.id);
     assert.deepStrictEqual(ids, ["default-event"]);
   });
+
+  it("invites はメンバーでも読み書きできない（FR-9 / Issue #90）", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "invites/invite-1"), {
+        calendarId: "default",
+        tokenHash: "hash",
+        invitedBy: "family-user",
+        maxUses: 1,
+        usedCount: 0,
+        revoked: false,
+      });
+    });
+
+    // 発行者本人（かつカレンダーのオーナー）でも、クライアントからは触れない。
+    // 発行・確認・受諾・取り消し・一覧はすべて Callable Function 経由（Admin SDK）。
+    const memberDb = dbFor("family-user");
+    await assertFails(getDoc(doc(memberDb, "invites/invite-1")));
+    await assertFails(getDocs(collection(memberDb, "invites")));
+    await assertFails(updateDoc(doc(memberDb, "invites/invite-1"), {
+      revoked: true,
+    }));
+    await assertFails(deleteDoc(doc(memberDb, "invites/invite-1")));
+    await assertFails(setDoc(doc(memberDb, "invites/invite-2"), {
+      calendarId: "default",
+      tokenHash: "hash",
+      invitedBy: "family-user",
+    }));
+  });
+
+  it("招待の受諾を装った memberIds の追加はできない（FR-9 / Issue #90）", async () => {
+    // memberIds はクライアントから書けない（Issue #89）。招待リンクを持っていても
+    // 自力で参加はできず、Callable（acceptInvite）を通す必要がある。
+    const outsiderDb = dbFor("outsider");
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users/outsider"), {
+        name: "Outsider",
+      });
+    });
+
+    await assertFails(updateDoc(doc(outsiderDb, "calendars/default"), {
+      memberIds: ["family-user", "other-family-user", "outsider"],
+    }));
+  });
 });
