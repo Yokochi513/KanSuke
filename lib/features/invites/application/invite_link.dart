@@ -40,3 +40,22 @@ String? parseInviteToken(Uri uri) {
   }
   return (uri.scheme == 'http' || uri.scheme == 'https') ? token : null;
 }
+
+/// 手で貼り付けられた招待リンク（またはトークン単体）からトークンを取り出す。
+///
+/// Web ではカスタムスキームのリンクをブラウザから開けず、リンクを踏んでアプリが
+/// 起動する経路が使えない。また iOS / Android でも、リンクをそのまま開けない
+/// メッセージアプリ経由で受け取ることがある。貼り付けでの参加はどの環境でも
+/// 成立する受け口として用意する（FR-9 / Issue #90）。
+String? parseInvitePaste(String input) {
+  final text = input.trim();
+  if (text.isEmpty) {
+    return null;
+  }
+  final uri = Uri.tryParse(text);
+  if (uri != null && uri.hasScheme) {
+    return parseInviteToken(uri);
+  }
+  // スキームが無ければトークン単体を貼り付けたものとして扱う。
+  return text;
+}

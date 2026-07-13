@@ -146,7 +146,9 @@ class _CalendarInvitesSectionState
             const SizedBox(height: 12),
             Text(
               '${_formatExpiry(invite.expiresAt)}まで有効（1回のみ使用可）。'
-              'このリンクを知っている人は参加できます。家族にだけ送ってください。',
+              'このリンクを知っている人は参加できます。家族にだけ送ってください。\n'
+              'リンクを開いてもアプリが起動しない場合（Web など）は、'
+              'カレンダー管理の「招待リンクで参加」に貼り付けてもらってください。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

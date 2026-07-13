@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/routes.dart';
 import '../../../models/models.dart';
+import '../../invites/presentation/join_invite_dialog.dart';
 import '../application/calendar_providers.dart';
 import 'calendar_edit_args.dart';
 
@@ -18,7 +19,18 @@ class CalendarManagementScreen extends ConsumerWidget {
     final calendarsAsync = ref.watch(myCalendarsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('カレンダー管理')),
+      appBar: AppBar(
+        title: const Text('カレンダー管理'),
+        actions: [
+          // FR-9: リンクを踏んでアプリが起動しない環境（Web など）でも参加できる
+          // ように、リンクを貼り付ける導線を置く（Issue #90）。
+          IconButton(
+            icon: const Icon(Icons.link),
+            tooltip: '招待リンクで参加',
+            onPressed: () => JoinInviteDialog.show(context),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.pushNamed(
           context,

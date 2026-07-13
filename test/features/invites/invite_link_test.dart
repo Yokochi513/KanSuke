@@ -27,6 +27,19 @@ void main() {
       );
     });
 
+    test('貼り付けはリンクでもトークン単体でも受け付ける（Web の受け口）', () {
+      expect(parseInvitePaste(' kansuke://invite?token=abc123 '), 'abc123');
+      expect(parseInvitePaste('https://example.com/?token=abc123'), 'abc123');
+      // リンクの一部だけを渡された場合（トークンだけコピーした等）。
+      expect(parseInvitePaste('abc123'), 'abc123');
+    });
+
+    test('貼り付けが空・別スキームのリンクなら受け付けない', () {
+      expect(parseInvitePaste('  '), isNull);
+      expect(parseInvitePaste('kansuke://other?token=abc'), isNull);
+      expect(parseInvitePaste('https://example.com/'), isNull);
+    });
+
     test('招待リンクでない URI からはトークンを取り出さない', () {
       expect(parseInviteToken(Uri.parse('kansuke://invite')), isNull);
       expect(parseInviteToken(Uri.parse('kansuke://invite?token=')), isNull);
