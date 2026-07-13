@@ -10,8 +10,12 @@
 //   node functions/scripts/publish-release-version.js
 //
 // pubspec.yaml の version と CHANGELOG.md の該当セクションを読み取り、
-// meta/release ドキュメントへ反映する。バージョンが変化していない場合は
-// 何もしない（無用な通知の再発火を避けるため）。
+// 次の 2 つへ反映する（Issue #96）。
+//   - meta/release       … 起動時のお知らせ用の最新 1 件。バージョンが変化して
+//                          いない場合は更新しない（無用な通知の再発火を避ける）。
+//   - releases/{version} … 設定画面の更新履歴用。ドキュメント ID がバージョンの
+//                          ため、同じバージョンを再度 publish しても重複しない
+//                          （publishedAt は初回の値を保つ）。
 
 const fs = require("fs");
 const path = require("path");
@@ -57,7 +61,28 @@ async function main() {
   const notes = readReleaseNotes(version);
 
   admin.initializeApp();
-  const docRef = admin.firestore().doc("meta/release");
+  const firestore = admin.firestore();
+
+  await publishHistory(firestore, version, notes);
+  await publishLatest(firestore, version, notes);
+}
+
+// 更新履歴（releases/{version}）へ書き込む。既にある場合は notes だけ上書きし、
+// publishedAt は初回の公開日時を保つ。
+async function publishHistory(firestore, version, notes) {
+  const docRef = firestore.collection("releases").doc(version);
+  const current = await docRef.get();
+  const publishedAt = current.exists && current.data().publishedAt
+    ? current.data().publishedAt
+    : admin.firestore.FieldValue.serverTimestamp();
+
+  await docRef.set({version, notes, publishedAt});
+  console.log(`releases/${version} を更新しました。`);
+}
+
+// 起動時のお知らせ用の最新 1 件（meta/release）を更新する。
+async function publishLatest(firestore, version, notes) {
+  const docRef = firestore.doc("meta/release");
   const current = await docRef.get();
 
   if (current.exists && current.data().version === version) {

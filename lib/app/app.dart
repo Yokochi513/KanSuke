@@ -14,6 +14,7 @@ import '../features/invites/presentation/invite_accept_screen.dart';
 import '../features/invites/presentation/invite_link_gate.dart';
 import '../features/settings/application/theme_mode_provider.dart';
 import '../features/settings/presentation/settings_screen.dart';
+import '../features/version_check/presentation/release_history_screen.dart';
 import '../features/version_check/presentation/version_check_gate.dart';
 import 'navigator_key.dart';
 import 'routes.dart';
@@ -71,6 +72,7 @@ class KanSukeApp extends ConsumerWidget {
         AppRoutes.calendarManagement: (_) => const CalendarManagementScreen(),
         AppRoutes.calendarEdit: (_) => const CalendarEditScreen(),
         AppRoutes.inviteAccept: (_) => const InviteAcceptScreen(),
+        AppRoutes.releaseHistory: (_) => const ReleaseHistoryScreen(),
       },
     );
   }
