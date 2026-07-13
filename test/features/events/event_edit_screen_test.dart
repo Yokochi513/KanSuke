@@ -31,6 +31,17 @@ Future<FakeFirebaseFirestore> _seedMembers() async {
     'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
     'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
   });
+  // users は列挙禁止（Issue #89）。メンバーの色・名前は参加カレンダーの
+  // memberIds から引くため、両者が参加する既定カレンダーを用意する。
+  final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
+  await firestore.collection('calendars').doc(defaultCalendarId).set({
+    'name': 'わが家',
+    'memberIds': ['me', 'other'],
+    'creatorId': 'me',
+    'ownerId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
   return firestore;
 }
 
@@ -79,6 +90,7 @@ Future<FakeFirebaseFirestore> _seedCalendars(
     'name': 'わが家',
     'memberIds': ['me', 'other'],
     'creatorId': 'me',
+    'ownerId': 'me',
     'createdAt': now,
     'updatedAt': now,
   });
@@ -86,6 +98,7 @@ Future<FakeFirebaseFirestore> _seedCalendars(
     'name': '自分専用',
     'memberIds': ['me'],
     'creatorId': 'me',
+    'ownerId': 'me',
     'createdAt': now,
     'updatedAt': now,
   });

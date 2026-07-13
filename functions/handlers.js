@@ -9,6 +9,7 @@ const {buildInitialProfile, personalCalendarName} = require("./signup");
  * - `users/{uid}`: ID プロバイダの表示名・メールと、初期の識別色（FR-2）。
  * - `calendars/{uuid}`: 本人だけが参加する個人カレンダー（FR-8）。
  *   ドキュメント ID は UUID（アプリのカレンダー作成と同じ規約）。
+ *   本人が作成者かつオーナー（`ownerId`、Issue #89）になる。
  *
  * アカウント作成時にしか発火しないため、ここで作った個人カレンダーが
  * 各ユーザーの最初の表示対象になる。
@@ -42,6 +43,7 @@ async function handleBeforeCreate(event, db, serverTimestamp, newId) {
     name: personalCalendarName(profile.name),
     memberIds: [uid],
     creatorId: uid,
+    ownerId: uid,
     createdAt: now,
     updatedAt: now,
   });
