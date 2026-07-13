@@ -5,14 +5,6 @@ import 'package:uuid/uuid.dart';
 
 import 'firestore_serialization.dart';
 
-/// 旧・既定カレンダー（「わが家」）の固定ドキュメント ID。
-///
-/// 複数カレンダー機能の導入前に作られた `calendarId` 未設定の予定を「このカレンダーに
-/// 属する」と解釈するための後方互換用（FR-8、`firestore.rules` の `eventCalendarId`
-/// と対応）。新規カレンダーの自動生成には用いない（アカウント作成時に生成される
-/// 個人カレンダーの ID は UUID）。
-const String defaultCalendarId = 'default';
-
 /// カレンダー（FR-8）。予定はこの単位にグルーピングされ、
 /// `memberIds` に含まれるメンバーだけが閲覧・編集できる。
 ///

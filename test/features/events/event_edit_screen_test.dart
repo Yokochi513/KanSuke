@@ -10,6 +10,9 @@ import 'package:kansuke/features/events/presentation/event_edit_args.dart';
 import 'package:kansuke/features/events/presentation/event_edit_screen.dart';
 import 'package:kansuke/models/models.dart';
 
+/// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
+const testCalendarId = 'test-calendar';
+
 Future<FakeFirebaseFirestore> _seedMember() async {
   final firestore = FakeFirebaseFirestore();
   await firestore.collection('users').doc('me').set({
@@ -34,7 +37,7 @@ Future<FakeFirebaseFirestore> _seedMembers() async {
   // users は列挙禁止（Issue #89）。メンバーの色・名前は参加カレンダーの
   // memberIds から引くため、両者が参加する既定カレンダーを用意する。
   final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
-  await firestore.collection('calendars').doc(defaultCalendarId).set({
+  await firestore.collection('calendars').doc(testCalendarId).set({
     'name': 'わが家',
     'memberIds': ['me', 'other'],
     'creatorId': 'me',
@@ -86,7 +89,7 @@ Future<FakeFirebaseFirestore> _seedCalendars(
   FakeFirebaseFirestore firestore,
 ) async {
   final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
-  await firestore.collection('calendars').doc(defaultCalendarId).set({
+  await firestore.collection('calendars').doc(testCalendarId).set({
     'name': 'わが家',
     'memberIds': ['me', 'other'],
     'creatorId': 'me',
@@ -314,7 +317,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: originalStartAt,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -372,7 +375,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -405,7 +408,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'other',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -449,7 +452,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -477,7 +480,7 @@ void main() {
     await _tapVisible(tester, find.text('作成'));
 
     final data = (await _events(firestore)).single.data();
-    expect(data['calendarId'], defaultCalendarId);
+    expect(data['calendarId'], testCalendarId);
   });
 
   testWidgets('編集画面にはコピー操作がある', (tester) async {
@@ -495,7 +498,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -522,7 +525,7 @@ void main() {
       reminderOffsets: const [30],
       updatedBy: 'me',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -566,7 +569,7 @@ void main() {
       expect(copy['type'], 'confirmed');
       expect(copy['memo'], 'メモあり');
       expect(copy['reminderOffsets'], [30]);
-      expect(copy['calendarId'], defaultCalendarId);
+      expect(copy['calendarId'], testCalendarId);
       // 時間幅は元のまま（1時間）。
       final copyEnd = (copy['endAt'] as Timestamp).toDate();
       final copyStart = (copy['startAt'] as Timestamp).toDate();
@@ -589,7 +592,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
       recurrenceFrequency: EventRecurrenceFrequency.weekly,
     );
     await firestore

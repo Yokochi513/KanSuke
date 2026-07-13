@@ -15,12 +15,15 @@ import 'package:kansuke/features/settings/application/event_merge_provider.dart'
 import 'package:kansuke/models/models.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+/// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
+const testCalendarId = 'test-calendar';
+
 /// users は列挙禁止（Issue #89）。メンバーの色・名前は参加カレンダーの memberIds
 /// から引くため、me と mama が参加する既定カレンダーを用意する（FR-8）。
 Future<FakeFirebaseFirestore> _firestoreWithCalendar() async {
   final firestore = FakeFirebaseFirestore();
   final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
-  await firestore.collection('calendars').doc(defaultCalendarId).set({
+  await firestore.collection('calendars').doc(testCalendarId).set({
     'name': 'わが家',
     'memberIds': ['me', 'mama'],
     'creatorId': 'me',
@@ -52,7 +55,7 @@ Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
     reminderOffsets: const [60],
     updatedBy: 'me',
     now: start,
-    calendarId: defaultCalendarId,
+    calendarId: testCalendarId,
   );
   await firestore
       .collection('events')
@@ -94,7 +97,7 @@ Future<FakeFirebaseFirestore> _seedManyOnOneDay({
       reminderOffsets: const [],
       updatedBy: creator,
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -137,7 +140,7 @@ Future<FakeFirebaseFirestore> _seedCurrentUserPriority({
       reminderOffsets: const [],
       updatedBy: participantId,
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -168,7 +171,7 @@ Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
     reminderOffsets: const [],
     updatedBy: 'me',
     now: start,
-    calendarId: defaultCalendarId,
+    calendarId: testCalendarId,
   );
   await firestore
       .collection('events')
@@ -198,7 +201,7 @@ Future<FakeFirebaseFirestore> _seedCrossWeekEvent() async {
     reminderOffsets: const [],
     updatedBy: 'me',
     now: DateTime(2026, 7, 4, 9),
-    calendarId: defaultCalendarId,
+    calendarId: testCalendarId,
   );
   await firestore
       .collection('events')
@@ -232,7 +235,7 @@ Future<FakeFirebaseFirestore> _seedAdjacentMonthEvents() async {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: eventSeed.startAt,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -282,7 +285,7 @@ Future<FakeFirebaseFirestore> _seedTitledEvents(
       reminderOffsets: const [],
       updatedBy: seed.creator,
       now: seed.start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -304,7 +307,7 @@ Widget _wrap(
       resolvedEventMergeEnabledProvider.overrideWithValue(mergeEnabled),
       // 月表示の描画に集中するため、表示中カレンダーは固定する（カレンダーの
       // 解決自体は calendar_providers_test で検証する）。
-      selectedCalendarIdProvider.overrideWithValue(defaultCalendarId),
+      selectedCalendarIdProvider.overrideWithValue(testCalendarId),
     ],
     child: MaterialApp(
       theme: buildKanSukeTheme(),
@@ -636,7 +639,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
