@@ -7,7 +7,7 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "test": "mocha --exit test/auth_blocking.test.js",
+    "test": "mocha --exit test/auth_blocking.test.js test/membership.test.js",
     "test:rules": "firebase emulators:exec --only firestore --project demo-kansuke \"mocha --exit test/firestore.rules.test.js\"",
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions"

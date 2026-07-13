@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/logger.dart';
@@ -8,7 +10,8 @@ const _logTag = 'UserRepository';
 /// users コレクションの参照を担う。
 ///
 /// FR-2: 予定表示で使う家族メンバーの色・名前を提供する。
-/// 基本設計 §2.2 のとおり users は家族全員が閲覧可・本人のみ更新可。
+/// 基本設計 §2.2 のとおり users は個別 get のみ可（列挙禁止、Issue #89）・
+/// 更新は本人のみ。
 class UserRepository {
   UserRepository({required FirebaseFirestore firestore})
     : _firestore = firestore;
@@ -18,26 +21,60 @@ class UserRepository {
   CollectionReference<Map<String, dynamic>> get _users =>
       _firestore.collection('users');
 
-  /// 家族メンバー一覧をリアルタイムに監視する（名前昇順）。
-  Stream<List<User>> watchMembers() {
-    return _users.orderBy('name').snapshots().map((snapshot) {
-      final members = <User>[];
-      for (final doc in snapshot.docs) {
-        try {
-          members.add(User.fromFirestore(doc));
-        } catch (error, stackTrace) {
-          // 1件のドキュメント破損でメンバー一覧全体が落ちないよう、当該
-          // ドキュメントだけ除外してログに残す。
-          AppLogger.error(
-            'Failed to parse user ${doc.id}, skipping it',
-            tag: _logTag,
-            error: error,
-            stackTrace: stackTrace,
+  /// 指定した uid のメンバーをリアルタイムに監視する（名前昇順、Issue #89）。
+  ///
+  /// `users` は Security Rules で列挙を禁止しているため、コレクションを購読せず
+  /// uid ごとにドキュメントを購読して束ねる。渡す uid は「自分が参加している
+  /// カレンダーの `memberIds`」＝自分に見えてよいメンバーに限られる。
+  /// 存在しない uid は結果に含めない。
+  Stream<List<User>> watchUsers(List<String> uids) {
+    if (uids.isEmpty) {
+      return Stream.value(const []);
+    }
+
+    final byId = <String, User>{};
+    final subscriptions = <StreamSubscription<User?>>[];
+    var scheduled = false;
+    late final StreamController<List<User>> controller;
+
+    // 同じターンに複数の uid が届いても1回にまとめて流す。購読開始と同時に
+    // （＝ウィジェットのビルド中に）同期的に流すと、リスナー側の再ビルドを
+    // ビルド中に要求してしまうため、マイクロタスクへ逃がす。
+    void emit() {
+      if (scheduled || controller.isClosed) return;
+      scheduled = true;
+      scheduleMicrotask(() {
+        scheduled = false;
+        if (controller.isClosed) return;
+        controller.add(
+          byId.values.toList()..sort((a, b) => a.name.compareTo(b.name)),
+        );
+      });
+    }
+
+    controller = StreamController<List<User>>(
+      onListen: () {
+        for (final uid in uids) {
+          subscriptions.add(
+            watchUser(uid).listen((user) {
+              if (user == null) {
+                byId.remove(uid);
+              } else {
+                byId[uid] = user;
+              }
+              emit();
+            }, onError: controller.addError),
           );
         }
-      }
-      return members;
-    });
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+        subscriptions.clear();
+      },
+    );
+    return controller.stream;
   }
 
   /// 単一メンバーをリアルタイムに監視する。存在しなければ null。

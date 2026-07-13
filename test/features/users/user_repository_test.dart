@@ -22,14 +22,33 @@ void main() {
     });
   }
 
-  test('watchMembers は家族メンバーを名前昇順で色・名前付きで返す', () async {
+  test('watchUsers は指定した uid のメンバーだけを名前昇順で色・名前付きで返す', () async {
     await seedUser('u2', 'ぱぱ', '#1565C0');
     await seedUser('u1', 'あかね', '#D84315');
+    // users は列挙禁止（Issue #89）。参加カレンダーのメンバー以外は取得しない。
+    await seedUser('u3', 'よそのひと', '#2E7D32');
 
-    final members = await repository.watchMembers().first;
+    // uid ごとの購読が届いた順に流れるため、全員そろった時点を待つ。
+    final members = await repository
+        .watchUsers(['u1', 'u2'])
+        .firstWhere((members) => members.length == 2);
 
     expect(members.map((m) => m.name), ['あかね', 'ぱぱ']);
     expect(members.first.color, '#D84315');
+  });
+
+  test('watchUsers は存在しない uid を無視する', () async {
+    await seedUser('u1', 'あかね', '#D84315');
+
+    final members = await repository
+        .watchUsers(['u1', 'missing'])
+        .firstWhere((members) => members.isNotEmpty);
+
+    expect(members.map((m) => m.id), ['u1']);
+  });
+
+  test('watchUsers は uid が空なら空リストを返す', () async {
+    expect(await repository.watchUsers(const []).first, isEmpty);
   });
 
   test('watchUser は存在すればメンバー、なければ null を返す', () async {

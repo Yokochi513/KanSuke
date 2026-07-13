@@ -70,7 +70,7 @@ describe("handleBeforeCreate", function() {
     });
   });
 
-  it("本人だけが参加する個人カレンダーを生成する（FR-8）", async function() {
+  it("本人がオーナーの個人カレンダーを生成する（FR-8 / Issue #89）", async function() {
     const db = fakeDb();
     const result = await handleBeforeCreate(
       {data: {email: "mom@example.com", uid: "u1", displayName: "ママ"}},
@@ -83,6 +83,7 @@ describe("handleBeforeCreate", function() {
       name: "ママのカレンダー",
       memberIds: ["u1"],
       creatorId: "u1",
+      ownerId: "u1",
       createdAt: "SERVER_TS",
       updatedAt: "SERVER_TS",
     });
