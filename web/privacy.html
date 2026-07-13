@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="KanSuke プライバシーポリシー">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <title>プライバシーポリシー — KanSuke</title>
+  <style>
+    :root {
+      --bg: #f7f3e8;
+      --surface: #fffdf8;
+      --text: #21201c;
+      --muted: #5f5c55;
+      --accent: #1b2b4b;
+      --border: #e2dccc;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16171a;
+        --surface: #1e2024;
+        --text: #eceae4;
+        --muted: #a8a49b;
+        --accent: #b9c9e8;
+        --border: #33363c;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 2rem 1.25rem 4rem;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      line-height: 1.85;
+      font-size: 16px;
+    }
+    main {
+      max-width: 44rem;
+      margin: 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2.5rem 2rem;
+    }
+    h1 {
+      margin: 0 0 0.5rem;
+      font-size: 1.6rem;
+      color: var(--accent);
+    }
+    h2 {
+      margin: 2.5rem 0 0.75rem;
+      font-size: 1.15rem;
+      color: var(--accent);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.35rem;
+    }
+    .meta { color: var(--muted); font-size: 0.9rem; margin: 0 0 1.5rem; }
+    .lead { margin: 0; }
+    ul { padding-left: 1.25rem; }
+    li { margin: 0.35rem 0; }
+    a { color: var(--accent); }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 32rem; font-size: 0.95rem; }
+    th, td { border: 1px solid var(--border); padding: 0.6rem 0.75rem; text-align: left; vertical-align: top; }
+    th { background: var(--bg); font-weight: 600; }
+    footer { max-width: 44rem; margin: 1.5rem auto 0; color: var(--muted); font-size: 0.85rem; text-align: center; }
+    @media (max-width: 480px) {
+      body { padding: 1rem 0.75rem 3rem; }
+      main { padding: 1.5rem 1.15rem; border-radius: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>KanSuke プライバシーポリシー</h1>
+    <p class="meta">制定日: 2026年7月14日 / 最終更新日: 2026年7月14日</p>
+
+    <p class="lead">
+      KanSuke（以下「本アプリ」）は、家族などの少人数でスケジュールを共有するためのアプリです。
+      本ポリシーは、本アプリの利用にあたって取得する情報と、その取り扱いについて定めます。
+    </p>
+
+    <h2>1. 提供者</h2>
+    <ul>
+      <li>提供者: Yokochi（個人開発）</li>
+      <li>お問い合わせ先: <a href="mailto:yokochi5123@gmail.com">yokochi5123@gmail.com</a></li>
+    </ul>
+
+    <h2>2. 取得する情報と利用目的</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>情報</th>
+            <th>取得方法</th>
+            <th>利用目的</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>メールアドレス・表示名</td>
+            <td>Google / Apple でのサインイン時に、各サービスから提供されます</td>
+            <td>アカウントの識別と、同じカレンダーに参加しているメンバーへの表示</td>
+          </tr>
+          <tr>
+            <td>ユーザー ID（Firebase Authentication の UID）</td>
+            <td>アカウント作成時に自動発行されます</td>
+            <td>アカウントの識別、データの所有者・参加者の判定</td>
+          </tr>
+          <tr>
+            <td>メンバー識別色</td>
+            <td>アカウント作成時に自動設定され、設定画面で変更できます</td>
+            <td>「誰の予定か」を色で判別するための表示</td>
+          </tr>
+          <tr>
+            <td>予定の内容（タイトル・日時・メモ・参加者・確定/仮の別・繰り返し設定・リマインド設定）</td>
+            <td>利用者が本アプリに入力します</td>
+            <td>カレンダー機能の提供と、同じカレンダーのメンバーへの共有</td>
+          </tr>
+          <tr>
+            <td>カレンダーの情報（名前・参加メンバー・オーナー）</td>
+            <td>利用者がカレンダーを作成・招待する際に生成されます</td>
+            <td>カレンダーの表示と、閲覧・編集できる範囲の制御</td>
+          </tr>
+          <tr>
+            <td>招待リンクの情報（発行者・有効期限・使用回数）</td>
+            <td>利用者が招待リンクを発行した際に生成されます</td>
+            <td>招待リンクによるカレンダーへの参加、および取り消し</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      招待リンクのトークンそのものはサーバーに保存せず、ハッシュ値のみを保存します。
+      本アプリは、これらの情報を上記の目的以外には利用しません。
+    </p>
+
+    <h2>3. 取得しない情報</h2>
+    <p>本アプリは、以下の情報を取得しません。</p>
+    <ul>
+      <li>位置情報、連絡先、写真、カメラ・マイクの内容</li>
+      <li>広告 ID、およびそれに類するトラッキング用の識別子</li>
+      <li>利用状況の解析データ・クラッシュレポート（アクセス解析ツールや広告 SDK を組み込んでいません）</li>
+      <li>Google / Apple のパスワード（サインインは各サービス上で行われ、本アプリはパスワードを受け取りません）</li>
+    </ul>
+    <p>取得した情報を広告に利用したり、第三者に販売したりすることは一切ありません。</p>
+
+    <h2>4. 情報が共有される範囲</h2>
+    <p>
+      本アプリは共有カレンダーです。<strong>あるカレンダーに登録された予定の内容と、その参加メンバーの表示名・メールアドレス・識別色は、同じカレンダーに参加している他のメンバーに表示されます。</strong>
+      カレンダーに参加していない利用者からは閲覧できません（サーバー側のアクセス制御で制限しています）。
+    </p>
+    <p>
+      カレンダーへの参加は、メンバーが発行した招待リンクを受諾した場合にのみ成立します。招待リンクを共有する相手にはご注意ください。
+    </p>
+
+    <h2>5. 情報の保存先と第三者への提供</h2>
+    <p>
+      取得した情報は、Google が提供する Firebase（Firebase Authentication / Cloud Firestore / Cloud Functions）に保存・処理されます。
+      これは本アプリの機能提供に必要な範囲での委託であり、Google はデータ処理の委託先として、そのプライバシーポリシーおよびデータ処理条件に従って情報を取り扱います。
+      データは日本国外のサーバーに保存・処理される場合があります。
+    </p>
+    <p>
+      これ以外に、法令に基づく開示請求など正当な理由がある場合を除き、利用者の情報を第三者へ提供することはありません。
+    </p>
+    <ul>
+      <li>Google プライバシーポリシー: <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">https://policies.google.com/privacy</a></li>
+      <li>Firebase のデータ処理について: <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">https://firebase.google.com/support/privacy</a></li>
+      <li>Apple でサインイン: <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">https://www.apple.com/legal/privacy/</a></li>
+    </ul>
+
+    <h2>6. 保存期間と削除</h2>
+    <p>
+      予定・カレンダーの情報は、利用者が削除するか、アカウントを削除するまで保存されます。
+      なお、オフラインでの編集を複数の端末間で正しく同期するため、<strong>アプリ上で削除した予定は、内部的に「削除済み」として記録された状態でサーバーに残ります</strong>。この記録は削除済みの予定として扱われ、アプリの画面には表示されません。
+    </p>
+    <p>
+      端末上には、オフラインでも表示できるようにデータのキャッシュが保存されます。アプリをアンインストールすると、この端末上のキャッシュは削除されます。
+    </p>
+
+    <h2>7. アカウントの削除</h2>
+    <p>
+      アカウントおよび関連するデータの削除をご希望の場合は、<a href="mailto:yokochi5123@gmail.com">yokochi5123@gmail.com</a> 宛に、サインインに使用しているメールアドレスからご連絡ください。
+      本人確認のうえ、アカウント（Firebase Authentication のユーザー情報）、プロフィール情報、および本人のみが参加するカレンダーとその予定を削除します。
+    </p>
+    <p>
+      複数のメンバーが参加している共有カレンダーに登録された予定は、他のメンバーのカレンダー表示を保つため、そのまま残る場合があります。これらの削除も希望される場合は、その旨をあわせてお知らせください。
+    </p>
+
+    <h2>8. 安全管理</h2>
+    <p>
+      通信は暗号化（HTTPS）され、サーバー上のデータへのアクセスは、カレンダーの参加メンバーだけに限定するアクセス制御（Firestore Security Rules）で保護されています。
+    </p>
+
+    <h2>9. 子どもの情報</h2>
+    <p>
+      本アプリは、家族が予定を共有するためのものです。お子様が利用する場合は、保護者の方の同意と管理のもとでご利用ください。
+      本アプリは、13 歳未満の利用者から意図的に情報を収集することはありません。
+    </p>
+
+    <h2>10. 本ポリシーの変更</h2>
+    <p>
+      本ポリシーの内容は、必要に応じて変更することがあります。重要な変更を行う場合は、本ページ上で最終更新日を改めてお知らせします。
+    </p>
+
+    <h2>11. お問い合わせ</h2>
+    <p>
+      本ポリシーおよび個人情報の取り扱いに関するお問い合わせは、<a href="mailto:yokochi5123@gmail.com">yokochi5123@gmail.com</a> までご連絡ください。
+    </p>
+  </main>
+  <footer>KanSuke</footer>
+</body>
+</html>
