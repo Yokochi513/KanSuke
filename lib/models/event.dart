@@ -3,7 +3,6 @@ import 'dart:collection';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 
-import 'calendar.dart';
 import 'firestore_serialization.dart';
 
 enum EventType {
@@ -138,9 +137,10 @@ final class Event {
         pendingWriteEstimate: DateTime.now().toUtc(),
       ),
       deleted: data['deleted'] as bool,
-      // FR-8: 複数カレンダー機能導入前のドキュメントには calendarId が
-      // 存在しないため、既定カレンダー（わが家）に属するものとして扱う。
-      calendarId: (data['calendarId'] as String?) ?? defaultCalendarId,
+      // FR-8: calendarId は必須（Issue #93）。旧・既定カレンダー（'default'）への
+      // フォールバックは、移行スクリプトで全予定に calendarId が実在するように
+      // なったため廃止した。
+      calendarId: data['calendarId'] as String,
       recurrenceFrequency: EventRecurrenceFrequency.fromFirestore(
         data['recurrenceFrequency'] as String?,
       ),

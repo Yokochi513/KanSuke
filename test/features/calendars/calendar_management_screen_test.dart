@@ -9,12 +9,14 @@ import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/calendars/presentation/calendar_edit_args.dart';
 import 'package:kansuke/features/calendars/presentation/calendar_management_screen.dart';
 import 'package:kansuke/features/invites/application/invite_providers.dart';
-import 'package:kansuke/models/models.dart';
+
+/// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
+const testCalendarId = 'test-calendar';
 
 Future<FakeFirebaseFirestore> _seed() async {
   final firestore = FakeFirebaseFirestore();
   final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
-  await firestore.collection('calendars').doc(defaultCalendarId).set({
+  await firestore.collection('calendars').doc(testCalendarId).set({
     'name': 'わが家',
     'memberIds': ['me', 'other'],
     'creatorId': 'me',

@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/features/events/data/event_repository.dart';
 import 'package:kansuke/models/models.dart';
 
+/// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
+const testCalendarId = 'test-calendar';
+
 Event _buildEvent({
   required String id,
   required DateTime startAt,
@@ -11,7 +14,7 @@ Event _buildEvent({
   EventType type = EventType.tentative,
   String creatorId = 'creator-1',
   String title = '打ち合わせ',
-  String calendarId = defaultCalendarId,
+  String calendarId = testCalendarId,
   EventRecurrenceFrequency? recurrenceFrequency,
   int? recurrenceCount,
 }) {
@@ -111,7 +114,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
     expect(visible, isEmpty);
@@ -156,7 +159,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
 
@@ -206,7 +209,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 19),
           end: DateTime.utc(2026, 7, 20),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
 
@@ -231,7 +234,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 19),
           end: DateTime.utc(2026, 7, 20),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
 
@@ -252,7 +255,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 2, 1),
           end: DateTime.utc(2026, 3, 1),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
 
@@ -273,7 +276,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2025, 2, 1),
           end: DateTime.utc(2025, 3, 1),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
 
@@ -288,7 +291,7 @@ void main() {
     // 型不正など何らかの理由でパースに失敗するドキュメントを模擬する。
     await firestore.collection('events').doc('broken').set({
       'deleted': false,
-      'calendarId': defaultCalendarId,
+      'calendarId': testCalendarId,
       'startAt': Timestamp.fromDate(DateTime.utc(2026, 7, 11, 9)),
       'endAt': Timestamp.fromDate(DateTime.utc(2026, 7, 11, 10)),
       'title': 123, // String のはずが不正な型
@@ -298,7 +301,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
 

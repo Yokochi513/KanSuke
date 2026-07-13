@@ -7,6 +7,9 @@ android/app/google-services.json
 *.jks
 *.p8
 key.properties
+# 管理者スクリプト（functions/scripts/）用のサービスアカウント鍵
+*-firebase-adminsdk-*.json
+serviceAccount*.json
 .env
 .env.*
 

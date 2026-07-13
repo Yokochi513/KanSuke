@@ -83,13 +83,13 @@ void main() {
     expect(restored.participantIds, isEmpty);
   });
 
-  test('calendarIdが未保存の既存ドキュメントは既定カレンダーにフォールバックする', () {
+  // Issue #93: 旧・既定カレンダー（'default'）へのフォールバックは廃止した。
+  // 移行スクリプトで全予定に calendarId が実在するため、欠損は不正なドキュメント。
+  test('calendarIdを持たないドキュメントは読み込めない', () {
     final map = buildEvent().toFirestore(useServerTimestamp: false);
     map.remove('calendarId');
 
-    final restored = Event.fromMap('event-1', map);
-
-    expect(restored.calendarId, defaultCalendarId);
+    expect(() => Event.fromMap('event-1', map), throwsA(isA<TypeError>()));
   });
 
   test('recurrenceFrequencyが未保存の既存ドキュメントは単発予定として扱う', () {
