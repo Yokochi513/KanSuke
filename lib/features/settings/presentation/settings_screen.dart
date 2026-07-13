@@ -509,7 +509,7 @@ class _EventMergeSection extends ConsumerWidget {
   }
 }
 
-/// 通知許可の状態表示と要求導線（実トークン登録は #13）。
+/// 通知許可の状態表示と要求導線（FR-5、Issue #13）。
 class _NotificationSection extends ConsumerWidget {
   const _NotificationSection();
 

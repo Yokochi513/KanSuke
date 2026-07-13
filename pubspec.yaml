@@ -57,6 +57,8 @@ dependencies:
   # FR-9: 招待リンク（kansuke://invite?token=...）でアプリを起動する受け口
   # （Issue #90）。iOS / Android / Web で同じ Stream として扱える。
   app_links: ^6.4.1
+  # FR-5: 通知権限のリクエスト・FCM トークン取得（Issue #13）。
+  firebase_messaging: ^16.4.1
 
 dev_dependencies:
   flutter_test:

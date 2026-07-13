@@ -10,6 +10,7 @@ import '../features/calendars/presentation/calendar_edit_screen.dart';
 import '../features/calendars/presentation/calendar_management_screen.dart';
 import '../features/events/presentation/day_events_screen.dart';
 import '../features/events/presentation/event_edit_screen.dart';
+import '../features/notifications/application/notification_providers.dart';
 import '../features/invites/presentation/invite_accept_screen.dart';
 import '../features/invites/presentation/invite_link_gate.dart';
 import '../features/settings/application/theme_mode_provider.dart';
@@ -60,9 +61,15 @@ class KanSukeApp extends ConsumerWidget {
         error: (_, _) => const SignInScreen(
           initialErrorMessage: '認証状態を確認できませんでした。もう一度お試しください。',
         ),
-        data: (session) => session == null
-            ? const SignInScreen()
-            : const VersionCheckGate(child: CalendarScreen()),
+        data: (session) {
+          if (session != null) {
+            // FR-5: 通知権限リクエストと FCM トークン登録。画面はブロックしない。
+            ref.watch(notificationBootstrapProvider);
+          }
+          return session == null
+              ? const SignInScreen()
+              : const VersionCheckGate(child: CalendarScreen());
+        },
       ),
       routes: {
         AppRoutes.calendar: (_) => const CalendarScreen(),

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/logger.dart';
+import '../../notifications/application/notification_providers.dart';
 import '../data/auth_repository.dart';
 import '../data/firebase_auth_repository.dart';
 
@@ -86,7 +88,31 @@ class AuthActionController extends Notifier<AuthActionState> {
   }
 
   Future<void> signOut() {
-    return _run(ref.read(authRepositoryProvider).signOut);
+    return _run(() async {
+      // FR-5: この端末の FCM トークンを devices から外す。Security Rules は
+      // auth.uid==uid のみ書込を許可するため、認証セッションが切れる前に行う。
+      final uid = ref.read(currentUidProvider);
+      if (uid != null) {
+        await _unregisterDeviceBestEffort(uid);
+      }
+      await ref.read(authRepositoryProvider).signOut();
+    });
+  }
+
+  Future<void> _unregisterDeviceBestEffort(String uid) async {
+    try {
+      await ref
+          .read(deviceRegistrationServiceProvider)
+          .unregisterForSignOut(uid);
+    } on Object catch (error, stackTrace) {
+      // トークン削除に失敗してもサインアウト自体は継続する（ベストエフォート）。
+      AppLogger.error(
+        'Failed to unregister device token on sign out',
+        tag: 'AuthActionController',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void clearError() {
