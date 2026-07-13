@@ -222,17 +222,20 @@ class FirebaseAuthRepository implements AuthRepository {
       throw const AuthException();
     }
 
-    // NFR-4 / 基本設計 §2.1:
-    // users/{uid} の生成は allowlist を参照できる Functions 側に集約し、
-    // クライアントは認証完了後に存在確認だけを行う。
+    // 基本設計 §2.1:
+    // users/{uid} と個人カレンダーの生成はアカウント作成時に発火する
+    // Auth Blocking Function に集約し、クライアントは認証完了後に存在確認だけを行う。
+    // 存在しない場合は初期化に失敗している（＝アプリを使える状態にない）ため、
+    // サインアウトして再試行を促す。
     final snapshot = await _firestore.collection('users').doc(user.uid).get();
     if (!snapshot.exists) {
       AppLogger.error(
-        'users/${user.uid} does not exist (not in allowlist?); signing out',
+        'users/${user.uid} does not exist (signup initialization failed); '
+        'signing out',
         tag: _logTag,
       );
       await _auth.signOut();
-      throw const AuthAccessDeniedException();
+      throw const AuthSetupFailedException();
     }
   }
 

@@ -187,30 +187,20 @@ describe("Firestore Security Rules (NFR-4)", () => {
     }));
   });
 
-  it("既定カレンダーには非メンバーでも自分を追加(参加)できるが、それ以外の変更はできない（FR-8）", async () => {
-    const newMemberDb = dbFor("new-family-user");
+  it("既定カレンダーにも非メンバーは参加できない（特例廃止、FR-8）", async () => {
+    const newMemberDb = dbFor("new-user");
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(context.firestore(), "users/new-family-user"), {
-        name: "New Family",
+      await setDoc(doc(context.firestore(), "users/new-user"), {
+        name: "New User",
       });
     });
 
-    // 追加専用（既存メンバーを維持しつつ自分を足す）は許可される。
-    await assertSucceeds(setDoc(doc(newMemberDb, "calendars/default"), {
-      name: "わが家",
-      memberIds: ["family-user", "other-family-user", "new-family-user"],
-      creatorId: "family-user",
-    }, {merge: true}));
-
-    // 既存メンバーを消す・自分を含めない・名前を変える更新は許可されない。
+    // 旧・既定カレンダー（'default'）は特別扱いをやめ、他のカレンダーと同じく
+    // 参加者だけが読み書きできる。自分を勝手に追加することもできない。
+    await assertFails(getDoc(doc(newMemberDb, "calendars/default")));
     await assertFails(setDoc(doc(newMemberDb, "calendars/default"), {
       name: "わが家",
-      memberIds: ["new-family-user"],
-      creatorId: "family-user",
-    }, {merge: true}));
-    await assertFails(setDoc(doc(newMemberDb, "calendars/default"), {
-      name: "乗っ取り",
-      memberIds: ["family-user", "other-family-user", "new-family-user"],
+      memberIds: ["family-user", "other-family-user", "new-user"],
       creatorId: "family-user",
     }, {merge: true}));
   });

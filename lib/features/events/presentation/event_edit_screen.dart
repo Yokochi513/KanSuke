@@ -91,6 +91,15 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _endTime = const TimeOfDay(hour: 10, minute: 0);
       // FR-8: 新規作成時は、遷移元で表示していたカレンダーを初期値にする。
       _calendarId = ref.read(selectedCalendarIdProvider);
+      if (_calendarId.isEmpty) {
+        // カレンダー一覧がまだ届いていない間は表示中カレンダーが定まらない
+        // （空文字）。確定したら初期値として反映する。
+        ref.listenManual(selectedCalendarIdProvider, (_, calendarId) {
+          if (_calendarId.isEmpty && calendarId.isNotEmpty) {
+            setState(() => _calendarId = calendarId);
+          }
+        });
+      }
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
         _participantIds.add(uid);

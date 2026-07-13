@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/app/routes.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
+import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/events/presentation/day_events_screen.dart';
 import 'package:kansuke/features/events/presentation/event_edit_args.dart';
 import 'package:kansuke/models/models.dart';
@@ -113,6 +114,9 @@ Widget _wrap(
     overrides: [
       firestoreProvider.overrideWithValue(firestore),
       currentUidProvider.overrideWithValue('me'),
+      // 日別一覧の描画に集中するため、表示中カレンダーは固定する（カレンダーの
+      // 解決自体は calendar_providers_test で検証する）。
+      selectedCalendarIdProvider.overrideWithValue(defaultCalendarId),
     ],
     child: MaterialApp(
       onGenerateRoute: (settings) {

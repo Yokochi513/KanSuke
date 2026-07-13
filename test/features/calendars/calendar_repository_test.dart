@@ -103,40 +103,4 @@ void main() {
 
     expect(calendars.map((c) => c.name), ['参加中']);
   });
-
-  test('ensureDefaultCalendar は未作成なら既知の全メンバーを含めて作成する', () async {
-    await repository.ensureDefaultCalendar(
-      uid: 'me',
-      knownMemberIds: ['me', 'other'],
-    );
-
-    final raw = await readRaw(defaultCalendarId);
-    expect(raw['name'], 'わが家');
-    expect((raw['memberIds'] as List).toSet(), {'me', 'other'});
-    expect(raw['creatorId'], 'me');
-  });
-
-  test('ensureDefaultCalendar は既に存在するなら既存メンバーを維持して自分を追加する', () async {
-    await repository.ensureDefaultCalendar(uid: 'me', knownMemberIds: ['me']);
-
-    await repository.ensureDefaultCalendar(
-      uid: 'other',
-      knownMemberIds: ['me', 'other'],
-    );
-
-    final raw = await readRaw(defaultCalendarId);
-    expect((raw['memberIds'] as List).toSet(), {'me', 'other'});
-    // 2回目以降は creatorId・name を変更しない。
-    expect(raw['creatorId'], 'me');
-    expect(raw['name'], 'わが家');
-  });
-
-  test('ensureDefaultCalendar は既に参加済みなら何もしない', () async {
-    await repository.ensureDefaultCalendar(uid: 'me', knownMemberIds: ['me']);
-
-    await repository.ensureDefaultCalendar(uid: 'me', knownMemberIds: ['me']);
-
-    final raw = await readRaw(defaultCalendarId);
-    expect((raw['memberIds'] as List), ['me']);
-  });
 }

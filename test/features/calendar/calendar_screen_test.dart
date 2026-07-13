@@ -9,6 +9,7 @@ import 'package:kansuke/app/theme.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/calendar/presentation/calendar_screen.dart';
+import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/events/presentation/event_type_badge.dart';
 import 'package:kansuke/features/settings/application/event_merge_provider.dart';
 import 'package:kansuke/models/models.dart';
@@ -285,6 +286,9 @@ Widget _wrap(
       firestoreProvider.overrideWithValue(firestore),
       currentUidProvider.overrideWithValue('me'),
       resolvedEventMergeEnabledProvider.overrideWithValue(mergeEnabled),
+      // 月表示の描画に集中するため、表示中カレンダーは固定する（カレンダーの
+      // 解決自体は calendar_providers_test で検証する）。
+      selectedCalendarIdProvider.overrideWithValue(defaultCalendarId),
     ],
     child: MaterialApp(
       theme: buildKanSukeTheme(),

@@ -1,57 +1,52 @@
 "use strict";
 
-const {HttpsError} = require("firebase-functions/v2/identity");
-const {evaluateSignup} = require("./allowlist");
+const {buildInitialProfile, personalCalendarName} = require("./signup");
 
 /**
- * サインインメールを小文字・トリムして正規化する。
- * @param {?string} email
- * @return {string}
- */
-function normalizeEmail(email) {
-  return (email || "").trim().toLowerCase();
-}
-
-/**
- * `beforeUserCreated` の本体。allowlist を照合し、対象外は拒否、
- * 許可時は `users/{uid}` を allowlist 情報（name / color）から生成する。
+ * `beforeUserCreated` の本体（基本設計 §2.1）。
  *
- * Firestore アクセスと serverTimestamp を引数で受け取り、テスト可能にする。
+ * サインアップを拒否せず、新規アカウントの初期データを作る:
+ * - `users/{uid}`: ID プロバイダの表示名・メールと、初期の識別色（FR-2）。
+ * - `calendars/{uuid}`: 本人だけが参加する個人カレンダー（FR-8）。
+ *   ドキュメント ID は UUID（アプリのカレンダー作成と同じ規約）。
  *
- * @param {{data: {email?: string, uid?: string}}} event
- * @param {{doc: function(string): {get: function(): Promise<object>,
- *   set: function(object, object=): Promise<void>}}} db
+ * アカウント作成時にしか発火しないため、ここで作った個人カレンダーが
+ * 各ユーザーの最初の表示対象になる。
+ *
+ * Firestore アクセス・serverTimestamp・UUID 生成を引数で受け取り、テスト可能にする。
+ *
+ * @param {{data: {email?: string, uid?: string, displayName?: string}}} event
+ * @param {{doc: function(string): {set: function(object, object=): Promise<void>}}} db
  * @param {function(): *} serverTimestamp
- * @return {Promise<{allowed: boolean}>}
+ * @param {function(): string} newId
+ * @return {Promise<{uid: string, calendarId: string,
+ *   profile: {name: string, email: string, color: string}}>}
  */
-async function handleBeforeCreate(event, db, serverTimestamp) {
-  const email = normalizeEmail(event.data && event.data.email);
-  const uid = event.data && event.data.uid;
-
-  const snapshot = await db.doc(`allowlist/${email}`).get();
-  const decision = evaluateSignup(
-    email,
-    snapshot.exists ? snapshot.data() : null,
-  );
-
-  if (!decision.allowed) {
-    // allowlist 外はサインアップを拒否する（NFR-4 / 基本設計 §2.1）。
-    throw new HttpsError("permission-denied", "利用権限がありません");
-  }
-
+async function handleBeforeCreate(event, db, serverTimestamp, newId) {
+  const data = (event && event.data) || {};
+  const uid = data.uid;
+  const profile = buildInitialProfile({
+    uid,
+    email: data.email,
+    displayName: data.displayName,
+  });
   const now = serverTimestamp();
+
   await db.doc(`users/${uid}`).set(
-    {
-      name: decision.user.name,
-      email: decision.user.email,
-      color: decision.user.color,
-      createdAt: now,
-      updatedAt: now,
-    },
+    {...profile, createdAt: now, updatedAt: now},
     {merge: true},
   );
 
-  return decision;
+  const calendarId = newId();
+  await db.doc(`calendars/${calendarId}`).set({
+    name: personalCalendarName(profile.name),
+    memberIds: [uid],
+    creatorId: uid,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return {uid, calendarId, profile};
 }
 
-module.exports = {handleBeforeCreate, normalizeEmail};
+module.exports = {handleBeforeCreate};

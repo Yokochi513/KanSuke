@@ -114,7 +114,7 @@ class _CalendarEditScreenState extends ConsumerState<CalendarEditScreen> {
     );
   }
 
-  /// 参加者の複数選択（FR-8）。allowlist 済みの家族メンバーからのみ選択でき、
+  /// 参加者の複数選択（FR-8）。サインアップ済みのメンバーからのみ選択でき、
   /// 1人以上の選択を必須とする。
   Widget _buildMembersField(List<User> members) {
     if (members.isEmpty) {
