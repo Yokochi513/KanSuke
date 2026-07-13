@@ -1,18 +1,18 @@
 ---
 name: release-kansuke
-description: Prepare a KanSuke release — bump the version, finalize CHANGELOG.md, build the signed Android release APK, and open the develop → main release PR. Use when asked to cut, prepare, or ship a KanSuke release (e.g. "v1.3.0 をリリースして", "リリース PR を作って").
+description: Prepare a KanSuke release — bump the version, finalize CHANGELOG.md, build the signed Android release App Bundle (AAB), and open the develop → main release PR. Use when asked to cut, prepare, or ship a KanSuke release (e.g. "v1.3.0 をリリースして", "リリース PR を作って").
 ---
 
 # KanSuke リリース手順
 
 `develop` の内容を `main` へ出すためのリリース準備を行う。担当範囲は **リリース PR の作成まで**。
-PR のマージ、`main` → `develop` の back-merge、APK の家族への配布は**人間が行う**（本 skill では実行しない）。
+PR のマージ、`main` → `develop` の back-merge、アプリの家族への配布は**人間が行う**（本 skill では実行しない）。
 リリース全体の運用手順は [docs/運用/リリース手順.md](../../../docs/運用/リリース手順.md) が正典。手順に迷ったら先にそれを読む。
 
 成果物は 3 つ:
 
 1. `CHANGELOG.md` + `pubspec.yaml` のリリース用更新
-2. 署名済み Android リリース APK（ローカルビルド）
+2. 署名済み Android リリース App Bundle（AAB / ローカルビルド）
 3. `release/x.y.z` → `main` のリリース PR
 
 ## 1. 事前確認
@@ -58,16 +58,17 @@ flutter test
 
 `functions/` に変更が含まれるリリースなら `npm --prefix functions ci && npm --prefix functions run lint && npm --prefix functions test` も実行する。
 
-## 6. Android リリース APK ビルド
+## 6. Android リリース App Bundle（AAB）ビルド
 
 ```bash
-flutter build apk --release
+flutter build appbundle --release
 ```
 
-- 出力: `build/app/outputs/flutter-apk/app-release.apk`
+- 出力: `build/app/outputs/bundle/release/app-release.aab`
 - リリース署名鍵（`android/key.properties` → `kansuke-release-key.jks`）で署名される。`android/key.properties` が無いとデバッグ署名になり、**インストール済みアプリを署名不一致で上書きできなくなる**。ビルド前にファイルの存在を確認し、無ければ止めてユーザーに知らせる。
-- ビルド後、APK のパスとサイズ、`versionName` が新バージョンになっていることを報告する。
-- APK・keystore・`key.properties` は**絶対にコミットしない**（`.gitignore` 済み前提だが `git status` で確認する）。配布は人間が行う。
+- ビルド後、AAB のパスとサイズ、`versionName` が新バージョンになっていることを報告する。
+- AAB は端末に直接インストールできない形式（Play Console へのアップロード用）。端末へ直接入れる必要がある場合は `bundletool` で APKS に変換するか、別途 `flutter build apk --release` を実行する。
+- AAB・APK・keystore・`key.properties` は**絶対にコミットしない**（`.gitignore` 済み前提だが `git status` で確認する）。配布は人間が行う。
 
 ## 7. コミットとリリース PR
 
@@ -102,7 +103,7 @@ main への push を検知して CI（`publish-release-version.yml`）が CHANGE
 ## 検証
 - [x] `flutter analyze`（警告ゼロ）
 - [x] `flutter test`
-- [x] `flutter build apk --release`（リリース署名鍵で署名）
+- [x] `flutter build appbundle --release`（リリース署名鍵で署名）
 - [ ] マージ後、`meta/release` が `version=X.Y.Z` に更新されることを確認
 
 > 注: マージ後、本 PR のバージョン更新コミットを develop にも反映（back-merge）してバージョンずれを解消すること。
@@ -116,6 +117,6 @@ main への push を検知して CI（`publish-release-version.yml`）が CHANGE
 
 - 新バージョンと PR の URL
 - 実行した検証コマンドとその結果
-- ビルドした APK のパス
-- 残っている人間の作業: PR レビューとマージ → CI（`meta/release` / Pages）の確認 → APK を家族に配布 → `main` を `develop` に back-merge。
+- ビルドした AAB のパス
+- 残っている人間の作業: PR レビューとマージ → CI（`meta/release` / Pages）の確認 → AAB を配布経路（Play Console 等）に上げて家族に届ける → `main` を `develop` に back-merge。
   手順とコマンドは [docs/運用/リリース手順.md](../../../docs/運用/リリース手順.md) の 2〜5 章にあるので、その参照を必ず添える（back-merge を忘れると develop のバージョンがずれる）。
