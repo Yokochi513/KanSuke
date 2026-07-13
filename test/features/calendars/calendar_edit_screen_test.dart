@@ -9,7 +9,10 @@ import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/calendars/data/calendar_membership_repository.dart';
 import 'package:kansuke/features/calendars/presentation/calendar_edit_args.dart';
 import 'package:kansuke/features/calendars/presentation/calendar_edit_screen.dart';
+import 'package:kansuke/features/invites/application/invite_providers.dart';
 import 'package:kansuke/models/models.dart';
+
+import '../invites/fake_invite_repository.dart';
 
 /// メンバー管理の Callable（Issue #89）を模し、呼び出しを記録する。
 class _FakeMembershipRepository implements CalendarMembershipRepository {
@@ -90,6 +93,9 @@ Future<void> _openEditor(
         currentUidProvider.overrideWithValue('me'),
         if (membership != null)
           calendarMembershipRepositoryProvider.overrideWithValue(membership),
+        // 招待リンクの節（FR-9 / Issue #90）は Callable を呼ぶため差し替える。
+        // 招待リンクそのものの UI は invites 側のテストで検証する。
+        inviteRepositoryProvider.overrideWithValue(FakeInviteRepository()),
       ],
       child: MaterialApp(
         home: Builder(

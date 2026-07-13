@@ -22,6 +22,21 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<!-- FR-9: 招待リンク kansuke://invite?token=... でアプリを起動する（Issue #90）。
+	     家庭内配布のためドメイン検証が要る Universal Links は使わない。 -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>kansuke.invite</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kansuke</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>

@@ -8,6 +8,7 @@ import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/calendars/presentation/calendar_edit_args.dart';
 import 'package:kansuke/features/calendars/presentation/calendar_management_screen.dart';
+import 'package:kansuke/features/invites/application/invite_providers.dart';
 import 'package:kansuke/models/models.dart';
 
 Future<FakeFirebaseFirestore> _seed() async {
@@ -73,6 +74,52 @@ void main() {
     expect(find.text('EDIT_SCREEN'), findsOneWidget);
     expect(sink.single, isA<CalendarEditArgs>());
     expect((sink.single as CalendarEditArgs).isCreate, isFalse);
+  });
+
+  testWidgets('招待リンクを貼り付けると受諾待ちのトークンになる（FR-9 / Issue #90）', (tester) async {
+    // Web ではカスタムスキームのリンクを踏めないため、貼り付けが参加の受け口になる。
+    final container = ProviderContainer(
+      overrides: [
+        firestoreProvider.overrideWithValue(await _seed()),
+        currentUidProvider.overrideWithValue('me'),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: CalendarManagementScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('招待リンクで参加'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField),
+      'kansuke://invite?token=token-1',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, '確認'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(pendingInviteTokenProvider), 'token-1');
+  });
+
+  testWidgets('貼り付けが招待リンクでなければエラーを出す', (tester) async {
+    final firestore = await _seed();
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('招待リンクで参加'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'https://example.com/');
+    await tester.tap(find.widgetWithText(FilledButton, '確認'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('招待リンクを正しく貼り付けてください'), findsOneWidget);
   });
 
   testWidgets('新規作成ボタンで作成用の編集画面を開く', (tester) async {

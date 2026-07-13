@@ -54,6 +54,9 @@ dependencies:
   # FR-8: メンバー削除・退出・オーナー移譲は Callable Function 経由でのみ行う
   # （memberIds / ownerId はクライアントから直接書けない、Issue #89）。
   cloud_functions: ^6.3.3
+  # FR-9: 招待リンク（kansuke://invite?token=...）でアプリを起動する受け口
+  # （Issue #90）。iOS / Android / Web で同じ Stream として扱える。
+  app_links: ^6.4.1
 
 dev_dependencies:
   flutter_test:
