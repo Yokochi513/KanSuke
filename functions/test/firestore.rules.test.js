@@ -24,6 +24,10 @@ const {
 const projectId = "demo-kansuke";
 const rulesPath = path.resolve(__dirname, "../../firestore.rules");
 
+// カレンダーの ID は UUID で統一されている（Issue #93）。テストでは読みやすさのため
+// 固定文字列を使うが、'default' のような特別な ID はもう存在しない。
+const familyCalendarId = "family-calendar";
+
 let testEnvironment;
 
 function dbFor(uid) {
@@ -38,9 +42,8 @@ async function seedFamilyMembers() {
     await setDoc(doc(context.firestore(), "users/other-family-user"), {
       name: "Other Family",
     });
-    // FR-8: 既定カレンダー（わが家）。calendarId 未設定の予定はここに
-    // 属するものとして扱う（firestore.rules の eventCalendarId 参照）。
-    await setDoc(doc(context.firestore(), "calendars/default"), {
+    // FR-8: 家族のカレンダー。予定は calendarId でこのカレンダーに紐づく。
+    await setDoc(doc(context.firestore(), `calendars/${familyCalendarId}`), {
       name: "わが家",
       memberIds: ["family-user", "other-family-user"],
       creatorId: "family-user",
@@ -98,6 +101,7 @@ describe("Firestore Security Rules (NFR-4)", () => {
     await assertSucceeds(setDoc(event, {
       title: "Family event",
       deleted: false,
+      calendarId: familyCalendarId,
     }));
     await assertSucceeds(getDoc(event));
     await assertSucceeds(deleteDoc(event));
@@ -111,7 +115,10 @@ describe("Firestore Security Rules (NFR-4)", () => {
     );
 
     await assertFails(getDoc(outsiderEvent));
-    await assertFails(setDoc(outsiderEvent, {title: "Denied"}));
+    await assertFails(setDoc(outsiderEvent, {
+      title: "Denied",
+      calendarId: familyCalendarId,
+    }));
     await assertFails(getDoc(anonymousEvent));
   });
 
@@ -152,14 +159,25 @@ describe("Firestore Security Rules (NFR-4)", () => {
     await assertFails(getDoc(otherDevice));
   });
 
-  it("calendarId未設定の予定は既定カレンダーのメンバーとして読み書きできる（FR-8）", async () => {
-    const event = doc(dbFor("family-user"), "events/legacy-event");
+  it("calendarId を持たない予定は読み書きできない（FR-8 / Issue #93）", async () => {
+    // 旧・既定カレンダー（'default'）へのフォールバックは廃止した。移行スクリプトで
+    // 全予定に calendarId が実在するため、欠損は不正なドキュメントとして扱う。
+    const familyDb = dbFor("family-user");
 
-    await assertSucceeds(setDoc(event, {
+    await assertFails(setDoc(doc(familyDb, "events/no-calendar-event"), {
       title: "Legacy event",
       deleted: false,
     }));
-    await assertSucceeds(getDoc(event));
+
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "events/legacy-event"), {
+        title: "Legacy event",
+        deleted: false,
+      });
+    });
+
+    await assertFails(getDoc(doc(familyDb, "events/legacy-event")));
+    await assertFails(deleteDoc(doc(familyDb, "events/legacy-event")));
   });
 
   it("calendars は参加者だけが読み書きでき、非参加者は不可（FR-8）", async () => {
@@ -211,16 +229,16 @@ describe("Firestore Security Rules (NFR-4)", () => {
     const ownerDb = dbFor("family-user");
     const memberDb = dbFor("other-family-user");
 
-    await assertFails(updateDoc(doc(memberDb, "calendars/default"), {
+    await assertFails(updateDoc(doc(memberDb, `calendars/${familyCalendarId}`), {
       memberIds: ["other-family-user"],
     }));
-    await assertFails(updateDoc(doc(ownerDb, "calendars/default"), {
+    await assertFails(updateDoc(doc(ownerDb, `calendars/${familyCalendarId}`), {
       memberIds: ["family-user"],
     }));
-    await assertFails(updateDoc(doc(memberDb, "calendars/default"), {
+    await assertFails(updateDoc(doc(memberDb, `calendars/${familyCalendarId}`), {
       ownerId: "other-family-user",
     }));
-    await assertFails(updateDoc(doc(ownerDb, "calendars/default"), {
+    await assertFails(updateDoc(doc(ownerDb, `calendars/${familyCalendarId}`), {
       ownerId: "other-family-user",
     }));
   });
@@ -230,11 +248,11 @@ describe("Firestore Security Rules (NFR-4)", () => {
     const memberDb = dbFor("other-family-user");
 
     // アプリの書き込み（CalendarRepository.updateName）と同じ形にする。
-    await assertFails(updateDoc(doc(memberDb, "calendars/default"), {
+    await assertFails(updateDoc(doc(memberDb, `calendars/${familyCalendarId}`), {
       name: "勝手に改名",
       updatedAt: serverTimestamp(),
     }));
-    await assertSucceeds(updateDoc(doc(ownerDb, "calendars/default"), {
+    await assertSucceeds(updateDoc(doc(ownerDb, `calendars/${familyCalendarId}`), {
       name: "わが家（改）",
       updatedAt: serverTimestamp(),
     }));
@@ -257,7 +275,7 @@ describe("Firestore Security Rules (NFR-4)", () => {
     }));
   });
 
-  it("既定カレンダーにも非メンバーは参加できない（特例廃止、FR-8）", async () => {
+  it("既存のカレンダーに非メンバーは勝手に参加できない（特例廃止、FR-8）", async () => {
     const newMemberDb = dbFor("new-user");
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), "users/new-user"), {
@@ -265,10 +283,10 @@ describe("Firestore Security Rules (NFR-4)", () => {
       });
     });
 
-    // 旧・既定カレンダー（'default'）は特別扱いをやめ、他のカレンダーと同じく
-    // 参加者だけが読み書きできる。自分を勝手に追加することもできない。
-    await assertFails(getDoc(doc(newMemberDb, "calendars/default")));
-    await assertFails(setDoc(doc(newMemberDb, "calendars/default"), {
+    // カレンダーに特別扱いされる ID は無く（Issue #87 / #93）、参加者だけが
+    // 読み書きできる。自分を勝手に memberIds へ追加することもできない。
+    await assertFails(getDoc(doc(newMemberDb, `calendars/${familyCalendarId}`)));
+    await assertFails(setDoc(doc(newMemberDb, `calendars/${familyCalendarId}`), {
       name: "わが家",
       memberIds: ["family-user", "other-family-user", "new-user"],
       creatorId: "family-user",
@@ -311,10 +329,10 @@ describe("Firestore Security Rules (NFR-4)", () => {
         memberIds: ["family-user"],
         creatorId: "family-user",
       });
-      await setDoc(doc(context.firestore(), "events/default-event"), {
+      await setDoc(doc(context.firestore(), "events/family-event"), {
         title: "わが家の予定",
         deleted: false,
-        calendarId: "default",
+        calendarId: familyCalendarId,
       });
       await setDoc(doc(context.firestore(), "events/solo-event"), {
         title: "自分専用の予定",
@@ -324,16 +342,59 @@ describe("Firestore Security Rules (NFR-4)", () => {
     });
 
     const memberDb = dbFor("family-user");
-    const defaultQuery = query(
+    const familyQuery = query(
         collection(memberDb, "events"),
-        where("calendarId", "==", "default"),
+        where("calendarId", "==", familyCalendarId),
     );
 
     // calendarId を実クエリの where 句として絞り込んでいるため、
     // 他カレンダー（solo）の予定が同一コレクションに存在してもクエリ全体は
     // 拒否されず、絞り込んだカレンダーの予定だけが返る。
-    const snapshot = await assertSucceeds(getDocs(defaultQuery));
+    const snapshot = await assertSucceeds(getDocs(familyQuery));
     const ids = snapshot.docs.map((d) => d.id);
-    assert.deepStrictEqual(ids, ["default-event"]);
+    assert.deepStrictEqual(ids, ["family-event"]);
+  });
+
+  it("invites はメンバーでも読み書きできない（FR-9 / Issue #90）", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "invites/invite-1"), {
+        calendarId: familyCalendarId,
+        tokenHash: "hash",
+        invitedBy: "family-user",
+        maxUses: 1,
+        usedCount: 0,
+        revoked: false,
+      });
+    });
+
+    // 発行者本人（かつカレンダーのオーナー）でも、クライアントからは触れない。
+    // 発行・確認・受諾・取り消し・一覧はすべて Callable Function 経由（Admin SDK）。
+    const memberDb = dbFor("family-user");
+    await assertFails(getDoc(doc(memberDb, "invites/invite-1")));
+    await assertFails(getDocs(collection(memberDb, "invites")));
+    await assertFails(updateDoc(doc(memberDb, "invites/invite-1"), {
+      revoked: true,
+    }));
+    await assertFails(deleteDoc(doc(memberDb, "invites/invite-1")));
+    await assertFails(setDoc(doc(memberDb, "invites/invite-2"), {
+      calendarId: familyCalendarId,
+      tokenHash: "hash",
+      invitedBy: "family-user",
+    }));
+  });
+
+  it("招待の受諾を装った memberIds の追加はできない（FR-9 / Issue #90）", async () => {
+    // memberIds はクライアントから書けない（Issue #89）。招待リンクを持っていても
+    // 自力で参加はできず、Callable（acceptInvite）を通す必要がある。
+    const outsiderDb = dbFor("outsider");
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users/outsider"), {
+        name: "Outsider",
+      });
+    });
+
+    await assertFails(updateDoc(doc(outsiderDb, `calendars/${familyCalendarId}`), {
+      memberIds: ["family-user", "other-family-user", "outsider"],
+    }));
   });
 });

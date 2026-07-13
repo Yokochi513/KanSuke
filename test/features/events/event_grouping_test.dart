@@ -2,6 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/features/events/application/event_grouping.dart';
 import 'package:kansuke/models/models.dart';
 
+/// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
+const testCalendarId = 'test-calendar';
+
 Event _event({
   required String id,
   required String title,
@@ -10,7 +13,7 @@ Event _event({
   String creator = 'me',
   List<String>? participants,
   EventType type = EventType.confirmed,
-  String calendarId = defaultCalendarId,
+  String calendarId = testCalendarId,
 }) {
   return Event(
     id: id,

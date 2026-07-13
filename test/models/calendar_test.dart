@@ -91,8 +91,4 @@ void main() {
     expect(first.id, matches(uuidPattern));
     expect(second.id, isNot(first.id));
   });
-
-  test('defaultCalendarIdは固定文字列defaultである', () {
-    expect(defaultCalendarId, 'default');
-  });
 }

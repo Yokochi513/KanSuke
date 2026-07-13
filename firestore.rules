@@ -18,12 +18,6 @@ service cloud.firestore {
           get(/databases/$(database)/documents/calendars/$(calendarId)).data.memberIds;
     }
 
-    // FR-8: 複数カレンダー機能導入前の予定には calendarId が存在しないため、
-    // 旧・既定カレンダー（'default'）に属するものとして扱う（後方互換）。
-    function eventCalendarId(data) {
-      return ('calendarId' in data) ? data.calendarId : 'default';
-    }
-
     // FR-8: カレンダーのオーナー（Issue #89）。ownerId のバックフィル
     // （functions/scripts/backfill-calendar-owner-id.js）が済むまでの後方互換として、
     // 欠損時は作成者（creatorId）をオーナーとみなす。
@@ -62,9 +56,21 @@ service cloud.firestore {
         && request.resource.data.ownerId == request.auth.uid;
     }
 
+    // FR-9: 招待リンク（Issue #90）。トークンのハッシュ・発行者・有効期限などを持つ
+    // ため、クライアントからは read も write も一切許可しない。発行・確認・受諾・
+    // 取り消し・一覧は Callable Function（`functions/invites.js`、Admin SDK）が
+    // 唯一の経路。受諾では memberIds が書き換わるため、この制限が権限モデル
+    // （Issue #89）の前提になる。
+    match /invites/{inviteId} {
+      allow read, write: if false;
+    }
+
+    // FR-8: 予定は calendarId 必須（Issue #93）。旧・既定カレンダー（'default'）への
+    // フォールバックは、移行スクリプト（functions/scripts/migrate-default-calendar.js）
+    // で全予定に calendarId が実在するようになったため廃止した。
     match /events/{eventId} {
-      allow read, update, delete: if isCalendarMember(eventCalendarId(resource.data));
-      allow create: if isCalendarMember(eventCalendarId(request.resource.data));
+      allow read, update, delete: if isCalendarMember(resource.data.calendarId);
+      allow create: if isCalendarMember(request.resource.data.calendarId);
     }
 
     match /reminders/{reminderId} {
@@ -74,6 +80,12 @@ service cloud.firestore {
     // FR-7: リリース時に CI (Admin SDK) が書き込む最新バージョン情報。
     // クライアントからの書き込みは許可しない（読み取り専用）。
     match /meta/release {
+      allow read: if isRegistered();
+    }
+
+    // FR-7: 更新履歴（Issue #96）。リリースごとに CI (Admin SDK) が
+    // releases/{version} を書き込む。クライアントは設定画面の更新履歴で読むだけ。
+    match /releases/{version} {
       allow read: if isRegistered();
     }
 

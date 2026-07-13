@@ -2,6 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/features/events/application/event_filter.dart';
 import 'package:kansuke/models/models.dart';
 
+/// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
+const testCalendarId = 'test-calendar';
+
 Event _event({
   required String id,
   String creator = 'me',
@@ -22,7 +25,7 @@ Event _event({
     createdAt: DateTime(2026, 7, 11),
     updatedAt: DateTime(2026, 7, 11),
     deleted: false,
-    calendarId: defaultCalendarId,
+    calendarId: testCalendarId,
   );
 }
 

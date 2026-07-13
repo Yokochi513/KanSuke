@@ -14,6 +14,8 @@ import 'package:kansuke/features/auth/data/auth_repository.dart';
 import 'package:kansuke/features/settings/application/notification_permission.dart';
 import 'package:kansuke/features/settings/application/theme_mode_provider.dart';
 import 'package:kansuke/features/settings/presentation/settings_screen.dart';
+import 'package:kansuke/features/version_check/presentation/release_history_screen.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<FakeFirebaseFirestore> _seedUser() async {
@@ -32,6 +34,47 @@ void main() {
   setUp(() {
     // 表示テーマの設定を読むため、SharedPreferences をメモリ上のモックにする。
     SharedPreferences.setMockInitialValues({});
+    // 「このアプリについて」でインストール済みバージョンを表示するため（Issue #96）。
+    PackageInfo.setMockInitialValues(
+      appName: 'KanSuke',
+      packageName: 'com.example.kansuke',
+      version: '1.3.0',
+      buildNumber: '4',
+      buildSignature: '',
+    );
+  });
+
+  testWidgets('更新履歴の導線に現在のバージョンが表示され、タップで更新履歴画面へ遷移する', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: MaterialApp(
+          home: const SettingsScreen(),
+          routes: {
+            AppRoutes.releaseHistory: (_) => const ReleaseHistoryScreen(),
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('更新履歴'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('現在のバージョン: 1.3.0'), findsOneWidget);
+
+    await tester.tap(find.text('更新履歴'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('更新履歴はまだありません。'), findsOneWidget);
   });
 
   testWidgets('表示テーマを選ぶと保存され、再構築後も保持される', (tester) async {
