@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/models.dart';
@@ -28,8 +30,7 @@ List<Event> filterEventsByMembers(
 ///
 /// 空集合＝絞り込みなし（全件表示）。画面（月表示／日別一覧）をまたいで共有する。
 /// フィルタ候補は表示中カレンダーの参加者に依存するため、カレンダーを切り替えたら
-/// 絞り込みをリセットする（[selectedCalendarIdProvider] を watch し、切替時に
-/// build が再実行されて初期値＝空集合へ戻る）。永続化はしない（セッション内保持）。
+/// 絞り込みをリセットする。永続化はしない（セッション内保持）。
 final memberFilterProvider =
     NotifierProvider<MemberFilterNotifier, Set<String>>(
       MemberFilterNotifier.new,
@@ -39,7 +40,21 @@ class MemberFilterNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
     // カレンダー切替でフィルタをリセットする（参加者一覧が変わるため）。
-    ref.watch(selectedCalendarIdProvider);
+    //
+    // 表示中カレンダー（[selectedCalendarIdProvider]）は、ユーザーの切替操作だけで
+    // なくカレンダー一覧の読み込み完了やサインアウトでも変わり、それは widget の
+    // build 中に起こりうる。build 中に状態を書き替えると "setState() called during
+    // build" になるため、依存（watch）にはせず listen で受け、リセットは次の
+    // マイクロタスク（build フェーズの外）で行う。
+    var disposed = false;
+    ref.onDispose(() => disposed = true);
+    ref.listen(selectedCalendarIdProvider, (previous, next) {
+      if (previous == next) return;
+      scheduleMicrotask(() {
+        if (disposed) return;
+        state = const {};
+      });
+    });
     return const {};
   }
 

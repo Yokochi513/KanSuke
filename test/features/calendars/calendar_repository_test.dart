@@ -31,54 +31,25 @@ void main() {
     expect(raw['name'], '子供の習い事');
     expect(raw['memberIds'], ['me']);
     expect(raw['creatorId'], 'me');
+    // 作成者がそのままオーナーになる（Issue #89）。
+    expect(raw['ownerId'], 'me');
   });
 
-  test('updateNameAndMembers は名前を更新し、参加者は追加・削除の差分だけ反映する', () async {
+  test('updateName は名前だけを更新し、メンバー・オーナーには触れない（Issue #89）', () async {
     final calendar = Calendar.create(
       name: '旧名前',
-      memberIds: const ['me'],
+      memberIds: const ['me', 'other'],
       creatorId: 'me',
       now: DateTime.utc(2026, 7, 1),
     );
     await repository.create(calendar);
 
-    await repository.updateNameAndMembers(
-      calendar.id,
-      name: '新しい名前',
-      addedMemberIds: {'other'},
-      removedMemberIds: {},
-    );
+    await repository.updateName(calendar.id, '新しい名前');
 
     final raw = await readRaw(calendar.id);
     expect(raw['name'], '新しい名前');
     expect(raw['memberIds'], ['me', 'other']);
-  });
-
-  test('updateNameAndMembers は保存前に他デバイスが加えたメンバーをサーバー側の最新状態から消さない', () async {
-    final calendar = Calendar.create(
-      name: '旧名前',
-      memberIds: const ['me'],
-      creatorId: 'me',
-      now: DateTime.utc(2026, 7, 1),
-    );
-    await repository.create(calendar);
-
-    // 編集画面を開いた後、保存前に他デバイスが 'other' を追加したことを再現する。
-    await firestore.collection('calendars').doc(calendar.id).update({
-      'memberIds': ['me', 'other'],
-    });
-
-    // この端末では 'me' のみを見たまま、名前だけを変更して保存する。
-    await repository.updateNameAndMembers(
-      calendar.id,
-      name: '新しい名前',
-      addedMemberIds: {},
-      removedMemberIds: {},
-    );
-
-    final raw = await readRaw(calendar.id);
-    expect(raw['name'], '新しい名前');
-    expect((raw['memberIds'] as List).toSet(), {'me', 'other'});
+    expect(raw['ownerId'], 'me');
   });
 
   test('watchMine は自分が参加しているカレンダーだけを返す', () async {
@@ -102,41 +73,5 @@ void main() {
     final calendars = await repository.watchMine('me').first;
 
     expect(calendars.map((c) => c.name), ['参加中']);
-  });
-
-  test('ensureDefaultCalendar は未作成なら既知の全メンバーを含めて作成する', () async {
-    await repository.ensureDefaultCalendar(
-      uid: 'me',
-      knownMemberIds: ['me', 'other'],
-    );
-
-    final raw = await readRaw(defaultCalendarId);
-    expect(raw['name'], 'わが家');
-    expect((raw['memberIds'] as List).toSet(), {'me', 'other'});
-    expect(raw['creatorId'], 'me');
-  });
-
-  test('ensureDefaultCalendar は既に存在するなら既存メンバーを維持して自分を追加する', () async {
-    await repository.ensureDefaultCalendar(uid: 'me', knownMemberIds: ['me']);
-
-    await repository.ensureDefaultCalendar(
-      uid: 'other',
-      knownMemberIds: ['me', 'other'],
-    );
-
-    final raw = await readRaw(defaultCalendarId);
-    expect((raw['memberIds'] as List).toSet(), {'me', 'other'});
-    // 2回目以降は creatorId・name を変更しない。
-    expect(raw['creatorId'], 'me');
-    expect(raw['name'], 'わが家');
-  });
-
-  test('ensureDefaultCalendar は既に参加済みなら何もしない', () async {
-    await repository.ensureDefaultCalendar(uid: 'me', knownMemberIds: ['me']);
-
-    await repository.ensureDefaultCalendar(uid: 'me', knownMemberIds: ['me']);
-
-    final raw = await readRaw(defaultCalendarId);
-    expect((raw['memberIds'] as List), ['me']);
   });
 }

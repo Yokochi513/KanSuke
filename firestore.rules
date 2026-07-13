@@ -2,57 +2,64 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // NFR-4: users に登録された認証済み家族メンバーだけにアクセスを許可する。
-    function isFamily() {
+    // NFR-4: サインアップ時に Blocking Function が生成する users/{uid} を
+    // 持つ認証済みユーザーだけにアクセスを許可する。
+    function isRegistered() {
       return request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
-
-    // FR-8: 既定カレンダー（わが家）は固定 ID。全家族メンバーを自動的に
-    // 含む前提のため、read と「自分を追加する」update だけ特例を設ける。
-    function isDefaultCalendar(calendarId) {
-      return calendarId == 'default';
     }
 
     // FR-8: calendarId の指す calendars ドキュメントの memberIds に自分が
     // 含まれているかを判定する。events のクエリは calendarId を実際の
     // where 句として絞り込む前提（クエリ全体の証明可能性のため）。
     function isCalendarMember(calendarId) {
-      return isFamily() &&
+      return isRegistered() &&
         request.auth.uid in
           get(/databases/$(database)/documents/calendars/$(calendarId)).data.memberIds;
     }
 
     // FR-8: 複数カレンダー機能導入前の予定には calendarId が存在しないため、
-    // 既定カレンダー（わが家）に属するものとして扱う。
+    // 旧・既定カレンダー（'default'）に属するものとして扱う（後方互換）。
     function eventCalendarId(data) {
       return ('calendarId' in data) ? data.calendarId : 'default';
     }
 
+    // FR-8: カレンダーのオーナー（Issue #89）。ownerId のバックフィル
+    // （functions/scripts/backfill-calendar-owner-id.js）が済むまでの後方互換として、
+    // 欠損時は作成者（creatorId）をオーナーとみなす。
+    function calendarOwnerId(data) {
+      return ('ownerId' in data) ? data.ownerId : data.creatorId;
+    }
+
+    // NFR-4: users は列挙禁止。個別 get のみ許可する（Issue #89）。サインアップは
+    // 開放されているため（Issue #87）、列挙を許すと第三者が全ユーザーの名前・メール・
+    // 色を取得できてしまう。表示に必要なメンバーは、参加しているカレンダーの
+    // memberIds から個別に get する。
     match /users/{uid} {
-      allow read: if isFamily();
+      allow get: if isRegistered();
+      allow list: if false;
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // FR-8: カレンダーは参加者（memberIds）だけが読み書きできる。個人カレンダーは
+    // アカウント作成時に Blocking Function が memberIds=[本人] / ownerId=本人 で生成する。
+    //
+    // Issue #89: memberIds / ownerId はクライアントから書き換えられない（メンバーの
+    // 追加・削除・退出・オーナー移譲は Callable Function 経由のみ）。カレンダー名の
+    // 変更はオーナーだけができる。
     match /calendars/{calendarId} {
-      allow read: if isFamily() &&
-        (isDefaultCalendar(calendarId) || request.auth.uid in resource.data.memberIds);
+      allow read: if isRegistered() && request.auth.uid in resource.data.memberIds;
 
-      allow create: if isFamily() && request.auth.uid in request.resource.data.memberIds;
+      allow update: if isRegistered()
+        && request.auth.uid in resource.data.memberIds
+        && request.resource.data.memberIds == resource.data.memberIds
+        && calendarOwnerId(request.resource.data) == calendarOwnerId(resource.data)
+        && (request.resource.data.name == resource.data.name
+            || request.auth.uid == calendarOwnerId(resource.data));
 
-      allow update: if isFamily() && (
-        isDefaultCalendar(calendarId)
-          ? (
-            // 既定カレンダーは「参加（自分を追加）」だけを特別に許可する。
-            // 追加専用（既存メンバーを維持）かつ memberIds/updatedAt 以外は
-            // 変更不可にし、既存メンバーであっても全員を消したり名前を
-            // 書き換えたりできないようにする。
-            request.auth.uid in request.resource.data.memberIds &&
-            request.resource.data.memberIds.hasAll(resource.data.memberIds) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'updatedAt'])
-          )
-          : request.auth.uid in resource.data.memberIds
-      );
+      allow create: if isRegistered()
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.ownerId == request.auth.uid;
     }
 
     match /events/{eventId} {
@@ -61,13 +68,13 @@ service cloud.firestore {
     }
 
     match /reminders/{reminderId} {
-      allow read: if isFamily();
+      allow read: if isRegistered();
     }
 
     // FR-7: リリース時に CI (Admin SDK) が書き込む最新バージョン情報。
     // クライアントからの書き込みは許可しない（読み取り専用）。
     match /meta/release {
-      allow read: if isFamily();
+      allow read: if isRegistered();
     }
 
     match /users/{uid}/devices/{token} {

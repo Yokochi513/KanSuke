@@ -9,13 +9,30 @@ import 'package:kansuke/app/theme.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/calendar/presentation/calendar_screen.dart';
+import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/events/presentation/event_type_badge.dart';
 import 'package:kansuke/features/settings/application/event_merge_provider.dart';
 import 'package:kansuke/models/models.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
+/// users は列挙禁止（Issue #89）。メンバーの色・名前は参加カレンダーの memberIds
+/// から引くため、me と mama が参加する既定カレンダーを用意する（FR-8）。
+Future<FakeFirebaseFirestore> _firestoreWithCalendar() async {
   final firestore = FakeFirebaseFirestore();
+  final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
+  await firestore.collection('calendars').doc(defaultCalendarId).set({
+    'name': 'わが家',
+    'memberIds': ['me', 'mama'],
+    'creatorId': 'me',
+    'ownerId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  return firestore;
+}
+
+Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
+  final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
     'email': 'me@example.com',
@@ -48,7 +65,7 @@ Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
 Future<FakeFirebaseFirestore> _seedManyOnOneDay({
   required DateTime today,
 }) async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   for (final (id, name, color) in const [
     ('me', 'ぱぱ', '#1565C0'),
     ('mama', 'まま', '#D84315'),
@@ -90,7 +107,7 @@ Future<FakeFirebaseFirestore> _seedManyOnOneDay({
 Future<FakeFirebaseFirestore> _seedCurrentUserPriority({
   required DateTime today,
 }) async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   for (final (id, name, color) in const [
     ('me', 'ぱぱ', '#1565C0'),
     ('mama', 'まま', '#D84315'),
@@ -131,7 +148,7 @@ Future<FakeFirebaseFirestore> _seedCurrentUserPriority({
 }
 
 Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
     'email': 'me@example.com',
@@ -162,7 +179,7 @@ Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
 
 /// 週（土→日）を跨ぐ期間予定を投入する（Issue #72 の連結表示検証用）。
 Future<FakeFirebaseFirestore> _seedCrossWeekEvent() async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
     'email': 'me@example.com',
@@ -191,7 +208,7 @@ Future<FakeFirebaseFirestore> _seedCrossWeekEvent() async {
 }
 
 Future<FakeFirebaseFirestore> _seedAdjacentMonthEvents() async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
     'email': 'me@example.com',
@@ -239,7 +256,7 @@ Future<FakeFirebaseFirestore> _seedTitledEvents(
   >
   seeds,
 ) async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   for (final (id, name, color) in const [
     ('me', 'ぱぱ', '#1565C0'),
     ('mama', 'まま', '#D84315'),
@@ -285,6 +302,9 @@ Widget _wrap(
       firestoreProvider.overrideWithValue(firestore),
       currentUidProvider.overrideWithValue('me'),
       resolvedEventMergeEnabledProvider.overrideWithValue(mergeEnabled),
+      // 月表示の描画に集中するため、表示中カレンダーは固定する（カレンダーの
+      // 解決自体は calendar_providers_test で検証する）。
+      selectedCalendarIdProvider.overrideWithValue(defaultCalendarId),
     ],
     child: MaterialApp(
       theme: buildKanSukeTheme(),
@@ -590,7 +610,7 @@ void main() {
 
   testWidgets('参加者がいる予定はマス目のバーもメンバー数だけ分割される', (tester) async {
     final today = DateTime.now();
-    final firestore = FakeFirebaseFirestore();
+    final firestore = await _firestoreWithCalendar();
     for (final (id, name, color) in const [
       ('me', 'ぱぱ', '#1565C0'),
       ('mama', 'まま', '#D84315'),

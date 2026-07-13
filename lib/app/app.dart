@@ -23,6 +23,10 @@ class KanSukeApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
+    // FR-8: カレンダー一覧（＝表示中カレンダーの解決元）を、常に生きているアプリ直下で
+    // 購読し続ける。画面側の購読だけだと画面遷移中に購読が止まり、再開時に値がまとめて
+    // 流れ込んで build 中の再計算になってしまう。値はここでは使わない。
+    ref.listen(myCalendarsProvider, (_, _) {});
 
     return MaterialApp(
       title: 'KanSuke',
@@ -47,15 +51,9 @@ class KanSukeApp extends ConsumerWidget {
         error: (_, _) => const SignInScreen(
           initialErrorMessage: '認証状態を確認できませんでした。もう一度お試しください。',
         ),
-        data: (session) {
-          if (session != null) {
-            // FR-8: 既定カレンダーの存在を保証する副作用。画面はブロックしない。
-            ref.watch(calendarBootstrapProvider);
-          }
-          return session == null
-              ? const SignInScreen()
-              : const VersionCheckGate(child: CalendarScreen());
-        },
+        data: (session) => session == null
+            ? const SignInScreen()
+            : const VersionCheckGate(child: CalendarScreen()),
       ),
       routes: {
         AppRoutes.calendar: (_) => const CalendarScreen(),

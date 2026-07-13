@@ -6,6 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/auth_repository.dart';
 import '../data/firebase_auth_repository.dart';
 
+/// サインアップ時の初期化（`users/{uid}` の生成）が完了しなかったときの案内。
+/// Auth Blocking Function の一時的な失敗が想定されるため、再試行を促す。
+const _setupFailedMessage = 'アカウントの初期化に失敗しました。時間をおいて、もう一度お試しください。';
+
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   final repository = FirebaseAuthRepository();
   ref.onDispose(repository.dispose);
@@ -68,6 +72,8 @@ class AuthActionController extends Notifier<AuthActionState> {
       state = const AuthActionState();
     } else if (error is AuthAccessDeniedException) {
       state = const AuthActionState(errorMessage: '利用権限がありません');
+    } else if (error is AuthSetupFailedException) {
+      state = const AuthActionState(errorMessage: _setupFailedMessage);
     } else {
       state = const AuthActionState(
         errorMessage: 'サインインに失敗しました。しばらくしてから、もう一度お試しください。',
@@ -96,6 +102,8 @@ class AuthActionController extends Notifier<AuthActionState> {
       state = const AuthActionState();
     } on AuthAccessDeniedException {
       state = const AuthActionState(errorMessage: '利用権限がありません');
+    } on AuthSetupFailedException {
+      state = const AuthActionState(errorMessage: _setupFailedMessage);
     } on AuthException {
       state = const AuthActionState(
         errorMessage: 'サインインに失敗しました。通信環境を確認して、もう一度お試しください。',

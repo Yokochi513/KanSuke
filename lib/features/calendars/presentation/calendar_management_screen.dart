@@ -8,8 +8,8 @@ import 'calendar_edit_args.dart';
 
 /// カレンダー管理画面（FR-8）。
 ///
-/// 自分が参加しているカレンダーの一覧表示・新規作成・名前や参加者の編集への
-/// 導線を提供する。カレンダーの削除・退出はスコープ外。
+/// 自分が参加しているカレンダーの一覧表示・新規作成と、編集画面（名前の変更・
+/// メンバー管理・退出、Issue #89）への導線を提供する。カレンダーの削除はスコープ外。
 class CalendarManagementScreen extends ConsumerWidget {
   const CalendarManagementScreen({super.key});
 

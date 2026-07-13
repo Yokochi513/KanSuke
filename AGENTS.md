@@ -24,7 +24,7 @@
 | クライアント | Flutter（iOS 16+ / Android）、状態管理 **Riverpod**、月表示 **table_calendar** |
 | 認証 | Firebase Authentication（`google_sign_in` / `sign_in_with_apple`） |
 | DB | Cloud Firestore（オフライン永続化・リアルタイム同期） |
-| アクセス制御 | Firestore Security Rules + Auth Blocking Function（家族 allowlist） |
+| アクセス制御 | Firestore Security Rules（カレンダー参加者チェック）+ Auth Blocking Function（アカウント作成時の初期化） |
 | 通知 | Cloud Functions for Firebase + FCM（`firebase_messaging`） |
 | 実行基盤 | Firebase（Blaze プラン） |
 

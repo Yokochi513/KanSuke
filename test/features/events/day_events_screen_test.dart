@@ -6,11 +6,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/app/routes.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
+import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/events/presentation/day_events_screen.dart';
 import 'package:kansuke/features/events/presentation/event_edit_args.dart';
 import 'package:kansuke/models/models.dart';
 
 final _day = DateTime(2026, 7, 5);
+
+/// users は列挙禁止（Issue #89）。メンバーの色・名前は参加カレンダーの memberIds
+/// から引くため、me と other が参加する既定カレンダーを用意する（FR-8）。
+Future<FakeFirebaseFirestore> _firestoreWithCalendar() async {
+  final firestore = FakeFirebaseFirestore();
+  final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
+  await firestore.collection('calendars').doc(defaultCalendarId).set({
+    'name': 'わが家',
+    'memberIds': ['me', 'other'],
+    'creatorId': 'me',
+    'ownerId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  return firestore;
+}
 
 Future<FakeFirebaseFirestore> _seed({
   bool withEvent = true,
@@ -18,7 +35,7 @@ Future<FakeFirebaseFirestore> _seed({
   List<String>? participantIds,
   String memo = '',
 }) async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
     'email': 'me@example.com',
@@ -63,7 +80,7 @@ Future<FakeFirebaseFirestore> _seed({
 }
 
 Future<FakeFirebaseFirestore> _seedCurrentUserPriority() async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   for (final (id, name, color) in const [
     ('me', 'ぱぱ', '#1565C0'),
     ('other', 'まま', '#C2185B'),
@@ -113,6 +130,9 @@ Widget _wrap(
     overrides: [
       firestoreProvider.overrideWithValue(firestore),
       currentUidProvider.overrideWithValue('me'),
+      // 日別一覧の描画に集中するため、表示中カレンダーは固定する（カレンダーの
+      // 解決自体は calendar_providers_test で検証する）。
+      selectedCalendarIdProvider.overrideWithValue(defaultCalendarId),
     ],
     child: MaterialApp(
       onGenerateRoute: (settings) {
