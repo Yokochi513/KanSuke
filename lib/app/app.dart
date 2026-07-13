@@ -11,10 +11,16 @@ import '../features/calendars/presentation/calendar_management_screen.dart';
 import '../features/events/presentation/day_events_screen.dart';
 import '../features/events/presentation/event_edit_screen.dart';
 import '../features/notifications/application/notification_providers.dart';
+import '../features/invites/presentation/invite_accept_screen.dart';
+import '../features/invites/presentation/invite_link_gate.dart';
+import '../features/settings/application/theme_mode_provider.dart';
 import '../features/settings/presentation/settings_screen.dart';
+import '../features/version_check/presentation/release_history_screen.dart';
 import '../features/version_check/presentation/version_check_gate.dart';
+import 'navigator_key.dart';
 import 'routes.dart';
 import 'theme.dart';
+import 'washi_background.dart';
 
 class KanSukeApp extends ConsumerWidget {
   const KanSukeApp({super.key});
@@ -22,11 +28,26 @@ class KanSukeApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
+    // FR-8: カレンダー一覧（＝表示中カレンダーの解決元）を、常に生きているアプリ直下で
+    // 購読し続ける。画面側の購読だけだと画面遷移中に購読が止まり、再開時に値がまとめて
+    // 流れ込んで build 中の再計算になってしまう。値はここでは使わない。
+    ref.listen(myCalendarsProvider, (_, _) {});
 
     return MaterialApp(
       title: 'KanSuke',
       debugShowCheckedModeBanner: false,
+      // FR-9: 招待リンクでの起動は画面の外から遷移を起こすため（Issue #90）。
+      navigatorKey: ref.watch(navigatorKeyProvider),
       theme: buildKanSukeTheme(),
+      darkTheme: buildKanSukeDarkTheme(),
+      // 設定画面での選択に従う（未設定なら端末のダークモード設定に追従）。
+      themeMode: ref.watch(resolvedThemeModeProvider),
+      // 和紙の地は全画面共通の背景として Navigator の背後に一度だけ敷く。
+      // 招待リンク（FR-9）の受け口も Navigator の外側に置き、どの画面を開いていても
+      // リンクを受けられるようにする。
+      builder: (context, child) => WashiBackground(
+        child: InviteLinkGate(child: child ?? const SizedBox.shrink()),
+      ),
       // NFR-1: 日付ピッカー等の標準UIが英語表記になる不具合を解消する（Issue #58）。
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -42,8 +63,6 @@ class KanSukeApp extends ConsumerWidget {
         ),
         data: (session) {
           if (session != null) {
-            // FR-8: 既定カレンダーの存在を保証する副作用。画面はブロックしない。
-            ref.watch(calendarBootstrapProvider);
             // FR-5: 通知権限リクエストと FCM トークン登録。画面はブロックしない。
             ref.watch(notificationBootstrapProvider);
           }
@@ -59,6 +78,8 @@ class KanSukeApp extends ConsumerWidget {
         AppRoutes.settings: (_) => const SettingsScreen(),
         AppRoutes.calendarManagement: (_) => const CalendarManagementScreen(),
         AppRoutes.calendarEdit: (_) => const CalendarEditScreen(),
+        AppRoutes.inviteAccept: (_) => const InviteAcceptScreen(),
+        AppRoutes.releaseHistory: (_) => const ReleaseHistoryScreen(),
       },
     );
   }

@@ -8,7 +8,8 @@ import '../application/calendar_providers.dart';
 /// 月表示・日別一覧の AppBar タイトルに置く、カレンダー切替ボタン（FR-8）。
 ///
 /// タップでボトムシートを開き、自分が参加しているカレンダーの中から表示対象を
-/// 選ぶ。既定表示は既定カレンダー（わが家）。シート下部から管理画面へも遷移できる。
+/// 選ぶ。未選択なら一覧の先頭（アカウント作成時に自動生成される個人カレンダー）を
+/// 表示する。シート下部から管理画面へも遷移できる。
 class CalendarSwitcherTitle extends ConsumerWidget {
   const CalendarSwitcherTitle({super.key});
 
@@ -64,7 +65,7 @@ class CalendarSwitcherTitle extends ConsumerWidget {
                   ),
                   title: Text(calendar.name),
                   onTap: () {
-                    ref.read(selectedCalendarIdProvider.notifier).state =
+                    ref.read(calendarSelectionProvider.notifier).state =
                         calendar.id;
                     Navigator.pop(sheetContext);
                   },

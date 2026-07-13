@@ -6,11 +6,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/app/routes.dart';
 import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
+import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/events/presentation/day_events_screen.dart';
 import 'package:kansuke/features/events/presentation/event_edit_args.dart';
 import 'package:kansuke/models/models.dart';
 
+/// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
+const testCalendarId = 'test-calendar';
+
 final _day = DateTime(2026, 7, 5);
+
+/// users は列挙禁止（Issue #89）。メンバーの色・名前は参加カレンダーの memberIds
+/// から引くため、me と other が参加する既定カレンダーを用意する（FR-8）。
+Future<FakeFirebaseFirestore> _firestoreWithCalendar() async {
+  final firestore = FakeFirebaseFirestore();
+  final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
+  await firestore.collection('calendars').doc(testCalendarId).set({
+    'name': 'わが家',
+    'memberIds': ['me', 'other'],
+    'creatorId': 'me',
+    'ownerId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  return firestore;
+}
 
 Future<FakeFirebaseFirestore> _seed({
   bool withEvent = true,
@@ -18,7 +38,7 @@ Future<FakeFirebaseFirestore> _seed({
   List<String>? participantIds,
   String memo = '',
 }) async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
     'email': 'me@example.com',
@@ -52,7 +72,7 @@ Future<FakeFirebaseFirestore> _seed({
       reminderOffsets: const [60],
       updatedBy: 'me',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -63,7 +83,7 @@ Future<FakeFirebaseFirestore> _seed({
 }
 
 Future<FakeFirebaseFirestore> _seedCurrentUserPriority() async {
-  final firestore = FakeFirebaseFirestore();
+  final firestore = await _firestoreWithCalendar();
   for (final (id, name, color) in const [
     ('me', 'ぱぱ', '#1565C0'),
     ('other', 'まま', '#C2185B'),
@@ -93,7 +113,7 @@ Future<FakeFirebaseFirestore> _seedCurrentUserPriority() async {
       reminderOffsets: const [],
       updatedBy: participantId,
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -113,6 +133,9 @@ Widget _wrap(
     overrides: [
       firestoreProvider.overrideWithValue(firestore),
       currentUidProvider.overrideWithValue('me'),
+      // 日別一覧の描画に集中するため、表示中カレンダーは固定する（カレンダーの
+      // 解決自体は calendar_providers_test で検証する）。
+      selectedCalendarIdProvider.overrideWithValue(testCalendarId),
     ],
     child: MaterialApp(
       onGenerateRoute: (settings) {
@@ -236,7 +259,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: start,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -275,7 +298,7 @@ void main() {
       reminderOffsets: const [],
       updatedBy: 'me',
       now: nextDay,
-      calendarId: defaultCalendarId,
+      calendarId: testCalendarId,
     );
     await firestore
         .collection('events')
@@ -313,6 +336,66 @@ void main() {
     expect(find.text('EDIT_SCREEN'), findsOneWidget);
     expect(sink.single, isA<EventEditArgs>());
     expect((sink.single as EventEditArgs).isCreate, isFalse);
+  });
+
+  testWidgets('参加者フィルタで選んだメンバーの予定だけに絞り込める（Issue #78）', (tester) async {
+    // 同じ日に「ぱぱだけ」「ままだけ」の予定を1件ずつ置く。
+    final firestore = await _seed(withEvent: false, withParticipant: true);
+    for (final (title, participantId, hour) in const [
+      ('ぱぱの予定', 'me', 9),
+      ('ままの予定', 'other', 10),
+    ]) {
+      final start = DateTime(2026, 7, 5, hour);
+      final event = Event.create(
+        title: title,
+        creatorId: participantId,
+        participantIds: [participantId],
+        startAt: start,
+        endAt: start.add(const Duration(hours: 1)),
+        allDay: false,
+        type: EventType.confirmed,
+        memo: '',
+        reminderOffsets: const [],
+        updatedBy: participantId,
+        now: start,
+        calendarId: testCalendarId,
+      );
+      await firestore
+          .collection('events')
+          .doc(event.id)
+          .set(event.toFirestore(useServerTimestamp: false));
+    }
+
+    await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+    await tester.pumpAndSettle();
+
+    // 絞り込み前は両方見える。
+    expect(find.text('ぱぱの予定'), findsOneWidget);
+    expect(find.text('ままの予定'), findsOneWidget);
+
+    // フィルタシートを開き「まま」を選ぶ。
+    await tester.tap(find.byTooltip('参加者で絞り込み'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('まま'));
+    await tester.pumpAndSettle();
+    // シートを閉じて一覧へ戻る。
+    Navigator.of(tester.element(find.text('参加者で絞り込み'))).pop();
+    await tester.pumpAndSettle();
+
+    // ままの予定だけが残る。
+    expect(find.text('ままの予定'), findsOneWidget);
+    expect(find.text('ぱぱの予定'), findsNothing);
+
+    // 「すべて表示」で全件に戻す。
+    await tester.tap(find.byTooltip('参加者で絞り込み'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('すべて表示'));
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.text('参加者で絞り込み'))).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('ぱぱの予定'), findsOneWidget);
+    expect(find.text('ままの予定'), findsOneWidget);
   });
 
   testWidgets('新規作成ボタンで対象日を初期値に編集画面を開く', (tester) async {

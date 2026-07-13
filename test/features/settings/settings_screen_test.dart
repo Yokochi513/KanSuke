@@ -13,7 +13,11 @@ import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/auth/data/auth_repository.dart';
 import 'package:kansuke/features/notifications/application/notification_providers.dart';
 import 'package:kansuke/features/settings/application/notification_permission.dart';
+import 'package:kansuke/features/settings/application/theme_mode_provider.dart';
 import 'package:kansuke/features/settings/presentation/settings_screen.dart';
+import 'package:kansuke/features/version_check/presentation/release_history_screen.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<FakeFirebaseFirestore> _seedUser() async {
   final firestore = FakeFirebaseFirestore();
@@ -28,6 +32,104 @@ Future<FakeFirebaseFirestore> _seedUser() async {
 }
 
 void main() {
+  setUp(() {
+    // 表示テーマの設定を読むため、SharedPreferences をメモリ上のモックにする。
+    SharedPreferences.setMockInitialValues({});
+    // 「このアプリについて」でインストール済みバージョンを表示するため（Issue #96）。
+    PackageInfo.setMockInitialValues(
+      appName: 'KanSuke',
+      packageName: 'com.example.kansuke',
+      version: '1.3.0',
+      buildNumber: '4',
+      buildSignature: '',
+    );
+  });
+
+  testWidgets('更新履歴の導線に現在のバージョンが表示され、タップで更新履歴画面へ遷移する', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: MaterialApp(
+          home: const SettingsScreen(),
+          routes: {
+            AppRoutes.releaseHistory: (_) => const ReleaseHistoryScreen(),
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('更新履歴'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('現在のバージョン: 1.3.0'), findsOneWidget);
+
+    await tester.tap(find.text('更新履歴'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('更新履歴はまだありません。'), findsOneWidget);
+  });
+
+  testWidgets('表示テーマを選ぶと保存され、再構築後も保持される', (tester) async {
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(ThemeMode.dark.label));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('settings.theme_mode'), ThemeMode.dark.name);
+
+    // 保存済みの値から読み直しても「墨」が選ばれたままであること。
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await container.read(themeModeProvider.future);
+    expect(container.read(resolvedThemeModeProvider), ThemeMode.dark);
+  });
+
+  testWidgets('まとめ表示トグルを切り替えると保存される（Issue #76）', (tester) async {
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 既定は ON。トグルを操作するとスクロールで表示してから OFF に切り替わる。
+    await tester.scrollUntilVisible(
+      find.text('同じ予定をまとめる'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('settings.event_merge_enabled'), isFalse);
+  });
+
   testWidgets('自分の色を選ぶと users/{uid}.color が更新される', (tester) async {
     final firestore = await _seedUser();
     await tester.pumpWidget(
@@ -184,6 +286,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 設定項目が増え、テストのビューポートには収まらないのでスクロールして出す。
+    await tester.scrollUntilVisible(
+      find.text('カレンダー管理'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('カレンダー管理'));
     await tester.pumpAndSettle();
 

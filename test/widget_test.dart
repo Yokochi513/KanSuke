@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,11 +10,18 @@ import 'package:kansuke/core/firebase_providers.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/auth/data/auth_repository.dart';
 import 'package:kansuke/features/notifications/application/notification_providers.dart';
+import 'package:kansuke/features/invites/application/invite_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    // KanSukeApp が表示テーマの設定を読むため、メモリ上のモックを差し込む。
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('未ログインならサインイン画面を表示しGoogle認証後はカレンダーへ切り替わる', (tester) async {
     final repository = FakeAuthRepository();
-    await tester.pumpWidget(_testApp(repository));
+    await tester.pumpWidget(await _testApp(repository));
     await tester.pump();
 
     expect(find.text('サインイン'), findsOneWidget);
@@ -23,35 +31,37 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.googleSignInCount, 1);
-    // FR-8: 初回サインイン後、既定カレンダー（わが家）の自動生成が完了し
-    // カレンダー切替タイトルにその名前が表示される。
-    expect(find.text('わが家'), findsOneWidget);
+    // FR-8: アカウント作成時に自動生成された個人カレンダーが、カレンダー切替
+    // タイトルの既定表示になる。
+    expect(find.text(_personalCalendarName), findsOneWidget);
     expect(find.text('サインイン'), findsNothing);
   });
 
   testWidgets('iOSではApple認証ボタンを表示して認証できる', (tester) async {
     final repository = FakeAuthRepository();
-    await tester.pumpWidget(_testApp(repository, appleSignInAvailable: true));
+    await tester.pumpWidget(
+      await _testApp(repository, appleSignInAvailable: true),
+    );
     await tester.pump();
 
     await tester.tap(find.text('Appleでサインイン'));
     await tester.pumpAndSettle();
 
     expect(repository.appleSignInCount, 1);
-    expect(find.text('わが家'), findsOneWidget);
+    expect(find.text(_personalCalendarName), findsOneWidget);
   });
 
-  testWidgets('allowlist外ユーザーには利用権限エラーを表示する', (tester) async {
+  testWidgets('アカウント初期化に失敗したユーザーには再試行を促すエラーを表示する', (tester) async {
     final repository = FakeAuthRepository(
-      signInError: const AuthAccessDeniedException(),
+      signInError: const AuthSetupFailedException(),
     );
-    await tester.pumpWidget(_testApp(repository));
+    await tester.pumpWidget(await _testApp(repository));
     await tester.pump();
 
     await tester.tap(find.text('Googleで続行'));
     await tester.pumpAndSettle();
 
-    expect(find.text('利用権限がありません'), findsOneWidget);
+    expect(find.text('アカウントの初期化に失敗しました。時間をおいて、もう一度お試しください。'), findsOneWidget);
     expect(find.text('サインイン'), findsOneWidget);
   });
 
@@ -62,7 +72,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(400, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final repository = FakeAuthRepository(initiallySignedIn: true);
-    await tester.pumpWidget(_testApp(repository));
+    await tester.pumpWidget(await _testApp(repository));
     await tester.pump();
 
     await tester.tap(find.byIcon(Icons.settings));
@@ -78,7 +88,7 @@ void main() {
 
   testWidgets('ログイン済みならカレンダー画面と各プレースホルダへ遷移できる', (tester) async {
     final repository = FakeAuthRepository(initiallySignedIn: true);
-    await tester.pumpWidget(_testApp(repository));
+    await tester.pumpWidget(await _testApp(repository));
     await tester.pump();
 
     expect(find.text('カレンダー'), findsOneWidget);
@@ -94,7 +104,7 @@ void main() {
 
   testWidgets('予定作成の日付ピッカーが日本語表記になる（Issue #58）', (tester) async {
     final repository = FakeAuthRepository(initiallySignedIn: true);
-    await tester.pumpWidget(_testApp(repository));
+    await tester.pumpWidget(await _testApp(repository));
     await tester.pump();
 
     final today = find.text('${DateTime.now().day}').first;
@@ -114,24 +124,45 @@ void main() {
   });
 }
 
-Widget _testApp(
+/// アカウント作成時に Auth Blocking Function が生成する個人カレンダーの名前。
+const _personalCalendarName = 'ファミリーのカレンダー';
+
+Future<Widget> _testApp(
   AuthRepository repository, {
   bool appleSignInAvailable = false,
-}) {
+}) async {
   return ProviderScope(
     overrides: [
       authRepositoryProvider.overrideWithValue(repository),
       appleSignInAvailableProvider.overrideWithValue(appleSignInAvailable),
       // カレンダーが購読する Firestore はテスト用の fake に差し替える。
-      firestoreProvider.overrideWithValue(FakeFirebaseFirestore()),
+      firestoreProvider.overrideWithValue(await _signedUpFirestore()),
       // FR-5: 実 FirebaseMessaging には触れず、通知ブートストラップを無効化する。
       notificationBootstrapProvider.overrideWith((ref) async {}),
       deviceRegistrationServiceProvider.overrideWithValue(
         _NoopDeviceRegistrationService(),
       ),
+      // FR-9: 招待リンクの受け口（Issue #90）はプラットフォームのプラグインを
+      // 使うため、テストではリンクが来ない空のストリームにする。
+      inviteLinkStreamProvider.overrideWith((ref) => const Stream<Uri>.empty()),
     ],
     child: const KanSukeApp(),
   );
+}
+
+/// FR-8: 個人カレンダーはアカウント作成時に Auth Blocking Function が生成するため、
+/// テストでは生成済みの状態（自分だけが参加するカレンダー）を用意する。
+Future<FakeFirebaseFirestore> _signedUpFirestore() async {
+  final firestore = FakeFirebaseFirestore();
+  final now = Timestamp.fromDate(DateTime.utc(2026, 7, 1));
+  await firestore.collection('calendars').doc('personal').set({
+    'name': _personalCalendarName,
+    'memberIds': ['family-user'],
+    'creatorId': 'family-user',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  return firestore;
 }
 
 class FakeAuthRepository implements AuthRepository {

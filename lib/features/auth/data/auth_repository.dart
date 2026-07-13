@@ -33,6 +33,12 @@ class AuthAccessDeniedException extends AuthException {
   const AuthAccessDeniedException();
 }
 
+/// サインアップ時の初期化（`users/{uid}` の生成、基本設計 §2.1）が
+/// 完了していない状態。Auth Blocking Function の失敗を意味する。
+class AuthSetupFailedException extends AuthException {
+  const AuthSetupFailedException();
+}
+
 class AuthCancelledException extends AuthException {
   const AuthCancelledException();
 }

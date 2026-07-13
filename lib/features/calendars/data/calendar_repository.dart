@@ -2,15 +2,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/logger.dart';
 import '../../../models/models.dart';
+import 'calendar_membership_repository.dart';
 
 const _logTag = 'CalendarRepository';
 
 /// calendars コレクションへの CRUD とリアルタイム取得を担う（FR-8）。
 ///
-/// - ドキュメント ID はクライアント生成 UUID（[Calendar.create]）。既定カレンダー
-///   （わが家）のみ固定 ID [defaultCalendarId] を用いる（[ensureDefaultCalendar]）。
+/// - ドキュメント ID はクライアント生成 UUID（[Calendar.create]）。個人カレンダー
+///   （アカウント作成時に自動生成）は Auth Blocking Function が同じ規約で作る。
 /// - Security Rules 上、`memberIds` に自分が含まれる場合のみ read/write 可
-///   （既定カレンダーへの「参加」のみ特例で追加可、`firestore.rules` 参照）。
+///   （`firestore.rules` 参照）。
+/// - `memberIds` / `ownerId` はクライアントから書き換えられない（Issue #89）。
+///   メンバーの削除・退出・オーナー移譲は [CalendarMembershipRepository] を使う。
 class CalendarRepository {
   CalendarRepository({required FirebaseFirestore firestore})
     : _firestore = firestore;
@@ -62,93 +65,18 @@ class CalendarRepository {
     });
   }
 
-  /// 名前・参加者を更新する。
+  /// カレンダー名を更新する（オーナーのみ、Issue #89）。
   ///
-  /// `memberIds` は編集画面を開いた時点のスナップショットに対する差分
-  /// （[addedMemberIds] / [removedMemberIds]）として受け取り、`runTransaction`
-  /// でサーバー上の最新 `memberIds` にその差分だけを適用する。編集画面が
-  /// 保持するメンバー一覧全体をそのまま上書きすると、画面を開いてから保存
-  /// するまでの間に他デバイスが加えたメンバー変更（例: 誰かの参加）を
-  /// サイレントに消してしまうため（read-modify-write の競合）。
-  Future<void> updateNameAndMembers(
-    String id, {
-    required String name,
-    required Set<String> addedMemberIds,
-    required Set<String> removedMemberIds,
-  }) {
-    final ref = _calendars.doc(id);
-    return _firestore
-        .runTransaction((transaction) async {
-          final snapshot = await transaction.get(ref);
-          final current = ((snapshot.data()?['memberIds'] as List?) ?? const [])
-              .map((id) => id as String)
-              .toSet();
-          final memberIds = {...current, ...addedMemberIds}
-            ..removeAll(removedMemberIds);
-          transaction.update(ref, {
-            'name': name,
-            'memberIds': memberIds.toList()..sort(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        })
+  /// `memberIds` / `ownerId` は Security Rules でクライアントから書き換えられない
+  /// ため、ここでは名前だけを更新する。メンバーの削除・退出・オーナー移譲は
+  /// [CalendarMembershipRepository]（Callable Function）経由で行う。
+  Future<void> updateName(String id, String name) {
+    return _calendars
+        .doc(id)
+        .update({'name': name, 'updatedAt': FieldValue.serverTimestamp()})
         .catchError((Object error, StackTrace stackTrace) {
           AppLogger.error(
             'Failed to update calendar $id',
-            tag: _logTag,
-            error: error,
-            stackTrace: stackTrace,
-          );
-          throw error;
-        });
-  }
-
-  /// 既定カレンダー（わが家）の存在を保証する（FR-8）。
-  ///
-  /// サインイン確定後に毎回冪等に呼び出す想定。`beforeUserCreated`
-  /// （Auth Blocking Function）は新規アカウント作成時にしか発火せず、既に
-  /// サインアップ済みの家族メンバーを事後的に既定カレンダーへ追加する手段に
-  /// ならないため、クライアント側の初期化処理として実装する。
-  ///
-  /// `runTransaction` で読み取り→書き込みをアトミックに行い、複数端末が
-  /// 同時に初回起動しても安全にする（read-then-act の競合を避ける）。
-  /// - 未作成なら [knownMemberIds]（呼び出し時点で判明している家族全員）と
-  ///   [uid] を含めて新規作成する。
-  /// - 既に存在するが [uid] が未参加なら、既存メンバーを維持したまま
-  ///   `arrayUnion` で追加する。
-  Future<void> ensureDefaultCalendar({
-    required String uid,
-    required List<String> knownMemberIds,
-  }) {
-    final ref = _calendars.doc(defaultCalendarId);
-    return _firestore
-        .runTransaction((transaction) async {
-          final snapshot = await transaction.get(ref);
-          final now = FieldValue.serverTimestamp();
-          if (!snapshot.exists) {
-            final memberIds = {...knownMemberIds, uid}.toList();
-            transaction.set(ref, {
-              'name': 'わが家',
-              'memberIds': memberIds,
-              'creatorId': uid,
-              'createdAt': now,
-              'updatedAt': now,
-            });
-            return;
-          }
-          final existing =
-              ((snapshot.data()?['memberIds'] as List?) ?? const [])
-                  .map((id) => id as String)
-                  .toSet();
-          final toAdd = {...knownMemberIds, uid}.difference(existing);
-          if (toAdd.isEmpty) return;
-          transaction.update(ref, {
-            'memberIds': FieldValue.arrayUnion(toAdd.toList()),
-            'updatedAt': now,
-          });
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          AppLogger.error(
-            'Failed to ensure default calendar',
             tag: _logTag,
             error: error,
             stackTrace: stackTrace,

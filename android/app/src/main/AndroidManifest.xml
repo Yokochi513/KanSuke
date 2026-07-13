@@ -24,6 +24,16 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- FR-9: 招待リンク kansuke://invite?token=... でアプリを起動する
+                 （Issue #90）。家庭内配布のためドメイン検証が要る App Links は
+                 使わず、カスタムスキームで受ける。リンクは app_links が
+                 Dart 側（InviteLinkGate）へ流す。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="kansuke" android:host="invite"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

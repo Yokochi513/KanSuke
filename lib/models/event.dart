@@ -3,7 +3,6 @@ import 'dart:collection';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 
-import 'calendar.dart';
 import 'firestore_serialization.dart';
 
 enum EventType {
@@ -17,6 +16,23 @@ enum EventType {
     );
   }
 }
+
+enum EventRecurrenceFrequency {
+  weekly,
+  monthly,
+  yearly;
+
+  static EventRecurrenceFrequency? fromFirestore(String? value) {
+    if (value == null) return null;
+    return EventRecurrenceFrequency.values.firstWhere(
+      (frequency) => frequency.name == value,
+      orElse: () =>
+          throw FormatException('Unknown recurrence frequency: $value'),
+    );
+  }
+}
+
+const _unset = Object();
 
 /// 予定データ。FR-1〜FR-3 / FR-5 の永続化単位。
 final class Event {
@@ -36,6 +52,10 @@ final class Event {
     required this.updatedAt,
     required this.deleted,
     required this.calendarId,
+    this.recurrenceFrequency,
+    this.recurrenceCount,
+    this.recurrenceMasterStartAt,
+    this.recurrenceMasterEndAt,
   }) : participantIds = UnmodifiableListView(participantIds),
        reminderOffsets = UnmodifiableListView(reminderOffsets);
 
@@ -52,6 +72,8 @@ final class Event {
     required String updatedBy,
     required DateTime now,
     required String calendarId,
+    EventRecurrenceFrequency? recurrenceFrequency,
+    int? recurrenceCount,
     Uuid uuid = const Uuid(),
   }) {
     return Event(
@@ -70,6 +92,8 @@ final class Event {
       updatedAt: now,
       deleted: false,
       calendarId: calendarId,
+      recurrenceFrequency: recurrenceFrequency,
+      recurrenceCount: recurrenceCount,
     );
   }
 
@@ -113,9 +137,16 @@ final class Event {
         pendingWriteEstimate: DateTime.now().toUtc(),
       ),
       deleted: data['deleted'] as bool,
-      // FR-8: 複数カレンダー機能導入前のドキュメントには calendarId が
-      // 存在しないため、既定カレンダー（わが家）に属するものとして扱う。
-      calendarId: (data['calendarId'] as String?) ?? defaultCalendarId,
+      // FR-8: calendarId は必須（Issue #93）。旧・既定カレンダー（'default'）への
+      // フォールバックは、移行スクリプトで全予定に calendarId が実在するように
+      // なったため廃止した。
+      calendarId: data['calendarId'] as String,
+      recurrenceFrequency: EventRecurrenceFrequency.fromFirestore(
+        data['recurrenceFrequency'] as String?,
+      ),
+      // Firestore の number は int 以外の num 実装で届く可能性があるため、
+      // nil と型変換の境界をここで閉じる。
+      recurrenceCount: (data['recurrenceCount'] as num?)?.toInt(),
     );
   }
 
@@ -134,6 +165,19 @@ final class Event {
   final DateTime updatedAt;
   final bool deleted;
   final String calendarId;
+  final EventRecurrenceFrequency? recurrenceFrequency;
+  final int? recurrenceCount;
+
+  /// 表示用に展開した繰り返し予定が、編集時に元の開始/終了へ戻るための値。
+  ///
+  /// Firestore には保存しない一時フィールド。null なら元ドキュメントそのもの。
+  final DateTime? recurrenceMasterStartAt;
+  final DateTime? recurrenceMasterEndAt;
+
+  bool get isRecurring => recurrenceFrequency != null;
+
+  bool get isRecurrenceOccurrence =>
+      recurrenceMasterStartAt != null && recurrenceMasterEndAt != null;
 
   /// 色分け表示（月表示の分割バー・日別一覧の複数ドット）で使う表示順の ID 一覧。
   ///
@@ -149,13 +193,15 @@ final class Event {
   }
 
   FirestoreData toFirestore({bool useServerTimestamp = true}) {
+    final startAtForFirestore = recurrenceMasterStartAt ?? startAt;
+    final endAtForFirestore = recurrenceMasterEndAt ?? endAt;
     return {
       'id': id,
       'title': title,
       'creatorId': creatorId,
       'participantIds': participantIds.toList(),
-      'startAt': Timestamp.fromDate(startAt),
-      'endAt': Timestamp.fromDate(endAt),
+      'startAt': Timestamp.fromDate(startAtForFirestore),
+      'endAt': Timestamp.fromDate(endAtForFirestore),
       'allDay': allDay,
       'type': type.name,
       'memo': memo,
@@ -168,7 +214,56 @@ final class Event {
       ),
       'deleted': deleted,
       'calendarId': calendarId,
+      'recurrenceFrequency': recurrenceFrequency?.name,
+      'recurrenceCount': recurrenceCount,
     };
+  }
+
+  Event occurrenceAt({required DateTime startAt, required DateTime endAt}) {
+    return Event(
+      id: id,
+      title: title,
+      creatorId: creatorId,
+      participantIds: participantIds,
+      startAt: startAt,
+      endAt: endAt,
+      allDay: allDay,
+      type: type,
+      memo: memo,
+      reminderOffsets: reminderOffsets,
+      updatedBy: updatedBy,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      deleted: deleted,
+      calendarId: calendarId,
+      recurrenceFrequency: recurrenceFrequency,
+      recurrenceCount: recurrenceCount,
+      recurrenceMasterStartAt: this.startAt,
+      recurrenceMasterEndAt: this.endAt,
+    );
+  }
+
+  Event get masterEventForEditing {
+    if (!isRecurrenceOccurrence) return this;
+    return Event(
+      id: id,
+      title: title,
+      creatorId: creatorId,
+      participantIds: participantIds,
+      startAt: recurrenceMasterStartAt!,
+      endAt: recurrenceMasterEndAt!,
+      allDay: allDay,
+      type: type,
+      memo: memo,
+      reminderOffsets: reminderOffsets,
+      updatedBy: updatedBy,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      deleted: deleted,
+      calendarId: calendarId,
+      recurrenceFrequency: recurrenceFrequency,
+      recurrenceCount: recurrenceCount,
+    );
   }
 
   Event copyWith({
@@ -187,6 +282,8 @@ final class Event {
     DateTime? updatedAt,
     bool? deleted,
     String? calendarId,
+    Object? recurrenceFrequency = _unset,
+    Object? recurrenceCount = _unset,
   }) {
     return Event(
       id: id ?? this.id,
@@ -204,6 +301,14 @@ final class Event {
       updatedAt: updatedAt ?? this.updatedAt,
       deleted: deleted ?? this.deleted,
       calendarId: calendarId ?? this.calendarId,
+      recurrenceFrequency: identical(recurrenceFrequency, _unset)
+          ? this.recurrenceFrequency
+          : recurrenceFrequency as EventRecurrenceFrequency?,
+      recurrenceCount: identical(recurrenceCount, _unset)
+          ? this.recurrenceCount
+          : recurrenceCount as int?,
+      recurrenceMasterStartAt: recurrenceMasterStartAt,
+      recurrenceMasterEndAt: recurrenceMasterEndAt,
     );
   }
 }

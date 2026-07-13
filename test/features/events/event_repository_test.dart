@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/features/events/data/event_repository.dart';
 import 'package:kansuke/models/models.dart';
 
+/// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
+const testCalendarId = 'test-calendar';
+
 Event _buildEvent({
   required String id,
   required DateTime startAt,
@@ -11,7 +14,9 @@ Event _buildEvent({
   EventType type = EventType.tentative,
   String creatorId = 'creator-1',
   String title = '打ち合わせ',
-  String calendarId = defaultCalendarId,
+  String calendarId = testCalendarId,
+  EventRecurrenceFrequency? recurrenceFrequency,
+  int? recurrenceCount,
 }) {
   return Event(
     id: id,
@@ -29,6 +34,8 @@ Event _buildEvent({
     updatedAt: startAt,
     deleted: false,
     calendarId: calendarId,
+    recurrenceFrequency: recurrenceFrequency,
+    recurrenceCount: recurrenceCount,
   );
 }
 
@@ -107,7 +114,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
     expect(visible, isEmpty);
@@ -152,7 +159,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
 
@@ -187,6 +194,95 @@ void main() {
     expect(events.map((event) => event.id), ['other-calendar']);
   });
 
+  test('watchRange は毎週の無限繰り返しを表示範囲内に展開する', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        title: '習い事',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 19),
+          end: DateTime.utc(2026, 7, 20),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    expect(events, hasLength(1));
+    expect(events.single.title, '習い事');
+    expect(events.single.startAt, DateTime.utc(2026, 7, 19, 9));
+    expect(events.single.recurrenceMasterStartAt, DateTime.utc(2026, 7, 5, 9));
+  });
+
+  test('watchRange は指定回数を超えた繰り返しを返さない', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+        recurrenceCount: 2,
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 19),
+          end: DateTime.utc(2026, 7, 20),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    expect(events, isEmpty);
+  });
+
+  test('watchRange は月末の毎月繰り返しを存在する月末日に丸める', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'monthly',
+        startAt: DateTime.utc(2026, 1, 31, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.monthly,
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 2, 1),
+          end: DateTime.utc(2026, 3, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    expect(events.single.startAt, DateTime.utc(2026, 2, 28, 9));
+  });
+
+  test('watchRange はうるう日の毎年繰り返しを通常年の2月末日に丸める', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'yearly',
+        startAt: DateTime.utc(2024, 2, 29, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.yearly,
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2025, 2, 1),
+          end: DateTime.utc(2025, 3, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    expect(events.single.startAt, DateTime.utc(2025, 2, 28, 9));
+  });
+
   test('1件の破損ドキュメントがあってもwatchRangeは他の予定を返す', () async {
     await repository.create(
       _buildEvent(id: 'ok', startAt: DateTime.utc(2026, 7, 10, 9)),
@@ -195,7 +291,7 @@ void main() {
     // 型不正など何らかの理由でパースに失敗するドキュメントを模擬する。
     await firestore.collection('events').doc('broken').set({
       'deleted': false,
-      'calendarId': defaultCalendarId,
+      'calendarId': testCalendarId,
       'startAt': Timestamp.fromDate(DateTime.utc(2026, 7, 11, 9)),
       'endAt': Timestamp.fromDate(DateTime.utc(2026, 7, 11, 10)),
       'title': 123, // String のはずが不正な型
@@ -205,7 +301,7 @@ void main() {
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
           end: DateTime.utc(2026, 8, 1),
-          calendarId: defaultCalendarId,
+          calendarId: testCalendarId,
         )
         .first;
 

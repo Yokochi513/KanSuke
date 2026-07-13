@@ -7,7 +7,10 @@ import '../../../app/theme.dart';
 import '../../../core/color_utils.dart';
 import '../../auth/application/auth_state.dart';
 import '../../users/application/user_providers.dart';
+import '../../version_check/application/version_check_provider.dart';
+import '../application/event_merge_provider.dart';
 import '../application/notification_permission.dart';
+import '../application/theme_mode_provider.dart';
 
 /// フィードバック用 Google フォームの URL（tools/feedback-to-issue 参照）。
 const _feedbackFormUrl = 'https://forms.gle/4h35EcT2Deqq8FsM6';
@@ -30,14 +33,23 @@ class SettingsScreen extends ConsumerWidget {
           const _SectionHeader('自分の色'),
           const _ColorSection(),
           const Divider(),
+          const _SectionHeader('表示テーマ'),
+          const _ThemeModeSection(),
+          const Divider(),
           const _SectionHeader('通知'),
           const _NotificationSection(),
           const Divider(),
           const _SectionHeader('カレンダー'),
           const _CalendarManagementSection(),
           const Divider(),
+          const _SectionHeader('予定のまとめ表示'),
+          const _EventMergeSection(),
+          const Divider(),
           const _SectionHeader('フィードバック'),
           const _FeedbackSection(),
+          const Divider(),
+          const _SectionHeader('このアプリについて'),
+          const _AppInfoSection(),
           const Divider(),
           const _SignOutSection(),
         ],
@@ -53,13 +65,22 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
+      child: Row(
+        children: [
+          // 朱の細い縦棒を見出しの頭に置き、落款のような区切りにする。
+          Container(width: 3, height: 14, color: scheme.secondary),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(color: scheme.primary),
+          ),
+        ],
       ),
     );
   }
@@ -345,19 +366,19 @@ class _RgbColorPickerDialogState extends State<_RgbColorPickerDialog> {
             _ColorChannelSlider(
               label: '赤',
               value: _redValue,
-              activeColor: Colors.red.shade700,
+              activeColor: WashiColors.shu,
               onChanged: (value) => setState(() => _redValue = value),
             ),
             _ColorChannelSlider(
               label: '緑',
               value: _greenValue,
-              activeColor: Colors.green.shade700,
+              activeColor: WashiColors.matsuba,
               onChanged: (value) => setState(() => _greenValue = value),
             ),
             _ColorChannelSlider(
               label: '青',
               value: _blueValue,
-              activeColor: Colors.blue.shade700,
+              activeColor: WashiColors.hanada,
               onChanged: (value) => setState(() => _blueValue = value),
             ),
           ],
@@ -417,6 +438,75 @@ class _ColorChannelSlider extends StatelessWidget {
 
 Color _foregroundForSwatch(Color color) {
   return color.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+}
+
+/// 表示テーマを「自動（端末設定に従う）／和紙（ライト）／墨（ダーク）」から選ぶ。
+///
+/// 端末ローカルの設定のため、家族の他のメンバーの表示には影響しない。
+class _ThemeModeSection extends ConsumerWidget {
+  const _ThemeModeSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(resolvedThemeModeProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<ThemeMode>(
+              segments: [
+                for (final mode in ThemeMode.values)
+                  ButtonSegment(
+                    value: mode,
+                    icon: Icon(mode.icon),
+                    label: Text(mode.label),
+                    tooltip: mode.label,
+                  ),
+              ],
+              selected: {selected},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) =>
+                  ref.read(themeModeProvider.notifier).select(selection.single),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '「自動」は端末のダークモード設定に従います。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 月表示のマージ表示（同名・期間が連なる予定を 1 本に束ねる）の ON/OFF
+/// （Issue #76、FR-2 / FR-4）。
+///
+/// 暗黙グルーピングの誤爆に備えた保険として切り替えられるようにする。既定は ON。
+/// 端末ローカルの設定のため、家族の他のメンバーの表示には影響しない。
+class _EventMergeSection extends ConsumerWidget {
+  const _EventMergeSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(resolvedEventMergeEnabledProvider);
+
+    return SwitchListTile(
+      secondary: const Icon(Icons.merge_type),
+      title: const Text('同じ予定をまとめる'),
+      subtitle: const Text('同名で期間が重なる予定を月表示で1本に束ねます。'),
+      value: enabled,
+      onChanged: (value) =>
+          ref.read(eventMergeEnabledProvider.notifier).setEnabled(value),
+    );
+  }
 }
 
 /// 通知許可の状態表示と要求導線（FR-5、Issue #13）。
@@ -479,6 +569,24 @@ class _FeedbackSection extends StatelessWidget {
         Uri.parse(_feedbackFormUrl),
         mode: LaunchMode.externalApplication,
       ),
+    );
+  }
+}
+
+/// インストール済みバージョンの表示と、更新履歴画面への導線（FR-7 / Issue #96）。
+class _AppInfoSection extends ConsumerWidget {
+  const _AppInfoSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final version = ref.watch(appVersionProvider).asData?.value;
+
+    return ListTile(
+      leading: const Icon(Icons.history),
+      title: const Text('更新履歴'),
+      subtitle: Text(version == null ? 'これまでの変更点を見る' : '現在のバージョン: $version'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.pushNamed(context, AppRoutes.releaseHistory),
     );
   }
 }

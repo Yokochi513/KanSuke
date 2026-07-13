@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 墨。Flutter 側 WashiColors.sumi と揃える。 -->
+    <color name="washi_base">#23211E</color>
+</resources>

@@ -24,8 +24,33 @@ void main() {
     expect(restored.name, calendar.name);
     expect(restored.memberIds, calendar.memberIds);
     expect(restored.creatorId, calendar.creatorId);
+    expect(restored.ownerId, calendar.ownerId);
     expect(restored.createdAt, calendar.createdAt);
     expect(restored.updatedAt, calendar.updatedAt);
+  });
+
+  test('ownerId が欠損していれば creatorId をオーナーとみなす（Issue #89）', () {
+    // ownerId 導入前に作られたカレンダー（バックフィル未完了）。
+    final restored = Calendar.fromMap('calendar-1', {
+      'name': 'わが家',
+      'memberIds': const ['user-1', 'user-2'],
+      'creatorId': 'user-1',
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 7, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 7, 2)),
+    });
+
+    expect(restored.ownerId, 'user-1');
+    expect(restored.isOwnedBy('user-1'), isTrue);
+    expect(restored.isOwnedBy('user-2'), isFalse);
+  });
+
+  test('オーナーを移譲したカレンダーでは作成者ではなくオーナーが権限を持つ（Issue #89）', () {
+    final transferred = buildCalendar().copyWith(ownerId: 'user-2');
+
+    expect(transferred.creatorId, 'user-1');
+    expect(transferred.isOwnedBy('user-1'), isFalse);
+    expect(transferred.isOwnedBy('user-2'), isTrue);
+    expect(transferred.toFirestore()['ownerId'], 'user-2');
   });
 
   test('copyWithでnameとmemberIdsだけを変更できる', () {
@@ -65,9 +90,5 @@ void main() {
 
     expect(first.id, matches(uuidPattern));
     expect(second.id, isNot(first.id));
-  });
-
-  test('defaultCalendarIdは固定文字列defaultである', () {
-    expect(defaultCalendarId, 'default');
   });
 }

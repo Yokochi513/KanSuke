@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/logger.dart';
 import '../../../models/models.dart';
@@ -20,6 +21,10 @@ const _reminderPresets = <int, String>{
   1440: '1日前',
 };
 
+enum _RecurrenceFrequencyOption { none, weekly, monthly, yearly }
+
+enum _RecurrenceCountMode { infinite, specified }
+
 /// 予定編集画面（FR-1 / FR-3 / FR-5、基本設計 §6.1・§6.3・§3.2）。
 ///
 /// 予定の作成・編集・ソフト削除を行う。仮↔確定はトグル1操作で切替、
@@ -35,6 +40,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _memoController = TextEditingController();
+  final _recurrenceCountController = TextEditingController(text: '10');
 
   bool _initialized = false;
   Event? _editing; // 編集対象（新規は null）
@@ -47,12 +53,16 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   late String _calendarId;
   final Set<String> _participantIds = {};
   final Set<int> _reminderOffsets = {};
+  _RecurrenceFrequencyOption _recurrenceOption =
+      _RecurrenceFrequencyOption.none;
+  _RecurrenceCountMode _recurrenceCountMode = _RecurrenceCountMode.infinite;
   bool _saving = false;
 
   @override
   void dispose() {
     _titleController.dispose();
     _memoController.dispose();
+    _recurrenceCountController.dispose();
     super.dispose();
   }
 
@@ -70,20 +80,10 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
     final event = args.event;
     if (event != null) {
-      _editing = event;
-      _titleController.text = event.title;
-      _memoController.text = event.memo;
-      _allDay = event.allDay;
-      _type = event.type;
-      _calendarId = event.calendarId;
-      _participantIds.addAll(event.participantIds);
-      final start = event.startAt.toLocal();
-      final end = event.endAt.toLocal();
-      _startDate = DateUtils.dateOnly(start);
-      _endDate = DateUtils.dateOnly(end);
-      _startTime = TimeOfDay.fromDateTime(start);
-      _endTime = TimeOfDay.fromDateTime(end);
-      _reminderOffsets.addAll(event.reminderOffsets);
+      final editingEvent = event.masterEventForEditing;
+      _editing = editingEvent;
+      _prefillFrom(editingEvent);
+      _setRecurrenceState(editingEvent);
     } else {
       _startDate = DateUtils.dateOnly(args.initialDate!);
       _endDate = _startDate;
@@ -91,11 +91,38 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       _endTime = const TimeOfDay(hour: 10, minute: 0);
       // FR-8: 新規作成時は、遷移元で表示していたカレンダーを初期値にする。
       _calendarId = ref.read(selectedCalendarIdProvider);
+      if (_calendarId.isEmpty) {
+        // カレンダー一覧がまだ届いていない間は表示中カレンダーが定まらない
+        // （空文字）。確定したら初期値として反映する。
+        ref.listenManual(selectedCalendarIdProvider, (_, calendarId) {
+          if (_calendarId.isEmpty && calendarId.isNotEmpty) {
+            setState(() => _calendarId = calendarId);
+          }
+        });
+      }
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
         _participantIds.add(uid);
       }
     }
+  }
+
+  /// 既存予定 [event] の属性でフォームの初期値を埋める（編集・コピー共通）。
+  /// くり返し設定は呼び出し側で扱う（編集は引き継ぎ、コピーは破棄する）。
+  void _prefillFrom(Event event) {
+    _titleController.text = event.title;
+    _memoController.text = event.memo;
+    _allDay = event.allDay;
+    _type = event.type;
+    _calendarId = event.calendarId;
+    _participantIds.addAll(event.participantIds);
+    final start = event.startAt.toLocal();
+    final end = event.endAt.toLocal();
+    _startDate = DateUtils.dateOnly(start);
+    _endDate = DateUtils.dateOnly(end);
+    _startTime = TimeOfDay.fromDateTime(start);
+    _endTime = TimeOfDay.fromDateTime(end);
+    _reminderOffsets.addAll(event.reminderOffsets);
   }
 
   @override
@@ -109,12 +136,18 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       appBar: AppBar(
         title: Text(isEditing ? '予定を編集' : '新規作成'),
         actions: [
-          if (isEditing)
+          if (isEditing) ...[
+            IconButton(
+              tooltip: 'コピー',
+              onPressed: _saving ? null : _copyEvent,
+              icon: const Icon(Icons.copy_outlined),
+            ),
             IconButton(
               tooltip: '削除',
               onPressed: _saving ? null : _confirmDelete,
               icon: const Icon(Icons.delete_outline),
             ),
+          ],
         ],
       ),
       body: Column(
@@ -151,6 +184,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                     onChanged: (value) => setState(() => _allDay = value),
                   ),
                   _buildDateTimeFields(),
+                  const SizedBox(height: 16),
+                  _buildRecurrenceFields(),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _memoController,
@@ -359,6 +394,73 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     );
   }
 
+  Widget _buildRecurrenceFields() {
+    return Column(
+      children: [
+        DropdownButtonFormField<_RecurrenceFrequencyOption>(
+          initialValue: _recurrenceOption,
+          decoration: const InputDecoration(
+            labelText: 'くり返し設定',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(
+              value: _RecurrenceFrequencyOption.none,
+              child: Text('なし'),
+            ),
+            DropdownMenuItem(
+              value: _RecurrenceFrequencyOption.weekly,
+              child: Text('毎週'),
+            ),
+            DropdownMenuItem(
+              value: _RecurrenceFrequencyOption.monthly,
+              child: Text('毎月'),
+            ),
+            DropdownMenuItem(
+              value: _RecurrenceFrequencyOption.yearly,
+              child: Text('毎年'),
+            ),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() => _recurrenceOption = value);
+          },
+        ),
+        if (_recurrenceOption != _RecurrenceFrequencyOption.none) ...[
+          const SizedBox(height: 16),
+          SegmentedButton<_RecurrenceCountMode>(
+            segments: const [
+              ButtonSegment(
+                value: _RecurrenceCountMode.infinite,
+                label: Text('無限'),
+              ),
+              ButtonSegment(
+                value: _RecurrenceCountMode.specified,
+                label: Text('回数指定'),
+              ),
+            ],
+            selected: {_recurrenceCountMode},
+            onSelectionChanged: (selection) =>
+                setState(() => _recurrenceCountMode = selection.first),
+          ),
+          if (_recurrenceCountMode == _RecurrenceCountMode.specified) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _recurrenceCountController,
+              decoration: const InputDecoration(
+                labelText: '回数',
+                suffixText: '回',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              validator: _validateRecurrenceCount,
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
   Widget _buildReminderField(AsyncValue<List<User>> membersAsync) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -512,6 +614,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           updatedBy: uid,
           now: DateTime.now(),
           calendarId: _calendarId,
+          recurrenceFrequency: _recurrenceFrequencyForSave(),
+          recurrenceCount: _recurrenceCountForSave(),
         );
         await repository.create(event, updatedBy: uid);
       } else {
@@ -525,6 +629,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           calendarId: _calendarId,
           memo: _memoController.text.trim(),
           reminderOffsets: offsets,
+          recurrenceFrequency: _recurrenceFrequencyForSave(),
+          recurrenceCount: _recurrenceCountForSave(),
         );
         await repository.update(updated, updatedBy: uid);
       }
@@ -539,6 +645,134 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       if (mounted) {
         setState(() => _saving = false);
         _showSnack('保存に失敗しました。通信環境を確認してください。');
+      }
+    }
+  }
+
+  void _setRecurrenceState(Event event) {
+    _recurrenceOption = switch (event.recurrenceFrequency) {
+      null => _RecurrenceFrequencyOption.none,
+      EventRecurrenceFrequency.weekly => _RecurrenceFrequencyOption.weekly,
+      EventRecurrenceFrequency.monthly => _RecurrenceFrequencyOption.monthly,
+      EventRecurrenceFrequency.yearly => _RecurrenceFrequencyOption.yearly,
+    };
+
+    final recurrenceCount = event.recurrenceCount;
+    if (event.recurrenceFrequency != null && recurrenceCount != null) {
+      _recurrenceCountMode = _RecurrenceCountMode.specified;
+      _recurrenceCountController.text = recurrenceCount.toString();
+    } else {
+      _recurrenceCountMode = _RecurrenceCountMode.infinite;
+    }
+  }
+
+  EventRecurrenceFrequency? _recurrenceFrequencyForSave() {
+    return switch (_recurrenceOption) {
+      _RecurrenceFrequencyOption.none => null,
+      _RecurrenceFrequencyOption.weekly => EventRecurrenceFrequency.weekly,
+      _RecurrenceFrequencyOption.monthly => EventRecurrenceFrequency.monthly,
+      _RecurrenceFrequencyOption.yearly => EventRecurrenceFrequency.yearly,
+    };
+  }
+
+  int? _recurrenceCountForSave() {
+    if (_recurrenceOption == _RecurrenceFrequencyOption.none ||
+        _recurrenceCountMode == _RecurrenceCountMode.infinite) {
+      return null;
+    }
+    return int.tryParse(_recurrenceCountController.text.trim());
+  }
+
+  String? _validateRecurrenceCount(String? value) {
+    if (_recurrenceOption == _RecurrenceFrequencyOption.none ||
+        _recurrenceCountMode == _RecurrenceCountMode.infinite) {
+      return null;
+    }
+    final text = value?.trim() ?? '';
+    // ユーザー入力は文字列なので、int 変換に失敗する境界を明示して止める。
+    final count = int.tryParse(text);
+    if (count == null) {
+      return '回数を半角数字で入力してください';
+    }
+    if (count <= 0) {
+      return '回数は1以上で入力してください';
+    }
+    return null;
+  }
+
+  /// FR-1 / #75: 編集中の予定をひな形に、コピー先の日付をカレンダーで複数選び、
+  /// 選んだ各日へ単発予定として一括複製する。日付だけを選んだ日へ移動し、
+  /// 時刻・時間幅・その他の属性は引き継ぐ。各複製に新しい UUID が発番され、
+  /// 元予定は変更されず、繰り返し設定は引き継がない（展開インスタンス由来でも
+  /// 単発予定になる）。飛び飛びの日程（不定期イベント）を一度に配置できる。
+  Future<void> _copyEvent() async {
+    final source = _editing;
+    if (source == null) return;
+
+    final sourceStart = source.startAt.toLocal();
+    final dates = await showDialog<List<DateTime>>(
+      context: context,
+      builder: (context) =>
+          _CopyDatesPicker(initialDay: DateUtils.dateOnly(sourceStart)),
+    );
+    if (dates == null || dates.isEmpty) return;
+
+    final uid = ref.read(currentUidProvider);
+    if (uid == null) {
+      _showSnack('サインインが必要です');
+      return;
+    }
+
+    // 各日へ移動する。終日はその日付、時刻ありは元と同じ時刻に置き、終了は
+    // 所要時間を保って算出する。
+    final duration = source.endAt.difference(source.startAt);
+    setState(() => _saving = true);
+    try {
+      final repository = ref.read(eventRepositoryProvider);
+      for (final date in dates) {
+        final newStart = source.allDay
+            ? DateUtils.dateOnly(date)
+            : DateTime(
+                date.year,
+                date.month,
+                date.day,
+                sourceStart.hour,
+                sourceStart.minute,
+              );
+        final copy = Event.create(
+          title: source.title,
+          creatorId: uid,
+          participantIds: source.participantIds.toList(),
+          startAt: newStart,
+          endAt: newStart.add(duration),
+          allDay: source.allDay,
+          type: source.type,
+          memo: source.memo,
+          reminderOffsets: source.reminderOffsets.toList(),
+          updatedBy: uid,
+          now: DateTime.now(),
+          calendarId: source.calendarId,
+        );
+        await repository.create(copy, updatedBy: uid);
+      }
+      if (mounted) {
+        setState(() => _saving = false);
+        _showSnack(
+          dates.length == 1
+              ? '${_formatDate(dates.first)}にコピーしました'
+              : '${dates.length}件の予定をコピーしました',
+        );
+      }
+    } on Object catch (error, stackTrace) {
+      AppLogger.error(
+        'Failed to copy event ${source.id}',
+        tag: 'EventEditScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        setState(() => _saving = false);
+        _showSnack('コピーに失敗しました。通信環境を確認してください。');
       }
     }
   }
@@ -605,6 +839,83 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
       '${_two(time.hour)}:${_two(time.minute)}';
 
   String _two(int value) => value.toString().padLeft(2, '0');
+}
+
+/// コピー先の複数日を選ぶダイアログ（#75）。
+///
+/// 月カレンダー（[TableCalendar]）で任意の日をタップして複数選択・解除し、
+/// 「N件コピー」で確定すると選んだ日付一覧（昇順）を返す。キャンセル時は null。
+/// 飛び飛びの日程（不定期イベント）にも配置できるよう、範囲ではなく任意の
+/// 複数日を選べるようにする。
+class _CopyDatesPicker extends StatefulWidget {
+  const _CopyDatesPicker({required this.initialDay});
+
+  final DateTime initialDay;
+
+  @override
+  State<_CopyDatesPicker> createState() => _CopyDatesPickerState();
+}
+
+class _CopyDatesPickerState extends State<_CopyDatesPicker> {
+  late DateTime _focusedDay;
+  // 選択済みの日（[DateUtils.dateOnly] で正規化）。
+  final List<DateTime> _selectedDays = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _focusedDay = widget.initialDay;
+  }
+
+  void _toggle(DateTime day) {
+    final key = DateUtils.dateOnly(day);
+    setState(() {
+      final index = _selectedDays.indexWhere((d) => isSameDay(d, key));
+      if (index >= 0) {
+        _selectedDays.removeAt(index);
+      } else {
+        _selectedDays.add(key);
+      }
+      _focusedDay = day;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = _selectedDays.length;
+    return AlertDialog(
+      title: const Text('コピー先の日付を選択'),
+      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      content: SizedBox(
+        width: 360,
+        child: TableCalendar<void>(
+          firstDay: DateTime.utc(2020, 1, 1),
+          lastDay: DateTime.utc(2035, 12, 31),
+          focusedDay: _focusedDay,
+          startingDayOfWeek: StartingDayOfWeek.sunday,
+          calendarFormat: CalendarFormat.month,
+          availableCalendarFormats: const {CalendarFormat.month: '月'},
+          selectedDayPredicate: (day) =>
+              _selectedDays.any((d) => isSameDay(d, day)),
+          onDaySelected: (selectedDay, _) => _toggle(selectedDay),
+          onPageChanged: (focusedDay) => _focusedDay = focusedDay,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          // 1 件も選ばれていなければ確定できない。
+          onPressed: count == 0
+              ? null
+              : () => Navigator.pop(context, _selectedDays.toList()..sort()),
+          child: Text('$count件コピー'),
+        ),
+      ],
+    );
+  }
 }
 
 class _TimePickerSheet extends StatelessWidget {
