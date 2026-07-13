@@ -15,7 +15,9 @@ const {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   setDoc,
+  updateDoc,
   where,
 } = require("firebase/firestore");
 
@@ -42,6 +44,7 @@ async function seedFamilyMembers() {
       name: "わが家",
       memberIds: ["family-user", "other-family-user"],
       creatorId: "family-user",
+      ownerId: "family-user",
     });
   });
 }
@@ -70,7 +73,7 @@ after(async () => {
 });
 
 describe("Firestore Security Rules (NFR-4)", () => {
-  it("家族メンバーは users を読めて自分の情報だけを書ける", async () => {
+  it("家族メンバーは users を個別に読めて自分の情報だけを書ける", async () => {
     const familyDb = dbFor("family-user");
 
     await assertSucceeds(getDoc(doc(familyDb, "users/other-family-user")));
@@ -80,6 +83,13 @@ describe("Firestore Security Rules (NFR-4)", () => {
     await assertFails(setDoc(doc(familyDb, "users/other-family-user"), {
       name: "Denied",
     }));
+  });
+
+  it("users は誰も列挙できない（Issue #89）", async () => {
+    // サインアップは開放されている（Issue #87）ため、列挙を許すと第三者が
+    // 全ユーザーの名前・メール・色を取得できてしまう。
+    await assertFails(getDocs(collection(dbFor("family-user"), "users")));
+    await assertFails(getDocs(collection(dbFor("outsider"), "users")));
   });
 
   it("家族メンバーは events を読み書きできる", async () => {
@@ -172,18 +182,78 @@ describe("Firestore Security Rules (NFR-4)", () => {
     }));
   });
 
-  it("calendars の作成は自分を含む場合のみ許可する（FR-8）", async () => {
+  it("calendars の作成は自分を含み、自分がオーナーの場合のみ許可する（FR-8 / Issue #89）", async () => {
     const familyDb = dbFor("family-user");
 
     await assertSucceeds(setDoc(doc(familyDb, "calendars/new-calendar"), {
       name: "新規カレンダー",
       memberIds: ["family-user"],
       creatorId: "family-user",
+      ownerId: "family-user",
     }));
     await assertFails(setDoc(doc(familyDb, "calendars/no-self"), {
       name: "自分抜き",
       memberIds: ["other-family-user"],
       creatorId: "family-user",
+      ownerId: "family-user",
+    }));
+    await assertFails(setDoc(doc(familyDb, "calendars/not-owner"), {
+      name: "他人がオーナー",
+      memberIds: ["family-user", "other-family-user"],
+      creatorId: "family-user",
+      ownerId: "other-family-user",
+    }));
+  });
+
+  it("memberIds / ownerId はクライアントから書き換えられない（Issue #89）", async () => {
+    // メンバーの追加・削除・オーナー移譲は Callable Function 経由のみ
+    // （functions/membership.js）。Rules はクライアントの直接書き換えを拒否する。
+    const ownerDb = dbFor("family-user");
+    const memberDb = dbFor("other-family-user");
+
+    await assertFails(updateDoc(doc(memberDb, "calendars/default"), {
+      memberIds: ["other-family-user"],
+    }));
+    await assertFails(updateDoc(doc(ownerDb, "calendars/default"), {
+      memberIds: ["family-user"],
+    }));
+    await assertFails(updateDoc(doc(memberDb, "calendars/default"), {
+      ownerId: "other-family-user",
+    }));
+    await assertFails(updateDoc(doc(ownerDb, "calendars/default"), {
+      ownerId: "other-family-user",
+    }));
+  });
+
+  it("カレンダー名を変更できるのはオーナーだけ（Issue #89）", async () => {
+    const ownerDb = dbFor("family-user");
+    const memberDb = dbFor("other-family-user");
+
+    // アプリの書き込み（CalendarRepository.updateName）と同じ形にする。
+    await assertFails(updateDoc(doc(memberDb, "calendars/default"), {
+      name: "勝手に改名",
+      updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(updateDoc(doc(ownerDb, "calendars/default"), {
+      name: "わが家（改）",
+      updatedAt: serverTimestamp(),
+    }));
+  });
+
+  it("ownerId 欠損時は creatorId をオーナーとみなす（バックフィル前の後方互換）", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "calendars/legacy"), {
+        name: "旧カレンダー",
+        memberIds: ["family-user", "other-family-user"],
+        creatorId: "family-user",
+      });
+    });
+
+    await assertFails(updateDoc(doc(dbFor("other-family-user"), "calendars/legacy"), {
+      name: "勝手に改名",
+    }));
+    await assertSucceeds(updateDoc(doc(dbFor("family-user"), "calendars/legacy"), {
+      name: "旧カレンダー（改）",
     }));
   });
 

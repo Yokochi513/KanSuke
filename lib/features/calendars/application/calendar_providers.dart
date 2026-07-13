@@ -4,11 +4,20 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../../../core/firebase_providers.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
+import '../data/calendar_membership_repository.dart';
 import '../data/calendar_repository.dart';
 
 final calendarRepositoryProvider = Provider<CalendarRepository>((ref) {
   return CalendarRepository(firestore: ref.watch(firestoreProvider));
 });
+
+/// メンバーの削除・退出・オーナー移譲（Callable Function 経由、Issue #89）。
+final calendarMembershipRepositoryProvider =
+    Provider<CalendarMembershipRepository>((ref) {
+      return FunctionsCalendarMembershipRepository(
+        functions: ref.watch(functionsProvider),
+      );
+    });
 
 /// 自分が参加しているカレンダー一覧（FR-8）。カレンダー切替・予定編集の
 /// カレンダー選択・参加者候補の絞り込みに用いる。

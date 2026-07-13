@@ -3,7 +3,8 @@ import '../../../models/models.dart';
 /// カレンダー編集画面への遷移引数。
 ///
 /// - [CalendarEditArgs.create]: 新規カレンダーを作成する。
-/// - [CalendarEditArgs.edit]: 既存カレンダーの名前・参加者を編集する。
+/// - [CalendarEditArgs.edit]: 既存カレンダーの名前の変更・メンバー管理を行う
+///   （Issue #89）。
 class CalendarEditArgs {
   const CalendarEditArgs.create() : calendar = null;
 
