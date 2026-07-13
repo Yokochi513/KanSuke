@@ -83,6 +83,12 @@ service cloud.firestore {
       allow read: if isRegistered();
     }
 
+    // FR-7: 更新履歴（Issue #96）。リリースごとに CI (Admin SDK) が
+    // releases/{version} を書き込む。クライアントは設定画面の更新履歴で読むだけ。
+    match /releases/{version} {
+      allow read: if isRegistered();
+    }
+
     match /users/{uid}/devices/{token} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }

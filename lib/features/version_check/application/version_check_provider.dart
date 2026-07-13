@@ -47,3 +47,27 @@ Future<void> markVersionAsSeen(String version) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(_lastSeenVersionKey, version);
 }
+
+/// 更新履歴（全バージョンのリリースノート）をバージョン降順で流す（FR-7 / Issue #96）。
+///
+/// 並べ替えはクライアント側で行う。ドキュメント ID がバージョンのため文字列順では
+/// "1.10.0" < "1.9.0" となってしまい、数値としての比較が必要なため。
+final releaseHistoryProvider = StreamProvider<List<ReleaseInfo>>((ref) {
+  return ref.watch(releaseInfoRepositoryProvider).watchHistory().map((
+    releases,
+  ) {
+    final sorted = [...releases];
+    sorted.sort((a, b) {
+      if (isNewerVersion(a.version, b.version)) return -1;
+      if (isNewerVersion(b.version, a.version)) return 1;
+      return 0;
+    });
+    return sorted;
+  });
+});
+
+/// 端末にインストールされているアプリのバージョン（設定画面の表示用）。
+final appVersionProvider = FutureProvider<String>((ref) async {
+  final packageInfo = await PackageInfo.fromPlatform();
+  return packageInfo.version;
+});

@@ -7,6 +7,7 @@ import '../../../app/theme.dart';
 import '../../../core/color_utils.dart';
 import '../../auth/application/auth_state.dart';
 import '../../users/application/user_providers.dart';
+import '../../version_check/application/version_check_provider.dart';
 import '../application/event_merge_provider.dart';
 import '../application/notification_permission.dart';
 import '../application/theme_mode_provider.dart';
@@ -46,6 +47,9 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('フィードバック'),
           const _FeedbackSection(),
+          const Divider(),
+          const _SectionHeader('このアプリについて'),
+          const _AppInfoSection(),
           const Divider(),
           const _SignOutSection(),
         ],
@@ -565,6 +569,24 @@ class _FeedbackSection extends StatelessWidget {
         Uri.parse(_feedbackFormUrl),
         mode: LaunchMode.externalApplication,
       ),
+    );
+  }
+}
+
+/// インストール済みバージョンの表示と、更新履歴画面への導線（FR-7 / Issue #96）。
+class _AppInfoSection extends ConsumerWidget {
+  const _AppInfoSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final version = ref.watch(appVersionProvider).asData?.value;
+
+    return ListTile(
+      leading: const Icon(Icons.history),
+      title: const Text('更新履歴'),
+      subtitle: Text(version == null ? 'これまでの変更点を見る' : '現在のバージョン: $version'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.pushNamed(context, AppRoutes.releaseHistory),
     );
   }
 }
