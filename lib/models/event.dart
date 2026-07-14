@@ -54,9 +54,12 @@ final class Event {
     required this.calendarId,
     this.recurrenceFrequency,
     this.recurrenceCount,
+    List<DateTime> recurrenceExceptions = const [],
+    this.recurrenceUntil,
     this.recurrenceMasterStartAt,
     this.recurrenceMasterEndAt,
   }) : participantIds = UnmodifiableListView(participantIds),
+       recurrenceExceptions = UnmodifiableListView(recurrenceExceptions),
        reminderOffsets = UnmodifiableMapView({
          for (final entry in reminderOffsets.entries)
            entry.key: UnmodifiableListView(entry.value),
@@ -148,6 +151,14 @@ final class Event {
       // Firestore の number は int 以外の num 実装で届く可能性があるため、
       // nil と型変換の境界をここで閉じる。
       recurrenceCount: (data['recurrenceCount'] as num?)?.toInt(),
+      // #86: 繰り返しの例外日（EXDATE 相当）と打ち切り日。導入前の
+      // ドキュメントにはキーが無いため、それぞれ空リスト・null にフォールバックする。
+      recurrenceExceptions: _recurrenceExceptionsFromFirestore(
+        data['recurrenceExceptions'],
+      ),
+      recurrenceUntil: data['recurrenceUntil'] == null
+          ? null
+          : dateTimeFromFirestore(data['recurrenceUntil'], 'recurrenceUntil'),
     );
   }
 
@@ -173,6 +184,19 @@ final class Event {
   final String calendarId;
   final EventRecurrenceFrequency? recurrenceFrequency;
   final int? recurrenceCount;
+
+  /// 繰り返しの例外日（EXDATE 相当、#86）。
+  ///
+  /// 「この予定のみ削除」で除外した各発生日の開始日時（UTC）を持つ。月表示の
+  /// 展開時に、この一覧に一致する発生日は生成しない。オフラインでの並行削除を
+  /// 素直にマージできるよう、書き込みは `arrayUnion` で追記する。
+  final List<DateTime> recurrenceExceptions;
+
+  /// 繰り返しの打ち切り日（#86）。この日時**以降**の発生日は生成しない（排他境界）。
+  ///
+  /// 「これ以降の予定を削除」で、削除した発生日の開始日時を設定する。null なら
+  /// 打ち切りなし。`recurrenceCount` とは独立に働き、両方あれば早い方で止まる。
+  final DateTime? recurrenceUntil;
 
   /// 表示用に展開した繰り返し予定が、編集時に元の開始/終了へ戻るための値。
   ///
@@ -225,6 +249,14 @@ final class Event {
       'calendarId': calendarId,
       'recurrenceFrequency': recurrenceFrequency?.name,
       'recurrenceCount': recurrenceCount,
+      // #86: 例外日・打ち切り日は繰り返しの元ドキュメント側に持つ。
+      'recurrenceExceptions': [
+        for (final exception in recurrenceExceptions)
+          Timestamp.fromDate(exception),
+      ],
+      'recurrenceUntil': recurrenceUntil == null
+          ? null
+          : Timestamp.fromDate(recurrenceUntil!),
     };
   }
 
@@ -247,6 +279,8 @@ final class Event {
       calendarId: calendarId,
       recurrenceFrequency: recurrenceFrequency,
       recurrenceCount: recurrenceCount,
+      recurrenceExceptions: recurrenceExceptions.toList(),
+      recurrenceUntil: recurrenceUntil,
       recurrenceMasterStartAt: this.startAt,
       recurrenceMasterEndAt: this.endAt,
     );
@@ -272,6 +306,8 @@ final class Event {
       calendarId: calendarId,
       recurrenceFrequency: recurrenceFrequency,
       recurrenceCount: recurrenceCount,
+      recurrenceExceptions: recurrenceExceptions.toList(),
+      recurrenceUntil: recurrenceUntil,
     );
   }
 
@@ -293,6 +329,8 @@ final class Event {
     String? calendarId,
     Object? recurrenceFrequency = _unset,
     Object? recurrenceCount = _unset,
+    List<DateTime>? recurrenceExceptions,
+    Object? recurrenceUntil = _unset,
   }) {
     return Event(
       id: id ?? this.id,
@@ -316,6 +354,11 @@ final class Event {
       recurrenceCount: identical(recurrenceCount, _unset)
           ? this.recurrenceCount
           : recurrenceCount as int?,
+      recurrenceExceptions:
+          recurrenceExceptions ?? this.recurrenceExceptions.toList(),
+      recurrenceUntil: identical(recurrenceUntil, _unset)
+          ? this.recurrenceUntil
+          : recurrenceUntil as DateTime?,
       recurrenceMasterStartAt: recurrenceMasterStartAt,
       recurrenceMasterEndAt: recurrenceMasterEndAt,
     );
@@ -344,4 +387,14 @@ Map<String, List<int>> _reminderOffsetsFromFirestore(Object? value) {
         .toList();
   }
   return offsetsByUid;
+}
+
+/// Firestore の `recurrenceExceptions`（Timestamp の配列）を UTC の [DateTime]
+/// 一覧として読む（#86）。キー欠落・非配列・Timestamp 以外の要素は無視する。
+List<DateTime> _recurrenceExceptionsFromFirestore(Object? value) {
+  if (value is! List) return const [];
+  return [
+    for (final item in value)
+      if (item is Timestamp) item.toDate().toUtc(),
+  ];
 }

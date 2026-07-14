@@ -515,6 +515,132 @@ void main() {
     expect(data['deleted'], true);
   });
 
+  // #86: 繰り返し予定の「この予定のみ削除」は、その発生日を例外日に追記する。
+  testWidgets('繰り返し予定を「この予定のみ削除」すると例外日が追記される', (tester) async {
+    final firestore = await _seedMember();
+    final start = DateTime(2026, 7, 5, 9);
+    final master = Event.create(
+      title: '毎週の練習',
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const {},
+      updatedBy: 'me',
+      now: start,
+      calendarId: testCalendarId,
+      recurrenceFrequency: EventRecurrenceFrequency.weekly,
+    );
+    await firestore
+        .collection('events')
+        .doc(master.id)
+        .set(master.toFirestore(useServerTimestamp: false));
+
+    // 2 回目（7/12）の発生日を表示していた状態で削除する。
+    final occurrenceStart = start.add(const Duration(days: 7));
+    final occurrence = master.occurrenceAt(
+      startAt: occurrenceStart,
+      endAt: occurrenceStart.add(const Duration(hours: 1)),
+    );
+    await _openEditor(tester, firestore, EventEditArgs.edit(occurrence));
+
+    await _tapVisible(tester, find.byIcon(Icons.delete_outline));
+    await _tapVisible(tester, find.text('この予定のみ削除'));
+
+    final data = (await _events(firestore)).single.data();
+    // 元ドキュメントは残り（削除フラグは立たず）、例外日だけが増える。
+    expect(data['deleted'], false);
+    final exceptions = data['recurrenceExceptions'] as List<dynamic>;
+    expect(exceptions, hasLength(1));
+    expect(
+      (exceptions.single as Timestamp).toDate().toUtc(),
+      occurrenceStart.toUtc(),
+    );
+  });
+
+  // #86: 「これ以降の予定を削除」は、その発生日を打ち切り日に設定する。
+  testWidgets('繰り返し予定を「これ以降の予定を削除」すると打ち切り日が設定される', (tester) async {
+    final firestore = await _seedMember();
+    final start = DateTime(2026, 7, 5, 9);
+    final master = Event.create(
+      title: '毎週の練習',
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const {},
+      updatedBy: 'me',
+      now: start,
+      calendarId: testCalendarId,
+      recurrenceFrequency: EventRecurrenceFrequency.weekly,
+    );
+    await firestore
+        .collection('events')
+        .doc(master.id)
+        .set(master.toFirestore(useServerTimestamp: false));
+
+    final occurrenceStart = start.add(const Duration(days: 14));
+    final occurrence = master.occurrenceAt(
+      startAt: occurrenceStart,
+      endAt: occurrenceStart.add(const Duration(hours: 1)),
+    );
+    await _openEditor(tester, firestore, EventEditArgs.edit(occurrence));
+
+    await _tapVisible(tester, find.byIcon(Icons.delete_outline));
+    await _tapVisible(tester, find.text('これ以降の予定を削除'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['deleted'], false);
+    expect(
+      (data['recurrenceUntil'] as Timestamp).toDate().toUtc(),
+      occurrenceStart.toUtc(),
+    );
+  });
+
+  // #86: 「すべての予定を削除」は元ドキュメントごとソフト削除する。
+  testWidgets('繰り返し予定を「すべての予定を削除」するとソフト削除される', (tester) async {
+    final firestore = await _seedMember();
+    final start = DateTime(2026, 7, 5, 9);
+    final master = Event.create(
+      title: '毎週の練習',
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const {},
+      updatedBy: 'me',
+      now: start,
+      calendarId: testCalendarId,
+      recurrenceFrequency: EventRecurrenceFrequency.weekly,
+    );
+    await firestore
+        .collection('events')
+        .doc(master.id)
+        .set(master.toFirestore(useServerTimestamp: false));
+
+    final occurrenceStart = start.add(const Duration(days: 7));
+    final occurrence = master.occurrenceAt(
+      startAt: occurrenceStart,
+      endAt: occurrenceStart.add(const Duration(hours: 1)),
+    );
+    await _openEditor(tester, firestore, EventEditArgs.edit(occurrence));
+
+    await _tapVisible(tester, find.byIcon(Icons.delete_outline));
+    await _tapVisible(tester, find.text('すべての予定を削除'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['deleted'], true);
+  });
+
   testWidgets('新規作成した予定にはカレンダーIDが保存される', (tester) async {
     final firestore = await _seedCalendars(await _seedMember());
     await _openEditor(

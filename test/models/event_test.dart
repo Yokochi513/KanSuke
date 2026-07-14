@@ -24,6 +24,8 @@ void main() {
       calendarId: 'calendar-1',
       recurrenceFrequency: EventRecurrenceFrequency.weekly,
       recurrenceCount: 5,
+      recurrenceExceptions: [DateTime.utc(2026, 7, 17, 1)],
+      recurrenceUntil: DateTime.utc(2026, 8, 14, 1),
     );
   }
 
@@ -50,6 +52,8 @@ void main() {
     expect(restored.calendarId, event.calendarId);
     expect(restored.recurrenceFrequency, event.recurrenceFrequency);
     expect(restored.recurrenceCount, event.recurrenceCount);
+    expect(restored.recurrenceExceptions, event.recurrenceExceptions);
+    expect(restored.recurrenceUntil, event.recurrenceUntil);
     expect(map['id'], event.id);
   });
 
@@ -129,6 +133,18 @@ void main() {
     expect(restored.recurrenceCount, isNull);
   });
 
+  // #86: 例外日・打ち切り日の導入前ドキュメントは、それぞれ空・null にフォールバックする。
+  test('recurrenceExceptions/Untilが未保存のドキュメントは空とnullにフォールバックする', () {
+    final map = buildEvent().toFirestore(useServerTimestamp: false);
+    map.remove('recurrenceExceptions');
+    map.remove('recurrenceUntil');
+
+    final restored = Event.fromMap('event-1', map);
+
+    expect(restored.recurrenceExceptions, isEmpty);
+    expect(restored.recurrenceUntil, isNull);
+  });
+
   test('表示用の繰り返し発生日は編集時に元の日時へ戻せる', () {
     final event = buildEvent();
     final occurrence = event.occurrenceAt(
@@ -140,6 +156,36 @@ void main() {
     expect(occurrence.recurrenceMasterStartAt, event.startAt);
     expect(occurrence.masterEventForEditing.startAt, event.startAt);
     expect(occurrence.masterEventForEditing.endAt, event.endAt);
+  });
+
+  // #86: 展開した発生日・編集用の元ドキュメントは、例外日と打ち切り日を保持する。
+  test('occurrenceAtとmasterEventForEditingは例外日と打ち切り日を引き継ぐ', () {
+    final event = buildEvent();
+    final occurrence = event.occurrenceAt(
+      startAt: DateTime.utc(2026, 7, 17, 1),
+      endAt: DateTime.utc(2026, 7, 17, 2),
+    );
+
+    expect(occurrence.recurrenceExceptions, event.recurrenceExceptions);
+    expect(occurrence.recurrenceUntil, event.recurrenceUntil);
+    expect(
+      occurrence.masterEventForEditing.recurrenceExceptions,
+      event.recurrenceExceptions,
+    );
+    expect(
+      occurrence.masterEventForEditing.recurrenceUntil,
+      event.recurrenceUntil,
+    );
+  });
+
+  // #86: 予定編集での保存（copyWith）で例外日・打ち切り日が消えない。
+  test('copyWithは例外日と打ち切り日を保持する', () {
+    final event = buildEvent();
+
+    final updated = event.copyWith(title: '変更後');
+
+    expect(updated.recurrenceExceptions, event.recurrenceExceptions);
+    expect(updated.recurrenceUntil, event.recurrenceUntil);
   });
 
   test('memberIdsは参加者を重複なく並べる', () {

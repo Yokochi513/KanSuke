@@ -17,6 +17,8 @@ Event _buildEvent({
   String calendarId = testCalendarId,
   EventRecurrenceFrequency? recurrenceFrequency,
   int? recurrenceCount,
+  List<DateTime> recurrenceExceptions = const [],
+  DateTime? recurrenceUntil,
 }) {
   return Event(
     id: id,
@@ -38,6 +40,8 @@ Event _buildEvent({
     calendarId: calendarId,
     recurrenceFrequency: recurrenceFrequency,
     recurrenceCount: recurrenceCount,
+    recurrenceExceptions: recurrenceExceptions,
+    recurrenceUntil: recurrenceUntil,
   );
 }
 
@@ -308,5 +312,98 @@ void main() {
         .first;
 
     expect(events.map((event) => event.id), ['ok']);
+  });
+
+  // #86: 「この予定のみ削除」= 例外日の除外。
+  test('excludeOccurrence は指定発生日だけを展開から除外する', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+      ),
+      updatedBy: 'me',
+    );
+
+    // 7/19 の回だけ削除する。
+    await repository.excludeOccurrence(
+      'weekly',
+      DateTime.utc(2026, 7, 19, 9),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    final starts = events.map((event) => event.startAt).toList();
+    expect(starts, isNot(contains(DateTime.utc(2026, 7, 19, 9))));
+    // 前後の回（7/5・7/12・7/26）は残る。
+    expect(starts, contains(DateTime.utc(2026, 7, 12, 9)));
+    expect(starts, contains(DateTime.utc(2026, 7, 26, 9)));
+  });
+
+  // #86: 「これ以降の予定を削除」= 打ち切り日（排他境界）。
+  test('truncateRecurrenceFrom は指定発生日以降を展開しない', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+      ),
+      updatedBy: 'me',
+    );
+
+    // 7/19 以降を削除する（7/19 自身も含まれない）。
+    await repository.truncateRecurrenceFrom(
+      'weekly',
+      DateTime.utc(2026, 7, 19, 9),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    expect(events.map((event) => event.startAt), [
+      DateTime.utc(2026, 7, 5, 9),
+      DateTime.utc(2026, 7, 12, 9),
+    ]);
+  });
+
+  // #86: 例外日と打ち切り日は同時に効く。
+  test('watchRange は例外日を除外しつつ打ち切り日以降も止める', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+        recurrenceExceptions: [DateTime.utc(2026, 7, 12, 9)],
+        recurrenceUntil: DateTime.utc(2026, 7, 26, 9),
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    // 7/12 は例外、7/26 以降は打ち切り。残るのは 7/5 と 7/19。
+    expect(events.map((event) => event.startAt), [
+      DateTime.utc(2026, 7, 5, 9),
+      DateTime.utc(2026, 7, 19, 9),
+    ]);
   });
 }
