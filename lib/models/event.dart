@@ -46,7 +46,7 @@ final class Event {
     required this.allDay,
     required this.type,
     required this.memo,
-    required List<int> reminderOffsets,
+    required Map<String, List<int>> reminderOffsets,
     required this.updatedBy,
     required this.createdAt,
     required this.updatedAt,
@@ -57,7 +57,10 @@ final class Event {
     this.recurrenceMasterStartAt,
     this.recurrenceMasterEndAt,
   }) : participantIds = UnmodifiableListView(participantIds),
-       reminderOffsets = UnmodifiableListView(reminderOffsets);
+       reminderOffsets = UnmodifiableMapView({
+         for (final entry in reminderOffsets.entries)
+           entry.key: UnmodifiableListView(entry.value),
+       });
 
   factory Event.create({
     required String title,
@@ -68,7 +71,7 @@ final class Event {
     required bool allDay,
     required EventType type,
     required String memo,
-    required List<int> reminderOffsets,
+    required Map<String, List<int>> reminderOffsets,
     required String updatedBy,
     required DateTime now,
     required String calendarId,
@@ -121,11 +124,9 @@ final class Event {
       allDay: data['allDay'] as bool,
       type: EventType.fromFirestore(data['type'] as String),
       memo: data['memo'] as String,
-      // リマインド機能導入前や、何らかの理由でキーが欠落したドキュメントを
-      // 読んでも例外にならないよう空リストにフォールバックする。
-      reminderOffsets: (data['reminderOffsets'] as List<Object?>? ?? const [])
-          .map((offset) => offset as int)
-          .toList(),
+      // FR-5: リマインドは各自が自分の分だけ設定する（uid → 分の map、Issue #14）。
+      // 旧形式（予定で共有する number[]）とキー欠落は「設定なし」として読む。
+      reminderOffsets: _reminderOffsetsFromFirestore(data['reminderOffsets']),
       updatedBy: data['updatedBy'] as String,
       createdAt: dateTimeFromFirestore(data['createdAt'], 'createdAt'),
       // updatedAt は serverTimestamp() 書き込みのため、サーバー確定前は
@@ -159,7 +160,12 @@ final class Event {
   final bool allDay;
   final EventType type;
   final String memo;
-  final List<int> reminderOffsets;
+
+  /// リマインドの「開始 n 分前」（FR-5、Issue #14）。
+  ///
+  /// キーは設定した本人の uid。通知はその本人にだけ届くため、他のメンバーの
+  /// 設定を代わりに変えることはしない（編集時もそのまま引き継ぐ）。
+  final Map<String, List<int>> reminderOffsets;
   final String updatedBy;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -205,7 +211,10 @@ final class Event {
       'allDay': allDay,
       'type': type.name,
       'memo': memo,
-      'reminderOffsets': reminderOffsets.toList(),
+      'reminderOffsets': {
+        for (final entry in reminderOffsets.entries)
+          entry.key: entry.value.toList(),
+      },
       'updatedBy': updatedBy,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': updatedAtForFirestore(
@@ -276,7 +285,7 @@ final class Event {
     bool? allDay,
     EventType? type,
     String? memo,
-    List<int>? reminderOffsets,
+    Map<String, List<int>>? reminderOffsets,
     String? updatedBy,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -311,4 +320,28 @@ final class Event {
       recurrenceMasterEndAt: recurrenceMasterEndAt,
     );
   }
+
+  /// [uid] が自分に設定しているリマインド（開始 n 分前）。
+  List<int> reminderOffsetsFor(String uid) =>
+      reminderOffsets[uid] ?? const <int>[];
+}
+
+/// Firestore の `reminderOffsets` を `{uid: [分, ...]}` として読む（Issue #14）。
+///
+/// 旧形式（予定で共有する `number[]`）とキー欠落は「設定なし」として扱う
+/// （旧データは移行せず破棄）。Firestore の number は int 以外の num 実装で
+/// 届く可能性があるため、型変換の境界をここで閉じる。
+Map<String, List<int>> _reminderOffsetsFromFirestore(Object? value) {
+  if (value is! Map) return const {};
+  final offsetsByUid = <String, List<int>>{};
+  for (final entry in value.entries) {
+    final uid = entry.key;
+    final offsets = entry.value;
+    if (uid is! String || offsets is! List) continue;
+    offsetsByUid[uid] = offsets
+        .whereType<num>()
+        .map((offset) => offset.toInt())
+        .toList();
+  }
+  return offsetsByUid;
 }

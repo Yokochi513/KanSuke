@@ -20,7 +20,7 @@ Event _event({
     allDay: false,
     type: EventType.confirmed,
     memo: '',
-    reminderOffsets: const [],
+    reminderOffsets: const {},
     updatedBy: creator,
     createdAt: DateTime(2026, 7, 11),
     updatedAt: DateTime(2026, 7, 11),

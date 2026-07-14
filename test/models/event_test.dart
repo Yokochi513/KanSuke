@@ -14,7 +14,9 @@ void main() {
       allDay: false,
       type: EventType.tentative,
       memo: '診察券を持参',
-      reminderOffsets: const [60, 1440],
+      reminderOffsets: const {
+        'user-1': [60, 1440],
+      },
       updatedBy: 'user-1',
       createdAt: DateTime.utc(2026, 7, 1),
       updatedAt: DateTime.utc(2026, 7, 2),
@@ -72,6 +74,30 @@ void main() {
     final restored = Event.fromMap('event-1', map);
 
     expect(restored.updatedAt, isNotNull);
+  });
+
+  // FR-5 / Issue #14: リマインドは各自が自分の分だけ設定する（uid → 分の map）。
+  test('reminderOffsetsは設定した本人のuidごとに読み書きする', () {
+    final event = buildEvent();
+
+    final map = event.toFirestore(useServerTimestamp: false);
+    final restored = Event.fromMap(event.id, map);
+
+    expect(map['reminderOffsets'], {
+      'user-1': [60, 1440],
+    });
+    expect(restored.reminderOffsetsFor('user-1'), [60, 1440]);
+    expect(restored.reminderOffsetsFor('user-2'), isEmpty);
+  });
+
+  // 旧形式（予定で共有する number[]）は移行せず破棄する（Issue #14）。
+  test('旧形式のreminderOffsets（配列）は設定なしとして読む', () {
+    final map = buildEvent().toFirestore(useServerTimestamp: false);
+    map['reminderOffsets'] = const [60, 1440];
+
+    final restored = Event.fromMap('event-1', map);
+
+    expect(restored.reminderOffsets, isEmpty);
   });
 
   test('participantIdsが未保存の既存ドキュメントは空リストにフォールバックする', () {
@@ -141,7 +167,7 @@ void main() {
       allDay: false,
       type: EventType.tentative,
       memo: '',
-      reminderOffsets: const [],
+      reminderOffsets: const {},
       updatedBy: 'user-1',
       now: now,
       calendarId: 'calendar-1',
