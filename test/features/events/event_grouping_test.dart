@@ -25,7 +25,7 @@ Event _event({
     allDay: false,
     type: type,
     memo: '',
-    reminderOffsets: const [],
+    reminderOffsets: const {},
     updatedBy: creator,
     createdAt: start,
     updatedAt: start,

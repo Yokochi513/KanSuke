@@ -28,7 +28,8 @@ enum _RecurrenceCountMode { infinite, specified }
 /// 予定編集画面（FR-1 / FR-3 / FR-5、基本設計 §6.1・§6.3・§3.2）。
 ///
 /// 予定の作成・編集・ソフト削除を行う。仮↔確定はトグル1操作で切替、
-/// リマインドは `reminderOffsets` の保存まで（実配信は Functions・別Issue）。
+/// リマインドは各自が自分の分だけ設定する（`reminderOffsets` は uid → 分の map。
+/// 実配信は Functions の onEventWrite / sendDueReminders、Issue #14）。
 class EventEditScreen extends ConsumerStatefulWidget {
   const EventEditScreen({super.key});
 
@@ -52,7 +53,12 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   EventType _type = EventType.tentative;
   late String _calendarId;
   final Set<String> _participantIds = {};
-  final Set<int> _reminderOffsets = {};
+
+  /// リマインドの設定（uid → 開始 n 分前）。FR-5 / Issue #14。
+  ///
+  /// 画面で編集できるのは**自分の分だけ**（通知は設定した本人にしか届かない）。
+  /// 他のメンバーの設定は編集時にそのまま引き継ぐ。
+  final Map<String, Set<int>> _reminderOffsets = {};
   _RecurrenceFrequencyOption _recurrenceOption =
       _RecurrenceFrequencyOption.none;
   _RecurrenceCountMode _recurrenceCountMode = _RecurrenceCountMode.infinite;
@@ -122,7 +128,9 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     _endDate = DateUtils.dateOnly(end);
     _startTime = TimeOfDay.fromDateTime(start);
     _endTime = TimeOfDay.fromDateTime(end);
-    _reminderOffsets.addAll(event.reminderOffsets);
+    for (final entry in event.reminderOffsets.entries) {
+      _reminderOffsets[entry.key] = entry.value.toSet();
+    }
   }
 
   @override
@@ -462,10 +470,17 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   }
 
   Widget _buildReminderField(AsyncValue<List<User>> membersAsync) {
+    // FR-5 / Issue #14: リマインドは各自が自分の分だけ設定する。通知は設定した
+    // 本人にしか届かないため、他のメンバーの設定はここに出さず、保存時も温存する。
+    final uid = ref.watch(currentUidProvider);
+    final mine = uid == null
+        ? const <int>{}
+        : (_reminderOffsets[uid] ?? const <int>{});
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('リマインド'),
+        const Text('リマインド（自分の通知）'),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -473,16 +488,27 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
             for (final entry in _reminderPresets.entries)
               FilterChip(
                 label: Text(entry.value),
-                selected: _reminderOffsets.contains(entry.key),
-                onSelected: (selected) => setState(() {
-                  if (selected) {
-                    _reminderOffsets.add(entry.key);
-                  } else {
-                    _reminderOffsets.remove(entry.key);
-                  }
-                }),
+                selected: mine.contains(entry.key),
+                onSelected: uid == null
+                    ? null
+                    : (selected) => setState(() {
+                        final offsets = _reminderOffsets.putIfAbsent(
+                          uid,
+                          () => <int>{},
+                        );
+                        if (selected) {
+                          offsets.add(entry.key);
+                        } else {
+                          offsets.remove(entry.key);
+                        }
+                      }),
               ),
           ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'ほかのメンバーには、その人が設定したリマインドだけが届きます',
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         _buildCreatorCaption(membersAsync),
       ],
@@ -581,6 +607,14 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           _endTime.minute,
         );
 
+  /// 保存用のリマインド設定（uid → 開始 n 分前）。空の uid は残さない。
+  Map<String, List<int>> _reminderOffsetsForSave() {
+    return {
+      for (final entry in _reminderOffsets.entries)
+        if (entry.value.isNotEmpty) entry.key: entry.value.toList()..sort(),
+    };
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_endAt.isBefore(_startAt)) {
@@ -595,7 +629,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
     setState(() => _saving = true);
     final repository = ref.read(eventRepositoryProvider);
-    final offsets = _reminderOffsets.toList()..sort();
+    final offsets = _reminderOffsetsForSave();
     final participantIds = _participantIds.toList()..sort();
 
     try {
@@ -748,7 +782,10 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           allDay: source.allDay,
           type: source.type,
           memo: source.memo,
-          reminderOffsets: source.reminderOffsets.toList(),
+          reminderOffsets: {
+            for (final entry in source.reminderOffsets.entries)
+              entry.key: entry.value.toList(),
+          },
           updatedBy: uid,
           now: DateTime.now(),
           calendarId: source.calendarId,
