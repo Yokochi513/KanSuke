@@ -28,7 +28,9 @@ Event _buildEvent({
     allDay: false,
     type: type,
     memo: '',
-    reminderOffsets: const [60],
+    reminderOffsets: {
+      creatorId: const [60],
+    },
     updatedBy: creatorId,
     createdAt: startAt,
     updatedAt: startAt,

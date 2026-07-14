@@ -274,7 +274,54 @@ void main() {
 
     final data = (await _events(firestore)).single.data();
     expect(data['type'], 'confirmed');
-    expect(data['reminderOffsets'], [30]);
+    expect(data['reminderOffsets'], {
+      'me': [30],
+    });
+  });
+
+  // FR-5 / Issue #14: リマインドは各自が自分の分だけ設定する。通知は設定した
+  // 本人にしか届かないため、他メンバーの設定を編集で壊してはいけない。
+  testWidgets('リマインドは自分の分だけ編集し、他メンバーの設定は温存する', (tester) async {
+    final firestore = await _seedMembers();
+    final start = DateTime(2026, 7, 5, 9);
+    final event = Event.create(
+      title: '通院',
+      creatorId: 'me',
+      participantIds: const ['me', 'other'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const {
+        'me': [30],
+        'other': [60],
+      },
+      updatedBy: 'me',
+      now: start,
+      calendarId: testCalendarId,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+
+    await _openEditor(tester, firestore, EventEditArgs.edit(event));
+
+    // 表示されるのは自分の設定だけ（「30分前」が選択済み）。
+    final chip = tester.widget<FilterChip>(
+      find.widgetWithText(FilterChip, '30分前'),
+    );
+    expect(chip.selected, isTrue);
+
+    await _tapVisible(tester, find.text('10分前'));
+    await _tapVisible(tester, find.text('保存'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['reminderOffsets'], {
+      'me': [10, 30],
+      'other': [60],
+    });
   });
 
   testWidgets('時刻選択は24時間表記の縦スクロールピッカーで更新する', (tester) async {
@@ -314,7 +361,7 @@ void main() {
       allDay: false,
       type: EventType.tentative,
       memo: '',
-      reminderOffsets: const [],
+      reminderOffsets: const {},
       updatedBy: 'me',
       now: originalStartAt,
       calendarId: testCalendarId,
@@ -372,7 +419,7 @@ void main() {
       allDay: false,
       type: EventType.tentative,
       memo: '',
-      reminderOffsets: const [],
+      reminderOffsets: const {},
       updatedBy: 'me',
       now: start,
       calendarId: testCalendarId,
@@ -405,7 +452,7 @@ void main() {
       allDay: false,
       type: EventType.tentative,
       memo: '',
-      reminderOffsets: const [],
+      reminderOffsets: const {},
       updatedBy: 'other',
       now: start,
       calendarId: testCalendarId,
@@ -449,7 +496,7 @@ void main() {
       allDay: false,
       type: EventType.confirmed,
       memo: '',
-      reminderOffsets: const [],
+      reminderOffsets: const {},
       updatedBy: 'me',
       now: start,
       calendarId: testCalendarId,
@@ -495,7 +542,7 @@ void main() {
       allDay: false,
       type: EventType.tentative,
       memo: '',
-      reminderOffsets: const [],
+      reminderOffsets: const {},
       updatedBy: 'me',
       now: start,
       calendarId: testCalendarId,
@@ -522,7 +569,9 @@ void main() {
       allDay: false,
       type: EventType.confirmed,
       memo: 'メモあり',
-      reminderOffsets: const [30],
+      reminderOffsets: const {
+        'me': [30],
+      },
       updatedBy: 'me',
       now: start,
       calendarId: testCalendarId,
@@ -568,7 +617,9 @@ void main() {
       expect(copy['participantIds'], ['me']);
       expect(copy['type'], 'confirmed');
       expect(copy['memo'], 'メモあり');
-      expect(copy['reminderOffsets'], [30]);
+      expect(copy['reminderOffsets'], {
+        'me': [30],
+      });
       expect(copy['calendarId'], testCalendarId);
       // 時間幅は元のまま（1時間）。
       final copyEnd = (copy['endAt'] as Timestamp).toDate();
@@ -589,7 +640,7 @@ void main() {
       allDay: false,
       type: EventType.tentative,
       memo: '',
-      reminderOffsets: const [],
+      reminderOffsets: const {},
       updatedBy: 'me',
       now: start,
       calendarId: testCalendarId,
