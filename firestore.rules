@@ -18,6 +18,49 @@ service cloud.firestore {
           get(/databases/$(database)/documents/calendars/$(calendarId)).data.memberIds;
     }
 
+    // Issue #117: 予定ドキュメントの必須フィールドの存在と型を検証する。これが無いと
+    // title と deleted だけの不正なドキュメントが書き込めてしまい、クライアントは
+    // パースに失敗して表示だけ消える（不正データは DB に残り続ける）。
+    //
+    // 検証内容は、モデル（lib/models/event.dart の Event.fromMap）が
+    // 「フォールバックを持たず必須とするフィールド」に一致させている。こうすると
+    // 「Rules が通した予定は必ずモデルでパースできる」「モデルが読めるレガシー予定
+    // （旧 ownerId 名・participantIds 欠落・reminderOffsets が旧 number[] 形式）の
+    // 更新（ソフト削除など）は拒否しない」の両立になる。
+    //
+    // create でも update でも request.resource.data は書き込み後の完全な
+    // ドキュメントを表すため、同じ関数で両方を検証できる（部分更新のマージ後の
+    // 姿を検証するので、既存の正当な予定を不正な形へ上書きすることも防げる）。
+    function isWellFormedEvent(data) {
+      return data.keys().hasAll([
+            'title', 'startAt', 'endAt', 'allDay', 'type', 'memo',
+            'updatedBy', 'createdAt', 'updatedAt', 'deleted', 'calendarId'
+          ])
+        && data.title is string
+        && data.startAt is timestamp
+        && data.endAt is timestamp
+        && data.allDay is bool
+        && data.type in ['tentative', 'confirmed']
+        && data.memo is string
+        && data.updatedBy is string
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.deleted is bool
+        && data.calendarId is string
+        // creatorId は必須。旧 ownerId 名のドキュメントも許容する（モデルと同じ後方互換）。
+        && ((data.get('creatorId', '') is string && data.get('creatorId', '') != '')
+            || (data.get('ownerId', '') is string && data.get('ownerId', '') != ''))
+        // participantIds / recurrence 系は導入前のドキュメントには無いため任意。
+        // 存在する場合のみ型を検証する（モデルのフォールバックと同じ扱い）。
+        && (!('participantIds' in data) || data.participantIds is list)
+        && (data.get('recurrenceFrequency', null) == null
+            || data.recurrenceFrequency in ['weekly', 'monthly', 'yearly'])
+        && (data.get('recurrenceCount', null) == null
+            || data.recurrenceCount is number)
+        && (data.get('recurrenceUntil', null) == null
+            || data.recurrenceUntil is timestamp);
+    }
+
     // FR-8: カレンダーのオーナー（Issue #89）。ownerId のバックフィル
     // （functions/scripts/backfill-calendar-owner-id.js）が済むまでの後方互換として、
     // 欠損時は作成者（creatorId）をオーナーとみなす。
@@ -69,8 +112,13 @@ service cloud.firestore {
     // フォールバックは、移行スクリプト（functions/scripts/migrate-default-calendar.js）
     // で全予定に calendarId が実在するようになったため廃止した。
     match /events/{eventId} {
-      allow read, update, delete: if isCalendarMember(resource.data.calendarId);
-      allow create: if isCalendarMember(request.resource.data.calendarId);
+      allow read, delete: if isCalendarMember(resource.data.calendarId);
+      // Issue #117: 参加者チェックに加え、書き込み後の姿が正しいスキーマである
+      // ことを検証する。必須フィールドを欠いた不正なドキュメントを弾く。
+      allow update: if isCalendarMember(resource.data.calendarId)
+        && isWellFormedEvent(request.resource.data);
+      allow create: if isCalendarMember(request.resource.data.calendarId)
+        && isWellFormedEvent(request.resource.data);
     }
 
     match /reminders/{reminderId} {
