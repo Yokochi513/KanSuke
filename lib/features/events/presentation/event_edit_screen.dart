@@ -25,6 +25,9 @@ enum _RecurrenceFrequencyOption { none, weekly, monthly, yearly }
 
 enum _RecurrenceCountMode { infinite, specified }
 
+/// 繰り返し予定の削除範囲（#86）。この予定のみ / これ以降 / すべて。
+enum _RecurringDeleteScope { thisOnly, thisAndFollowing, all }
+
 /// 予定編集画面（FR-1 / FR-3 / FR-5、基本設計 §6.1・§6.3・§3.2）。
 ///
 /// 予定の作成・編集・ソフト削除を行う。仮↔確定はトグル1操作で切替、
@@ -45,6 +48,10 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
 
   bool _initialized = false;
   Event? _editing; // 編集対象（新規は null）
+
+  /// 削除時に「この予定のみ / これ以降」の対象発生日を特定するための、展開前の
+  /// 発生日（表示していたインスタンス）の開始日時（#86）。単発予定では null。
+  DateTime? _occurrenceStartAt;
   late DateTime _startDate;
   late DateTime _endDate;
   late TimeOfDay _startTime;
@@ -88,6 +95,9 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     if (event != null) {
       final editingEvent = event.masterEventForEditing;
       _editing = editingEvent;
+      // #86: 削除の範囲選択で対象の発生日を特定するため、元の（展開後の）
+      // 発生日の開始日時を控える。単発予定・元ドキュメントそのものなら null。
+      _occurrenceStartAt = event.isRecurrenceOccurrence ? event.startAt : null;
       _prefillFrom(editingEvent);
       _setRecurrenceState(editingEvent);
     } else {
@@ -666,7 +676,10 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           recurrenceFrequency: _recurrenceFrequencyForSave(),
           recurrenceCount: _recurrenceCountForSave(),
         );
-        await repository.update(updated, updatedBy: uid);
+        // Issue #114: 編集前の値（editing）を渡し、変更したフィールドだけを
+        // 書き込む（フィールド単位 LWW）。同時編集で他端末が別フィールドを
+        // 変えていても失われないようにする。
+        await repository.update(updated, previous: editing, updatedBy: uid);
       }
       if (mounted) Navigator.pop(context);
     } on Object catch (error, stackTrace) {
@@ -815,6 +828,24 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   }
 
   Future<void> _confirmDelete() async {
+    final editing = _editing;
+    if (editing == null) return;
+    final uid = ref.read(currentUidProvider);
+    if (uid == null) {
+      _showSnack('サインインが必要です');
+      return;
+    }
+
+    // #86: 繰り返し予定は削除範囲（この予定のみ / これ以降 / すべて）を選ばせる。
+    // 単発予定は従来どおり単純な確認だけにする。
+    if (editing.isRecurring) {
+      await _confirmDeleteRecurring(editing, uid);
+    } else {
+      await _confirmDeleteSingle(editing, uid);
+    }
+  }
+
+  Future<void> _confirmDeleteSingle(Event editing, String uid) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -833,16 +864,81 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     );
     if (confirmed != true) return;
 
-    final uid = ref.read(currentUidProvider);
-    if (uid == null) {
-      _showSnack('サインインが必要です');
-      return;
-    }
+    await _runDelete(
+      () => ref
+          .read(eventRepositoryProvider)
+          .softDelete(editing.id, updatedBy: uid),
+    );
+  }
+
+  /// 繰り返し予定の削除範囲を選ばせ、選択に応じて削除する（#86）。
+  ///
+  /// - この予定のみ: その発生日を例外日（EXDATE 相当）として除外する。
+  /// - これ以降: その発生日を打ち切り日に設定する（先頭発生日ならすべて削除に帰着）。
+  /// - すべて: 元ドキュメントごとソフト削除する。
+  Future<void> _confirmDeleteRecurring(Event editing, String uid) async {
+    final scope = await showDialog<_RecurringDeleteScope>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('繰り返し予定の削除'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.pop(context, _RecurringDeleteScope.thisOnly),
+            child: const Text('この予定のみ削除'),
+          ),
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.pop(context, _RecurringDeleteScope.thisAndFollowing),
+            child: const Text('これ以降の予定を削除'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, _RecurringDeleteScope.all),
+            child: const Text('すべての予定を削除'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+        ],
+      ),
+    );
+    if (scope == null) return;
+
+    final repository = ref.read(eventRepositoryProvider);
+    // masterEventForEditing 済みなので editing.startAt は元の開始日時（先頭発生日）。
+    final occurrenceStart = _occurrenceStartAt ?? editing.startAt;
+    final isFirstOccurrence = !occurrenceStart.isAfter(editing.startAt);
+
+    await _runDelete(() {
+      switch (scope) {
+        case _RecurringDeleteScope.thisOnly:
+          return repository.excludeOccurrence(
+            editing.id,
+            occurrenceStart,
+            updatedBy: uid,
+          );
+        case _RecurringDeleteScope.thisAndFollowing:
+          // 先頭の発生日から消すと 1 件も残らないため、すべて削除に帰着させる。
+          if (isFirstOccurrence) {
+            return repository.softDelete(editing.id, updatedBy: uid);
+          }
+          return repository.truncateRecurrenceFrom(
+            editing.id,
+            occurrenceStart,
+            updatedBy: uid,
+          );
+        case _RecurringDeleteScope.all:
+          return repository.softDelete(editing.id, updatedBy: uid);
+      }
+    });
+  }
+
+  /// 削除処理の共通ラッパ。保存中フラグ・画面クローズ・失敗時の通知をまとめる。
+  Future<void> _runDelete(Future<void> Function() action) async {
     setState(() => _saving = true);
     try {
-      await ref
-          .read(eventRepositoryProvider)
-          .softDelete(_editing!.id, updatedBy: uid);
+      await action();
       if (mounted) Navigator.pop(context);
     } on Object catch (error, stackTrace) {
       AppLogger.error(

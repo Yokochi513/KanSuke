@@ -17,6 +17,8 @@ Event _buildEvent({
   String calendarId = testCalendarId,
   EventRecurrenceFrequency? recurrenceFrequency,
   int? recurrenceCount,
+  List<DateTime> recurrenceExceptions = const [],
+  DateTime? recurrenceUntil,
 }) {
   return Event(
     id: id,
@@ -38,6 +40,8 @@ Event _buildEvent({
     calendarId: calendarId,
     recurrenceFrequency: recurrenceFrequency,
     recurrenceCount: recurrenceCount,
+    recurrenceExceptions: recurrenceExceptions,
+    recurrenceUntil: recurrenceUntil,
   );
 }
 
@@ -79,6 +83,7 @@ void main() {
 
     await repository.update(
       event.copyWith(title: '変更後', creatorId: 'creator-2'),
+      previous: event,
       updatedBy: 'me',
     );
 
@@ -86,6 +91,59 @@ void main() {
     expect(raw['title'], '変更後');
     expect(raw['creatorId'], 'creator-1');
     expect(raw['updatedBy'], 'me');
+  });
+
+  // Issue #114: 2 端末がオフラインで別々のフィールドを編集して同期しても、
+  // 後着の保存が相手の変更を巻き戻さない（フィールド単位 LWW）。
+  test('update は変更したフィールドだけを書き、他端末の別フィールド変更を消さない', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+      title: '元タイトル',
+    );
+    await repository.create(event, updatedBy: 'me');
+
+    // 端末A: タイトルだけ変更。
+    await repository.update(
+      event.copyWith(title: '端末Aのタイトル'),
+      previous: event,
+      updatedBy: 'userA',
+    );
+    // 端末B: 編集前の値（event）を基準に、メモだけ変更して後着で保存。
+    await repository.update(
+      event.copyWith(memo: '端末Bのメモ'),
+      previous: event,
+      updatedBy: 'userB',
+    );
+
+    final raw = await readRaw('evt-1');
+    // 双方の変更が残る（タイトルは端末A、メモは端末B）。
+    expect(raw['title'], '端末Aのタイトル');
+    expect(raw['memo'], '端末Bのメモ');
+    expect(raw['updatedBy'], 'userB');
+  });
+
+  test('update は変更のないフィールドを更新マップに含めない', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+    );
+    final data = event
+        .copyWith(title: '変更後')
+        .toFirestoreUpdate(event, useServerTimestamp: false);
+
+    expect(data.containsKey('title'), isTrue);
+    // 変えていないフィールドは載らない。
+    expect(data.containsKey('memo'), isFalse);
+    expect(data.containsKey('startAt'), isFalse);
+    expect(data.containsKey('participantIds'), isFalse);
+    expect(data.containsKey('calendarId'), isFalse);
+    // 監査用は常に更新する。不変・削除系フィールドは触れない。
+    expect(data.containsKey('updatedBy'), isTrue);
+    expect(data.containsKey('updatedAt'), isTrue);
+    expect(data.containsKey('creatorId'), isFalse);
+    expect(data.containsKey('deleted'), isFalse);
+    expect(data.containsKey('recurrenceExceptions'), isFalse);
   });
 
   test('setType は仮↔確定を type 更新だけで切り替える', () async {
@@ -112,6 +170,47 @@ void main() {
     await repository.softDelete('evt-1', updatedBy: 'me');
 
     expect((await readRaw('evt-1'))['deleted'], true);
+    final visible = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+    expect(visible, isEmpty);
+  });
+
+  // Issue #115: 端末Aが削除した予定を、端末Bがオフライン編集で保存しても復活しない。
+  //
+  // #114 以前は編集保存が全フィールド（deleted=false を含む）を書いていたため、
+  // 端末Bの後着保存が端末Aの削除（deleted=true）を巻き戻し、削除済み予定が復活して
+  // いた。差分更新（toFirestoreUpdate）は deleted を書かないので、後着の編集保存でも
+  // deleted は true のまま維持され、watchRange から除外され続ける（基本設計 §4.2）。
+  test('update は他端末の並行削除を巻き戻さず、削除済み予定を復活させない', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+      title: '元タイトル',
+    );
+    await repository.create(event, updatedBy: 'me');
+
+    // 端末A: 予定を削除（ソフト削除）。
+    await repository.softDelete('evt-1', updatedBy: 'userA');
+
+    // 端末B: 削除を受け取る前のスナップショット（deleted=false）を基準に、
+    // タイトルだけ変更してオフライン編集を後着で保存する。
+    await repository.update(
+      event.copyWith(title: '端末Bのタイトル'),
+      previous: event,
+      updatedBy: 'userB',
+    );
+
+    final raw = await readRaw('evt-1');
+    // タイトルは端末Bの変更が反映されるが、削除フラグは維持される。
+    expect(raw['title'], '端末Bのタイトル');
+    expect(raw['deleted'], true);
+
+    // 削除済みとして月表示から除外され続ける（復活しない）。
     final visible = await repository
         .watchRange(
           start: DateTime.utc(2026, 7, 1),
@@ -308,5 +407,98 @@ void main() {
         .first;
 
     expect(events.map((event) => event.id), ['ok']);
+  });
+
+  // #86: 「この予定のみ削除」= 例外日の除外。
+  test('excludeOccurrence は指定発生日だけを展開から除外する', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+      ),
+      updatedBy: 'me',
+    );
+
+    // 7/19 の回だけ削除する。
+    await repository.excludeOccurrence(
+      'weekly',
+      DateTime.utc(2026, 7, 19, 9),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    final starts = events.map((event) => event.startAt).toList();
+    expect(starts, isNot(contains(DateTime.utc(2026, 7, 19, 9))));
+    // 前後の回（7/5・7/12・7/26）は残る。
+    expect(starts, contains(DateTime.utc(2026, 7, 12, 9)));
+    expect(starts, contains(DateTime.utc(2026, 7, 26, 9)));
+  });
+
+  // #86: 「これ以降の予定を削除」= 打ち切り日（排他境界）。
+  test('truncateRecurrenceFrom は指定発生日以降を展開しない', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+      ),
+      updatedBy: 'me',
+    );
+
+    // 7/19 以降を削除する（7/19 自身も含まれない）。
+    await repository.truncateRecurrenceFrom(
+      'weekly',
+      DateTime.utc(2026, 7, 19, 9),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    expect(events.map((event) => event.startAt), [
+      DateTime.utc(2026, 7, 5, 9),
+      DateTime.utc(2026, 7, 12, 9),
+    ]);
+  });
+
+  // #86: 例外日と打ち切り日は同時に効く。
+  test('watchRange は例外日を除外しつつ打ち切り日以降も止める', () async {
+    await repository.create(
+      _buildEvent(
+        id: 'weekly',
+        startAt: DateTime.utc(2026, 7, 5, 9),
+        recurrenceFrequency: EventRecurrenceFrequency.weekly,
+        recurrenceExceptions: [DateTime.utc(2026, 7, 12, 9)],
+        recurrenceUntil: DateTime.utc(2026, 7, 26, 9),
+      ),
+      updatedBy: 'me',
+    );
+
+    final events = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+
+    // 7/12 は例外、7/26 以降は打ち切り。残るのは 7/5 と 7/19。
+    expect(events.map((event) => event.startAt), [
+      DateTime.utc(2026, 7, 5, 9),
+      DateTime.utc(2026, 7, 19, 9),
+    ]);
   });
 }

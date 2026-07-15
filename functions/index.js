@@ -11,6 +11,7 @@ const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {setGlobalOptions} = require("firebase-functions/v2");
 
 const {handleBeforeCreate} = require("./handlers");
+const deleteaccount = require("./deleteaccount");
 const invites = require("./invites");
 const membership = require("./membership");
 const reminders = require("./reminders");
@@ -65,6 +66,19 @@ exports.transferownership = onCall(async (request) => {
       calendarId: request.data && request.data.calendarId,
       targetUid: request.data && request.data.targetUid,
     },
+    serverTimestamp,
+  );
+});
+
+// アカウント削除（退会導線、Issue #102）。Auth ユーザーの削除・他人のカレンダーの
+// 更新・関連データの整理は Security Rules では行えないため、退会処理はこの Callable
+// （Admin SDK）に一本化する。削除対象は常に呼び出し元本人（`request.auth.uid`）。
+// 関数名は 2nd gen の制約に合わせて小文字（クライアントの呼び出し名と一致させる）。
+exports.deleteaccount = onCall(async (request) => {
+  await deleteaccount.deleteAccount(
+    admin.firestore(),
+    admin.auth(),
+    {uid: request.auth && request.auth.uid},
     serverTimestamp,
   );
 });

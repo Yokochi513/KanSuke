@@ -9,6 +9,7 @@ const {
   initializeTestEnvironment,
 } = require("@firebase/rules-unit-testing");
 const {
+  Timestamp,
   collection,
   deleteDoc,
   doc,
@@ -27,6 +28,33 @@ const rulesPath = path.resolve(__dirname, "../../firestore.rules");
 // カレンダーの ID は UUID で統一されている（Issue #93）。テストでは読みやすさのため
 // 固定文字列を使うが、'default' のような特別な ID はもう存在しない。
 const familyCalendarId = "family-calendar";
+
+// Issue #117: モデル（Event.fromMap）が必須とするフィールドをすべて備えた
+// 正当な予定。テストはこれを基に、欠損・型不正などの差分だけを上書きして使う。
+function validEvent(overrides = {}) {
+  return {
+    id: "event-1",
+    title: "家族の予定",
+    creatorId: "family-user",
+    participantIds: ["family-user"],
+    startAt: Timestamp.fromDate(new Date("2026-07-20T09:00:00Z")),
+    endAt: Timestamp.fromDate(new Date("2026-07-20T10:00:00Z")),
+    allDay: false,
+    type: "confirmed",
+    memo: "",
+    reminderOffsets: {},
+    updatedBy: "family-user",
+    createdAt: Timestamp.fromDate(new Date("2026-07-15T00:00:00Z")),
+    updatedAt: serverTimestamp(),
+    deleted: false,
+    calendarId: familyCalendarId,
+    recurrenceFrequency: null,
+    recurrenceCount: null,
+    recurrenceExceptions: [],
+    recurrenceUntil: null,
+    ...overrides,
+  };
+}
 
 let testEnvironment;
 
@@ -98,13 +126,113 @@ describe("Firestore Security Rules (NFR-4)", () => {
   it("家族メンバーは events を読み書きできる", async () => {
     const event = doc(dbFor("family-user"), "events/event-1");
 
-    await assertSucceeds(setDoc(event, {
-      title: "Family event",
+    await assertSucceeds(setDoc(event, validEvent()));
+    await assertSucceeds(getDoc(event));
+    await assertSucceeds(deleteDoc(event));
+  });
+
+  it("必須フィールドを欠いた不正な予定は作成できない（Issue #117）", async () => {
+    // 報告された不正データ（title / deleted だけ）。calendarId を付けて
+    // 参加者チェックを通しても、startAt などの必須フィールドが無いため弾く。
+    const familyDb = dbFor("family-user");
+
+    await assertFails(setDoc(doc(familyDb, "events/malformed-1"), {
+      title: "不正な予定",
       deleted: false,
       calendarId: familyCalendarId,
     }));
-    await assertSucceeds(getDoc(event));
-    await assertSucceeds(deleteDoc(event));
+
+    // 単一の必須フィールドを落としただけでも拒否する。
+    for (const missing of [
+      "title", "startAt", "endAt", "allDay", "type", "memo",
+      "updatedBy", "createdAt", "updatedAt", "deleted", "calendarId",
+    ]) {
+      const data = validEvent();
+      delete data[missing];
+      await assertFails(
+          setDoc(doc(familyDb, `events/missing-${missing}`), data),
+          `missing ${missing} should be rejected`,
+      );
+    }
+  });
+
+  it("型が不正な予定は作成できない（Issue #117）", async () => {
+    const familyDb = dbFor("family-user");
+
+    await assertFails(setDoc(doc(familyDb, "events/bad-start"), validEvent({
+      startAt: "2026-07-20", // timestamp ではなく文字列
+    })));
+    await assertFails(setDoc(doc(familyDb, "events/bad-alldiff"), validEvent({
+      allDay: "yes", // bool ではなく文字列
+    })));
+    await assertFails(setDoc(doc(familyDb, "events/bad-type"), validEvent({
+      type: "maybe", // tentative / confirmed 以外
+    })));
+    await assertFails(setDoc(doc(familyDb, "events/bad-creator"), validEvent({
+      creatorId: "", // 空文字は creatorId として無効（ownerId も無い）
+    })));
+    await assertFails(setDoc(doc(familyDb, "events/bad-recur"), validEvent({
+      recurrenceFrequency: "daily", // 未対応の頻度
+    })));
+  });
+
+  it("正当な予定は差分更新もソフト削除もできる（Issue #117）", async () => {
+    const familyDb = dbFor("family-user");
+    const event = doc(familyDb, "events/valid-1");
+
+    await assertSucceeds(setDoc(event, validEvent()));
+    // 編集（差分更新）: 変更フィールド + updatedBy / updatedAt のマージ後も正当。
+    await assertSucceeds(updateDoc(event, {
+      title: "タイトル変更",
+      updatedBy: "family-user",
+      updatedAt: serverTimestamp(),
+    }));
+    // ソフト削除。
+    await assertSucceeds(updateDoc(event, {
+      deleted: true,
+      updatedBy: "family-user",
+      updatedAt: serverTimestamp(),
+    }));
+  });
+
+  it("既存の正当な予定を不正な形へ全置換で上書きできない（Issue #117）", async () => {
+    // set（merge なし）は既存ドキュメントを丸ごと置き換えるため update 規則を通る。
+    // 置換後の姿が不正なら拒否する（request.resource.data はマージ後の完全な姿）。
+    const familyDb = dbFor("family-user");
+    const event = doc(familyDb, "events/overwrite-1");
+
+    await assertSucceeds(setDoc(event, validEvent()));
+    await assertFails(setDoc(event, {
+      title: "壊れた上書き",
+      deleted: false,
+      calendarId: familyCalendarId,
+    }));
+  });
+
+  it("レガシー予定（旧フィールド名・欠落・旧形式）のソフト削除はできる（Issue #117）", async () => {
+    // モデルが後方互換で読めるレガシー予定は Rules も拒否しない。
+    // - creatorId ではなく旧 ownerId 名
+    // - participantIds 欠落（参加者機能導入前）
+    // - reminderOffsets が旧形式の number[]
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      const legacy = validEvent();
+      delete legacy.creatorId;
+      delete legacy.participantIds;
+      delete legacy.recurrenceFrequency;
+      delete legacy.recurrenceCount;
+      delete legacy.recurrenceExceptions;
+      delete legacy.recurrenceUntil;
+      legacy.ownerId = "family-user";
+      legacy.reminderOffsets = [60];
+      await setDoc(doc(context.firestore(), "events/legacy-valid"), legacy);
+    });
+
+    const event = doc(dbFor("family-user"), "events/legacy-valid");
+    await assertSucceeds(updateDoc(event, {
+      deleted: true,
+      updatedBy: "family-user",
+      updatedAt: serverTimestamp(),
+    }));
   });
 
   it("家族ではない認証ユーザーと未認証ユーザーは events を利用できない", async () => {

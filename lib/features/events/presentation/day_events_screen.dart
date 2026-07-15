@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/routes.dart';
 import '../../../core/color_utils.dart';
 import '../../../core/logger.dart';
+import '../../../core/member_display.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
 import '../../calendars/application/calendar_providers.dart';
@@ -272,16 +273,13 @@ class _EventTile extends StatelessWidget {
 
   /// 参加者名を「・」区切りで返す（FR-2、Issue #53）。
   ///
-  /// 色だけでは誰の予定か判別しにくいため、1人予定でも名前を表示する。
+  /// 色だけでは誰の予定か判別しにくいため、1人予定でも名前を表示する。退会済み
+  /// （`users/{uid}` が無い）参加者は「退会したメンバー」にフォールバックし、
+  /// 共有カレンダーの予定でも表示が壊れないようにする（Issue #102）。
   String? _participantsLabel(Event event) {
     final ids = event.memberIds;
-    final names = ids
-        .map((id) => membersById[id]?.name.trim())
-        .whereType<String>()
-        .where((name) => name.isNotEmpty)
-        .toList();
-    if (names.isEmpty) return null;
-    return names.join('・');
+    if (ids.isEmpty) return null;
+    return ids.map((id) => memberDisplayName(membersById[id])).join('・');
   }
 
   String _scheduleLabel(Event event) {

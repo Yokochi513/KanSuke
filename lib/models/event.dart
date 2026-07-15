@@ -54,9 +54,12 @@ final class Event {
     required this.calendarId,
     this.recurrenceFrequency,
     this.recurrenceCount,
+    List<DateTime> recurrenceExceptions = const [],
+    this.recurrenceUntil,
     this.recurrenceMasterStartAt,
     this.recurrenceMasterEndAt,
   }) : participantIds = UnmodifiableListView(participantIds),
+       recurrenceExceptions = UnmodifiableListView(recurrenceExceptions),
        reminderOffsets = UnmodifiableMapView({
          for (final entry in reminderOffsets.entries)
            entry.key: UnmodifiableListView(entry.value),
@@ -148,6 +151,14 @@ final class Event {
       // Firestore の number は int 以外の num 実装で届く可能性があるため、
       // nil と型変換の境界をここで閉じる。
       recurrenceCount: (data['recurrenceCount'] as num?)?.toInt(),
+      // #86: 繰り返しの例外日（EXDATE 相当）と打ち切り日。導入前の
+      // ドキュメントにはキーが無いため、それぞれ空リスト・null にフォールバックする。
+      recurrenceExceptions: _recurrenceExceptionsFromFirestore(
+        data['recurrenceExceptions'],
+      ),
+      recurrenceUntil: data['recurrenceUntil'] == null
+          ? null
+          : dateTimeFromFirestore(data['recurrenceUntil'], 'recurrenceUntil'),
     );
   }
 
@@ -173,6 +184,19 @@ final class Event {
   final String calendarId;
   final EventRecurrenceFrequency? recurrenceFrequency;
   final int? recurrenceCount;
+
+  /// 繰り返しの例外日（EXDATE 相当、#86）。
+  ///
+  /// 「この予定のみ削除」で除外した各発生日の開始日時（UTC）を持つ。月表示の
+  /// 展開時に、この一覧に一致する発生日は生成しない。オフラインでの並行削除を
+  /// 素直にマージできるよう、書き込みは `arrayUnion` で追記する。
+  final List<DateTime> recurrenceExceptions;
+
+  /// 繰り返しの打ち切り日（#86）。この日時**以降**の発生日は生成しない（排他境界）。
+  ///
+  /// 「これ以降の予定を削除」で、削除した発生日の開始日時を設定する。null なら
+  /// 打ち切りなし。`recurrenceCount` とは独立に働き、両方あれば早い方で止まる。
+  final DateTime? recurrenceUntil;
 
   /// 表示用に展開した繰り返し予定が、編集時に元の開始/終了へ戻るための値。
   ///
@@ -225,7 +249,75 @@ final class Event {
       'calendarId': calendarId,
       'recurrenceFrequency': recurrenceFrequency?.name,
       'recurrenceCount': recurrenceCount,
+      // #86: 例外日・打ち切り日は繰り返しの元ドキュメント側に持つ。
+      'recurrenceExceptions': [
+        for (final exception in recurrenceExceptions)
+          Timestamp.fromDate(exception),
+      ],
+      'recurrenceUntil': recurrenceUntil == null
+          ? null
+          : Timestamp.fromDate(recurrenceUntil!),
     };
+  }
+
+  /// 編集で実際に変更したフィールドだけを含む差分更新マップ（Issue #114）。
+  ///
+  /// 基本設計 §4.2 は競合解決を**フィールド単位の Last-Write-Wins** と定める。
+  /// ところが全フィールドを書く `toFirestore()` を `update()` に渡すと、実質は
+  /// **ドキュメント単位**の LWW になり、2 端末がオフラインで別々のフィールドを
+  /// 編集して同期した際に、後着の保存が相手の変更まで丸ごと上書きしてしまう
+  /// （lost update）。そこで [previous]（編集前の値）と比較し、変わった
+  /// フィールドだけを書き込むことでフィールド単位の LWW を実現する。
+  ///
+  /// - `updatedBy` / `updatedAt` は常に更新する（誰がいつ触ったかの監査）。
+  /// - `id` / `creatorId` / `createdAt` は不変なので載らない（比較上も一致）。
+  /// - `deleted` / `recurrenceExceptions` / `recurrenceUntil` は削除系の専用
+  ///   操作（softDelete / excludeOccurrence / truncateRecurrenceFrom）が
+  ///   `arrayUnion` 等で個別に管理するため、編集保存では触れない。他端末の
+  ///   並行削除を編集保存が巻き戻さないようにする狙いでもある。
+  FirestoreData toFirestoreUpdate(
+    Event previous, {
+    bool useServerTimestamp = true,
+  }) {
+    final startAtValue = recurrenceMasterStartAt ?? startAt;
+    final endAtValue = recurrenceMasterEndAt ?? endAt;
+    final prevStartAt = previous.recurrenceMasterStartAt ?? previous.startAt;
+    final prevEndAt = previous.recurrenceMasterEndAt ?? previous.endAt;
+
+    final data = <String, Object?>{};
+    if (title != previous.title) data['title'] = title;
+    if (!_participantIdsEqual(participantIds, previous.participantIds)) {
+      data['participantIds'] = participantIds.toList();
+    }
+    if (startAtValue != prevStartAt) {
+      data['startAt'] = Timestamp.fromDate(startAtValue);
+    }
+    if (endAtValue != prevEndAt) {
+      data['endAt'] = Timestamp.fromDate(endAtValue);
+    }
+    if (allDay != previous.allDay) data['allDay'] = allDay;
+    if (type != previous.type) data['type'] = type.name;
+    if (memo != previous.memo) data['memo'] = memo;
+    if (!_reminderOffsetsEqual(reminderOffsets, previous.reminderOffsets)) {
+      data['reminderOffsets'] = {
+        for (final entry in reminderOffsets.entries)
+          entry.key: entry.value.toList(),
+      };
+    }
+    if (calendarId != previous.calendarId) data['calendarId'] = calendarId;
+    if (recurrenceFrequency != previous.recurrenceFrequency) {
+      data['recurrenceFrequency'] = recurrenceFrequency?.name;
+    }
+    if (recurrenceCount != previous.recurrenceCount) {
+      data['recurrenceCount'] = recurrenceCount;
+    }
+
+    data['updatedBy'] = updatedBy;
+    data['updatedAt'] = updatedAtForFirestore(
+      updatedAt,
+      useServerTimestamp: useServerTimestamp,
+    );
+    return data;
   }
 
   Event occurrenceAt({required DateTime startAt, required DateTime endAt}) {
@@ -247,6 +339,8 @@ final class Event {
       calendarId: calendarId,
       recurrenceFrequency: recurrenceFrequency,
       recurrenceCount: recurrenceCount,
+      recurrenceExceptions: recurrenceExceptions.toList(),
+      recurrenceUntil: recurrenceUntil,
       recurrenceMasterStartAt: this.startAt,
       recurrenceMasterEndAt: this.endAt,
     );
@@ -272,6 +366,8 @@ final class Event {
       calendarId: calendarId,
       recurrenceFrequency: recurrenceFrequency,
       recurrenceCount: recurrenceCount,
+      recurrenceExceptions: recurrenceExceptions.toList(),
+      recurrenceUntil: recurrenceUntil,
     );
   }
 
@@ -293,6 +389,8 @@ final class Event {
     String? calendarId,
     Object? recurrenceFrequency = _unset,
     Object? recurrenceCount = _unset,
+    List<DateTime>? recurrenceExceptions,
+    Object? recurrenceUntil = _unset,
   }) {
     return Event(
       id: id ?? this.id,
@@ -316,6 +414,11 @@ final class Event {
       recurrenceCount: identical(recurrenceCount, _unset)
           ? this.recurrenceCount
           : recurrenceCount as int?,
+      recurrenceExceptions:
+          recurrenceExceptions ?? this.recurrenceExceptions.toList(),
+      recurrenceUntil: identical(recurrenceUntil, _unset)
+          ? this.recurrenceUntil
+          : recurrenceUntil as DateTime?,
       recurrenceMasterStartAt: recurrenceMasterStartAt,
       recurrenceMasterEndAt: recurrenceMasterEndAt,
     );
@@ -344,4 +447,38 @@ Map<String, List<int>> _reminderOffsetsFromFirestore(Object? value) {
         .toList();
   }
   return offsetsByUid;
+}
+
+/// 参加者集合が同じかを順不同で比較する（Issue #114 の差分更新用）。
+///
+/// 参加者は追加/削除でしか変えられず、保存時は常にソートして書くため、順序の
+/// 違いは意味を持たない。集合として一致すれば「変更なし」とみなし、無用な
+/// 上書き（他端末の参加者変更を巻き戻す危険）を避ける。
+bool _participantIdsEqual(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  return a.toSet().containsAll(b) && b.toSet().containsAll(a);
+}
+
+/// リマインド設定（uid → 分の一覧）が同じかを、各 uid の分集合を順不同で比較する
+/// （Issue #114 の差分更新用）。分は集合として扱い保存時はソートするため、順序の
+/// 違いは変更とみなさない。
+bool _reminderOffsetsEqual(Map<String, List<int>> a, Map<String, List<int>> b) {
+  if (a.length != b.length) return false;
+  for (final entry in a.entries) {
+    final other = b[entry.key];
+    if (other == null) return false;
+    if (entry.value.length != other.length) return false;
+    if (!entry.value.toSet().containsAll(other)) return false;
+  }
+  return true;
+}
+
+/// Firestore の `recurrenceExceptions`（Timestamp の配列）を UTC の [DateTime]
+/// 一覧として読む（#86）。キー欠落・非配列・Timestamp 以外の要素は無視する。
+List<DateTime> _recurrenceExceptionsFromFirestore(Object? value) {
+  if (value is! List) return const [];
+  return [
+    for (final item in value)
+      if (item is Timestamp) item.toDate().toUtc(),
+  ];
 }

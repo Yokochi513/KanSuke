@@ -43,10 +43,20 @@ class EventRepository {
   }
 
   /// 既存予定を更新する。`updatedBy`/`updatedAt` を更新する。
-  Future<void> update(Event event, {required String updatedBy}) {
-    final data = event.copyWith(updatedBy: updatedBy).toFirestore();
-    // FR-1: 作成者は予定を作った人の固定情報なので、編集保存では上書きしない。
-    data.remove('creatorId');
+  ///
+  /// Issue #114: 全フィールドを書くと実質ドキュメント単位の LWW になり、2 端末が
+  /// オフラインで別々のフィールドを編集して同期すると片方の変更が失われる。
+  /// [previous]（編集前の値）と比較し、変わったフィールドだけを書くことで基本設計
+  /// §4.2 のフィールド単位 LWW を満たす。作成者などの不変フィールドは差分に
+  /// 現れないため、明示的な除外は不要になる（[Event.toFirestoreUpdate]）。
+  Future<void> update(
+    Event event, {
+    required Event previous,
+    required String updatedBy,
+  }) {
+    final data = event
+        .copyWith(updatedBy: updatedBy)
+        .toFirestoreUpdate(previous);
     return _events.doc(event.id).update(data).catchError((
       Object error,
       StackTrace stackTrace,
@@ -86,6 +96,8 @@ class EventRepository {
   }
 
   /// ソフト削除（§4.2）。物理削除はサーバ側の定期パージに委ねる。
+  ///
+  /// 繰り返し予定では「すべての予定を削除」に相当する（元ドキュメントごと消す）。
   Future<void> softDelete(String eventId, {required String updatedBy}) {
     return _events
         .doc(eventId)
@@ -97,6 +109,64 @@ class EventRepository {
         .catchError((Object error, StackTrace stackTrace) {
           AppLogger.error(
             'Failed to soft-delete event $eventId',
+            tag: _logTag,
+            error: error,
+            stackTrace: stackTrace,
+          );
+          throw error;
+        });
+  }
+
+  /// 繰り返し予定の「この予定のみ削除」（#86）。
+  ///
+  /// 指定した発生日の開始日時 [occurrenceStart] を例外日（EXDATE 相当）として
+  /// 元ドキュメントに追記する。オフラインでの並行削除を素直にマージできるよう
+  /// `arrayUnion` で追記する。展開時にこの発生日は表示されなくなる。
+  Future<void> excludeOccurrence(
+    String eventId,
+    DateTime occurrenceStart, {
+    required String updatedBy,
+  }) {
+    return _events
+        .doc(eventId)
+        .update({
+          'recurrenceExceptions': FieldValue.arrayUnion([
+            Timestamp.fromDate(occurrenceStart),
+          ]),
+          'updatedBy': updatedBy,
+          'updatedAt': FieldValue.serverTimestamp(),
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          AppLogger.error(
+            'Failed to exclude occurrence of event $eventId',
+            tag: _logTag,
+            error: error,
+            stackTrace: stackTrace,
+          );
+          throw error;
+        });
+  }
+
+  /// 繰り返し予定の「これ以降の予定を削除」（#86）。
+  ///
+  /// [occurrenceStart]（削除した発生日の開始日時）を打ち切り日として設定し、
+  /// これ**以降**の発生日を展開しないようにする（排他境界）。先頭の発生日を
+  /// 指定した場合は 1 件も残らないため、呼び出し側で [softDelete] を使うこと。
+  Future<void> truncateRecurrenceFrom(
+    String eventId,
+    DateTime occurrenceStart, {
+    required String updatedBy,
+  }) {
+    return _events
+        .doc(eventId)
+        .update({
+          'recurrenceUntil': Timestamp.fromDate(occurrenceStart),
+          'updatedBy': updatedBy,
+          'updatedAt': FieldValue.serverTimestamp(),
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          AppLogger.error(
+            'Failed to truncate recurrence of event $eventId',
             tag: _logTag,
             error: error,
             stackTrace: stackTrace,
@@ -178,6 +248,13 @@ class EventRepository {
     }
 
     final recurrenceCount = event.recurrenceCount;
+    final until = event.recurrenceUntil;
+    // #86: 例外日は瞬間（マイクロ秒）一致で判定する。展開で再計算する
+    // occurrenceStart と、保存済みの例外日は同一計算・同一精度なので厳密一致する。
+    final excludedInstants = {
+      for (final exception in event.recurrenceExceptions)
+        exception.microsecondsSinceEpoch,
+    };
     for (
       var occurrenceIndex = 0;
       recurrenceCount == null || occurrenceIndex < recurrenceCount;
@@ -196,6 +273,14 @@ class EventRepository {
 
       if (!occurrenceStart.isBefore(end)) {
         break;
+      }
+      // #86: 打ち切り日（これ以降を削除）に達したら以降は生成しない（排他境界）。
+      if (until != null && !occurrenceStart.isBefore(until)) {
+        break;
+      }
+      // #86: 「この予定のみ削除」で除外された発生日は飛ばす。
+      if (excludedInstants.contains(occurrenceStart.microsecondsSinceEpoch)) {
+        continue;
       }
       if (_overlaps(occurrenceStart, occurrenceEnd, start, end)) {
         yield event.occurrenceAt(
