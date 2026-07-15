@@ -83,6 +83,7 @@ void main() {
 
     await repository.update(
       event.copyWith(title: '変更後', creatorId: 'creator-2'),
+      previous: event,
       updatedBy: 'me',
     );
 
@@ -90,6 +91,59 @@ void main() {
     expect(raw['title'], '変更後');
     expect(raw['creatorId'], 'creator-1');
     expect(raw['updatedBy'], 'me');
+  });
+
+  // Issue #114: 2 端末がオフラインで別々のフィールドを編集して同期しても、
+  // 後着の保存が相手の変更を巻き戻さない（フィールド単位 LWW）。
+  test('update は変更したフィールドだけを書き、他端末の別フィールド変更を消さない', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+      title: '元タイトル',
+    );
+    await repository.create(event, updatedBy: 'me');
+
+    // 端末A: タイトルだけ変更。
+    await repository.update(
+      event.copyWith(title: '端末Aのタイトル'),
+      previous: event,
+      updatedBy: 'userA',
+    );
+    // 端末B: 編集前の値（event）を基準に、メモだけ変更して後着で保存。
+    await repository.update(
+      event.copyWith(memo: '端末Bのメモ'),
+      previous: event,
+      updatedBy: 'userB',
+    );
+
+    final raw = await readRaw('evt-1');
+    // 双方の変更が残る（タイトルは端末A、メモは端末B）。
+    expect(raw['title'], '端末Aのタイトル');
+    expect(raw['memo'], '端末Bのメモ');
+    expect(raw['updatedBy'], 'userB');
+  });
+
+  test('update は変更のないフィールドを更新マップに含めない', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+    );
+    final data = event
+        .copyWith(title: '変更後')
+        .toFirestoreUpdate(event, useServerTimestamp: false);
+
+    expect(data.containsKey('title'), isTrue);
+    // 変えていないフィールドは載らない。
+    expect(data.containsKey('memo'), isFalse);
+    expect(data.containsKey('startAt'), isFalse);
+    expect(data.containsKey('participantIds'), isFalse);
+    expect(data.containsKey('calendarId'), isFalse);
+    // 監査用は常に更新する。不変・削除系フィールドは触れない。
+    expect(data.containsKey('updatedBy'), isTrue);
+    expect(data.containsKey('updatedAt'), isTrue);
+    expect(data.containsKey('creatorId'), isFalse);
+    expect(data.containsKey('deleted'), isFalse);
+    expect(data.containsKey('recurrenceExceptions'), isFalse);
   });
 
   test('setType は仮↔確定を type 更新だけで切り替える', () async {
