@@ -180,6 +180,47 @@ void main() {
     expect(visible, isEmpty);
   });
 
+  // Issue #115: 端末Aが削除した予定を、端末Bがオフライン編集で保存しても復活しない。
+  //
+  // #114 以前は編集保存が全フィールド（deleted=false を含む）を書いていたため、
+  // 端末Bの後着保存が端末Aの削除（deleted=true）を巻き戻し、削除済み予定が復活して
+  // いた。差分更新（toFirestoreUpdate）は deleted を書かないので、後着の編集保存でも
+  // deleted は true のまま維持され、watchRange から除外され続ける（基本設計 §4.2）。
+  test('update は他端末の並行削除を巻き戻さず、削除済み予定を復活させない', () async {
+    final event = _buildEvent(
+      id: 'evt-1',
+      startAt: DateTime.utc(2026, 7, 10, 9),
+      title: '元タイトル',
+    );
+    await repository.create(event, updatedBy: 'me');
+
+    // 端末A: 予定を削除（ソフト削除）。
+    await repository.softDelete('evt-1', updatedBy: 'userA');
+
+    // 端末B: 削除を受け取る前のスナップショット（deleted=false）を基準に、
+    // タイトルだけ変更してオフライン編集を後着で保存する。
+    await repository.update(
+      event.copyWith(title: '端末Bのタイトル'),
+      previous: event,
+      updatedBy: 'userB',
+    );
+
+    final raw = await readRaw('evt-1');
+    // タイトルは端末Bの変更が反映されるが、削除フラグは維持される。
+    expect(raw['title'], '端末Bのタイトル');
+    expect(raw['deleted'], true);
+
+    // 削除済みとして月表示から除外され続ける（復活しない）。
+    final visible = await repository
+        .watchRange(
+          start: DateTime.utc(2026, 7, 1),
+          end: DateTime.utc(2026, 8, 1),
+          calendarId: testCalendarId,
+        )
+        .first;
+    expect(visible, isEmpty);
+  });
+
   test('watchRange は指定期間に重なる未削除予定のみを startAt 昇順で返す', () async {
     await repository.create(
       _buildEvent(
