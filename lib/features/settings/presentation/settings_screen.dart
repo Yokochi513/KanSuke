@@ -5,7 +5,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../app/routes.dart';
 import '../../../app/theme.dart';
 import '../../../core/color_utils.dart';
+import '../../account/application/account_providers.dart';
+import '../../account/data/account_deletion_repository.dart';
 import '../../auth/application/auth_state.dart';
+import '../../auth/data/auth_repository.dart';
 import '../../users/application/user_providers.dart';
 import '../../version_check/application/version_check_provider.dart';
 import '../application/event_merge_provider.dart';
@@ -52,6 +55,9 @@ class SettingsScreen extends ConsumerWidget {
           const _AppInfoSection(),
           const Divider(),
           const _SignOutSection(),
+          const Divider(),
+          const _SectionHeader('アカウント'),
+          const _DeleteAccountSection(),
         ],
       ),
     );
@@ -608,5 +614,141 @@ class _SignOutSection extends ConsumerWidget {
         label: const Text('サインアウト'),
       ),
     );
+  }
+}
+
+/// アカウント削除（退会導線、Issue #102）。
+///
+/// Google Play / App Store の要件（アカウント作成機能を持つアプリはアプリ内から
+/// 削除できること）に応える。誤操作・端末の乗っ取りを防ぐため、削除には
+/// 「二段確認 → 再認証 → 実行 → ログイン画面へ」の手順を踏む。実処理は Callable
+/// Function（[AccountDeletionRepository]）に一本化する。
+class _DeleteAccountSection extends ConsumerStatefulWidget {
+  const _DeleteAccountSection();
+
+  @override
+  ConsumerState<_DeleteAccountSection> createState() =>
+      _DeleteAccountSectionState();
+}
+
+class _DeleteAccountSectionState extends ConsumerState<_DeleteAccountSection> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _startDeletion,
+            icon: _busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.person_remove_outlined),
+            label: const Text('アカウントを削除'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: scheme.error,
+              side: BorderSide(color: scheme.error),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'アカウントと、あなただけのカレンダー・予定を削除します。共有カレンダーの予定は残ります。',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startDeletion() async {
+    // 1 段目: 何が消えるかを明示する。
+    final first = await _confirm(
+      title: 'アカウントを削除しますか？',
+      message:
+          'あなただけが参加しているカレンダーと、その予定・リマインドが削除されます。'
+          '共有カレンダーの予定は残り、あなたはメンバーから外れます。'
+          'この操作は取り消せません。',
+      action: '続ける',
+    );
+    if (first != true || !mounted) return;
+
+    // 2 段目: 取り消せない操作であることを再確認する。
+    final second = await _confirm(
+      title: '本当に削除しますか？',
+      message: '確認のため、次の画面で再度サインインが必要です。削除すると元に戻せません。',
+      action: '削除する',
+    );
+    if (second != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      // 誤操作・端末の乗っ取り対策として、削除前に再認証を求める。
+      await ref.read(authRepositoryProvider).reauthenticate();
+      await ref.read(accountDeletionRepositoryProvider).deleteAccount();
+    } on AuthCancelledException {
+      // 再認証をキャンセルした場合は何もしない（削除しない）。
+      if (mounted) setState(() => _busy = false);
+      return;
+    } on AuthException {
+      if (mounted) {
+        setState(() => _busy = false);
+        _showSnack('再認証に失敗しました。もう一度お試しください。');
+      }
+      return;
+    } on AccountDeletionException catch (error) {
+      if (mounted) {
+        setState(() => _busy = false);
+        _showSnack(error.message);
+      }
+      return;
+    }
+
+    // 成功: 元画面まで戻してからサインアウトし、ログイン画面へ戻す。
+    if (!mounted) return;
+    Navigator.popUntil(context, (route) => route.isFirst);
+    await ref.read(authRepositoryProvider).signOut();
+  }
+
+  Future<bool?> _confirm({
+    required String title,
+    required String message,
+    required String action,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }

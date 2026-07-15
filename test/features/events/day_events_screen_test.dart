@@ -210,6 +210,18 @@ void main() {
     expect((titleCenterY - participantsCenterY).abs(), lessThan(4));
   });
 
+  testWidgets('退会済み参加者を含む予定も壊れず「退会したメンバー」で表示する（Issue #102）', (tester) async {
+    // 参加者 'ghost' の users ドキュメントは無い（退会済み相当）。
+    final firestore = await _seed(participantIds: const ['me', 'ghost']);
+    await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+    await tester.pumpAndSettle();
+
+    expect(find.text('打ち合わせ'), findsOneWidget);
+    expect(find.text('参加: ぱぱ・退会したメンバー'), findsOneWidget);
+    // 参加人数分（2 個）のドットが描かれる（退会済みはグレー）。
+    expect(_memberDotCount(tester), 2);
+  });
+
   testWidgets('参加者が複数いる予定は参加者名をタイトル横に表示する', (tester) async {
     final firestore = await _seed(withParticipant: true);
     await tester.pumpWidget(_wrap(firestore, editArgsSink: []));

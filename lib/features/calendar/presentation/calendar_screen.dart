@@ -9,6 +9,7 @@ import '../../../app/theme.dart';
 import '../../../core/color_utils.dart';
 import '../../../core/japanese_holidays.dart';
 import '../../../core/logger.dart';
+import '../../../core/member_display.dart';
 import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
 import '../../calendars/application/calendar_providers.dart';
@@ -1174,10 +1175,9 @@ class _EventGroupSheetTile extends StatelessWidget {
     final colors = event.memberIds
         .map((id) => colorFromHex(membersById[id]?.color ?? ''))
         .toList();
+    // 退会済み参加者は「退会したメンバー」にフォールバックする（Issue #102）。
     final names = event.memberIds
-        .map((id) => membersById[id]?.name.trim())
-        .whereType<String>()
-        .where((name) => name.isNotEmpty)
+        .map((id) => memberDisplayName(membersById[id]))
         .toList();
 
     return ListTile(
