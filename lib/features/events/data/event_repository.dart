@@ -43,10 +43,20 @@ class EventRepository {
   }
 
   /// 既存予定を更新する。`updatedBy`/`updatedAt` を更新する。
-  Future<void> update(Event event, {required String updatedBy}) {
-    final data = event.copyWith(updatedBy: updatedBy).toFirestore();
-    // FR-1: 作成者は予定を作った人の固定情報なので、編集保存では上書きしない。
-    data.remove('creatorId');
+  ///
+  /// Issue #114: 全フィールドを書くと実質ドキュメント単位の LWW になり、2 端末が
+  /// オフラインで別々のフィールドを編集して同期すると片方の変更が失われる。
+  /// [previous]（編集前の値）と比較し、変わったフィールドだけを書くことで基本設計
+  /// §4.2 のフィールド単位 LWW を満たす。作成者などの不変フィールドは差分に
+  /// 現れないため、明示的な除外は不要になる（[Event.toFirestoreUpdate]）。
+  Future<void> update(
+    Event event, {
+    required Event previous,
+    required String updatedBy,
+  }) {
+    final data = event
+        .copyWith(updatedBy: updatedBy)
+        .toFirestoreUpdate(previous);
     return _events.doc(event.id).update(data).catchError((
       Object error,
       StackTrace stackTrace,

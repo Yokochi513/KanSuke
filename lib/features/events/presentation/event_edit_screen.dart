@@ -676,7 +676,10 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           recurrenceFrequency: _recurrenceFrequencyForSave(),
           recurrenceCount: _recurrenceCountForSave(),
         );
-        await repository.update(updated, updatedBy: uid);
+        // Issue #114: 編集前の値（editing）を渡し、変更したフィールドだけを
+        // 書き込む（フィールド単位 LWW）。同時編集で他端末が別フィールドを
+        // 変えていても失われないようにする。
+        await repository.update(updated, previous: editing, updatedBy: uid);
       }
       if (mounted) Navigator.pop(context);
     } on Object catch (error, stackTrace) {

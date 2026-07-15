@@ -260,6 +260,66 @@ final class Event {
     };
   }
 
+  /// 編集で実際に変更したフィールドだけを含む差分更新マップ（Issue #114）。
+  ///
+  /// 基本設計 §4.2 は競合解決を**フィールド単位の Last-Write-Wins** と定める。
+  /// ところが全フィールドを書く `toFirestore()` を `update()` に渡すと、実質は
+  /// **ドキュメント単位**の LWW になり、2 端末がオフラインで別々のフィールドを
+  /// 編集して同期した際に、後着の保存が相手の変更まで丸ごと上書きしてしまう
+  /// （lost update）。そこで [previous]（編集前の値）と比較し、変わった
+  /// フィールドだけを書き込むことでフィールド単位の LWW を実現する。
+  ///
+  /// - `updatedBy` / `updatedAt` は常に更新する（誰がいつ触ったかの監査）。
+  /// - `id` / `creatorId` / `createdAt` は不変なので載らない（比較上も一致）。
+  /// - `deleted` / `recurrenceExceptions` / `recurrenceUntil` は削除系の専用
+  ///   操作（softDelete / excludeOccurrence / truncateRecurrenceFrom）が
+  ///   `arrayUnion` 等で個別に管理するため、編集保存では触れない。他端末の
+  ///   並行削除を編集保存が巻き戻さないようにする狙いでもある。
+  FirestoreData toFirestoreUpdate(
+    Event previous, {
+    bool useServerTimestamp = true,
+  }) {
+    final startAtValue = recurrenceMasterStartAt ?? startAt;
+    final endAtValue = recurrenceMasterEndAt ?? endAt;
+    final prevStartAt = previous.recurrenceMasterStartAt ?? previous.startAt;
+    final prevEndAt = previous.recurrenceMasterEndAt ?? previous.endAt;
+
+    final data = <String, Object?>{};
+    if (title != previous.title) data['title'] = title;
+    if (!_participantIdsEqual(participantIds, previous.participantIds)) {
+      data['participantIds'] = participantIds.toList();
+    }
+    if (startAtValue != prevStartAt) {
+      data['startAt'] = Timestamp.fromDate(startAtValue);
+    }
+    if (endAtValue != prevEndAt) {
+      data['endAt'] = Timestamp.fromDate(endAtValue);
+    }
+    if (allDay != previous.allDay) data['allDay'] = allDay;
+    if (type != previous.type) data['type'] = type.name;
+    if (memo != previous.memo) data['memo'] = memo;
+    if (!_reminderOffsetsEqual(reminderOffsets, previous.reminderOffsets)) {
+      data['reminderOffsets'] = {
+        for (final entry in reminderOffsets.entries)
+          entry.key: entry.value.toList(),
+      };
+    }
+    if (calendarId != previous.calendarId) data['calendarId'] = calendarId;
+    if (recurrenceFrequency != previous.recurrenceFrequency) {
+      data['recurrenceFrequency'] = recurrenceFrequency?.name;
+    }
+    if (recurrenceCount != previous.recurrenceCount) {
+      data['recurrenceCount'] = recurrenceCount;
+    }
+
+    data['updatedBy'] = updatedBy;
+    data['updatedAt'] = updatedAtForFirestore(
+      updatedAt,
+      useServerTimestamp: useServerTimestamp,
+    );
+    return data;
+  }
+
   Event occurrenceAt({required DateTime startAt, required DateTime endAt}) {
     return Event(
       id: id,
@@ -387,6 +447,30 @@ Map<String, List<int>> _reminderOffsetsFromFirestore(Object? value) {
         .toList();
   }
   return offsetsByUid;
+}
+
+/// 参加者集合が同じかを順不同で比較する（Issue #114 の差分更新用）。
+///
+/// 参加者は追加/削除でしか変えられず、保存時は常にソートして書くため、順序の
+/// 違いは意味を持たない。集合として一致すれば「変更なし」とみなし、無用な
+/// 上書き（他端末の参加者変更を巻き戻す危険）を避ける。
+bool _participantIdsEqual(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  return a.toSet().containsAll(b) && b.toSet().containsAll(a);
+}
+
+/// リマインド設定（uid → 分の一覧）が同じかを、各 uid の分集合を順不同で比較する
+/// （Issue #114 の差分更新用）。分は集合として扱い保存時はソートするため、順序の
+/// 違いは変更とみなさない。
+bool _reminderOffsetsEqual(Map<String, List<int>> a, Map<String, List<int>> b) {
+  if (a.length != b.length) return false;
+  for (final entry in a.entries) {
+    final other = b[entry.key];
+    if (other == null) return false;
+    if (entry.value.length != other.length) return false;
+    if (!entry.value.toSet().containsAll(other)) return false;
+  }
+  return true;
 }
 
 /// Firestore の `recurrenceExceptions`（Timestamp の配列）を UTC の [DateTime]
