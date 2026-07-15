@@ -211,10 +211,19 @@ class FirebaseAuthRepository implements AuthRepository {
         ? user.providerData.first.providerId
         : '';
     try {
-      final credential = providerId == 'apple.com'
-          ? await _appleCredential()
-          : await _googleCredential();
-      await user.reauthenticateWithCredential(credential);
+      if (kIsWeb) {
+        // Web は google_sign_in の authenticate() を持たないため、Firebase Auth の
+        // ポップアップ再認証を使う（サインインの renderButton と同様に Web 専用経路）。
+        final provider = providerId == 'apple.com'
+            ? AppleAuthProvider()
+            : GoogleAuthProvider();
+        await user.reauthenticateWithPopup(provider);
+      } else {
+        final credential = providerId == 'apple.com'
+            ? await _appleCredential()
+            : await _googleCredential();
+        await user.reauthenticateWithCredential(credential);
+      }
     } on GoogleSignInException catch (error, stackTrace) {
       if (error.code == GoogleSignInExceptionCode.canceled) {
         throw const AuthCancelledException();
@@ -237,6 +246,23 @@ class FirebaseAuthRepository implements AuthRepository {
         stackTrace: stackTrace,
       );
       throw const AuthException();
+    } on FirebaseAuthException catch (error, stackTrace) {
+      // Web のポップアップをユーザーが閉じた/キャンセルした場合はキャンセル扱い。
+      if (const {
+        'popup-closed-by-user',
+        'cancelled-popup-request',
+        'user-cancelled',
+        'web-context-cancelled',
+      }.contains(error.code)) {
+        throw const AuthCancelledException();
+      }
+      AppLogger.error(
+        'Reauthentication failed (FirebaseAuthException: ${error.code})',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw _mapFirebaseException(error);
     } on FirebaseException catch (error, stackTrace) {
       AppLogger.error(
         'Reauthentication failed (FirebaseException: ${error.code})',
