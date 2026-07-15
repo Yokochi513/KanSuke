@@ -878,7 +878,9 @@ void main() {
     expect(bar.type, EventType.tentative);
   });
 
-  testWidgets('束ねたバーのタップで内訳シートを開き、行から編集へ遷移する（Issue #76）', (tester) async {
+  testWidgets('束ねたバーは長押しで内訳シートを開き、行から編集へ遷移する（Issue #76 / #105）', (
+    tester,
+  ) async {
     final firestore = await _seedTitledEvents([
       (
         title: '旅行',
@@ -901,7 +903,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // Issue #105: 単タップではシートを開かない（ミスタップ対策。日選択へ透過する）。
+    // テスト環境（kIsWeb=false）では長押しでシートを開く。
     await tester.tap(find.byType(MergedEventBar));
+    await tester.pumpAndSettle();
+    expect(find.byType(EventTypeBadge), findsNothing);
+
+    await tester.longPress(find.byType(MergedEventBar));
     await tester.pumpAndSettle();
 
     // 内訳シートに各予定（2 件）の種別バッジが並ぶ。

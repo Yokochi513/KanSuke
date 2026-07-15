@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -649,9 +650,15 @@ class _EventBarsOverlay extends StatelessWidget {
       final selfColor = self != null && group.memberIds.contains(currentUid)
           ? colorFromHex(self.color)
           : null;
+      // Issue #105: 単タップで内訳シートが開くと、日を選ぶ/予定を足すつもりの
+      // ミスタップでも開いてしまい煩わしい。単タップは（通常バー同様）下のマスへ
+      // 通して日選択に使い、内訳シートは Web＝ダブルクリック／モバイル＝長押しで
+      // 開く。translucent にして単タップをマスへ透過させる。
+      void openSheet() => _showEventGroupSheet(context, group, membersById);
       return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _showEventGroupSheet(context, group, membersById),
+        behavior: HitTestBehavior.translucent,
+        onDoubleTap: kIsWeb ? openSheet : null,
+        onLongPress: kIsWeb ? null : openSheet,
         child: MergedEventBar(
           title: group.title,
           dayColors: dayColors,
