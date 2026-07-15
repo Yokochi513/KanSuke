@@ -722,6 +722,65 @@ void main() {
     expect(dotColors, contains(const Color(0xFFD84315)));
   });
 
+  testWidgets('自分が参加するマージ帯は地色を自分の色へ寄せる（Issue #105）', (tester) async {
+    // 旅行(me)と旅行(mama)を束ねる。自分(me)が参加者に含まれるため、中立の
+    // 地色ではなく自分の識別色を selfColor として受け取り、色で判別できる（FR-2）。
+    final firestore = await _seedTitledEvents([
+      (
+        title: '旅行',
+        creator: 'me',
+        start: DateTime(2026, 7, 5, 9),
+        end: DateTime(2026, 7, 7, 18),
+        type: EventType.confirmed,
+      ),
+      (
+        title: '旅行',
+        creator: 'mama',
+        start: DateTime(2026, 7, 6, 9),
+        end: DateTime(2026, 7, 8, 18),
+        type: EventType.confirmed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final bar = tester.widget<MergedEventBar>(find.byType(MergedEventBar));
+    // 自分(ぱぱ)の識別色を受け取り、地色を自分の色へ寄せる。
+    expect(bar.selfColor, const Color(0xFF1565C0));
+  });
+
+  testWidgets('自分が参加しないマージ帯は中立色のまま（Issue #105）', (tester) async {
+    // まま単独の同名予定同士を束ねる。自分(me)は参加しないため selfColor は
+    // null（従来どおり中立の地色）を保つ。
+    final firestore = await _seedTitledEvents([
+      (
+        title: '旅行',
+        creator: 'mama',
+        start: DateTime(2026, 7, 5, 9),
+        end: DateTime(2026, 7, 7, 18),
+        type: EventType.confirmed,
+      ),
+      (
+        title: '旅行',
+        creator: 'mama',
+        start: DateTime(2026, 7, 6, 9),
+        end: DateTime(2026, 7, 8, 18),
+        type: EventType.confirmed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final bar = tester.widget<MergedEventBar>(find.byType(MergedEventBar));
+    expect(bar.selfColor, isNull);
+  });
+
   testWidgets('期間が離れた同名予定は束ねない（Issue #76）', (tester) async {
     // 7/5〜7/6 と 7/9〜7/10 は間に空き日（7/7・7/8）があるため別グループのまま。
     final firestore = await _seedTitledEvents([
@@ -819,7 +878,9 @@ void main() {
     expect(bar.type, EventType.tentative);
   });
 
-  testWidgets('束ねたバーのタップで内訳シートを開き、行から編集へ遷移する（Issue #76）', (tester) async {
+  testWidgets('束ねたバーは長押しで内訳シートを開き、行から編集へ遷移する（Issue #76 / #105）', (
+    tester,
+  ) async {
     final firestore = await _seedTitledEvents([
       (
         title: '旅行',
@@ -842,7 +903,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // Issue #105: 単タップではシートを開かない（ミスタップ対策。日選択へ透過する）。
+    // テスト環境（kIsWeb=false）では長押しでシートを開く。
     await tester.tap(find.byType(MergedEventBar));
+    await tester.pumpAndSettle();
+    expect(find.byType(EventTypeBadge), findsNothing);
+
+    await tester.longPress(find.byType(MergedEventBar));
     await tester.pumpAndSettle();
 
     // 内訳シートに各予定（2 件）の種別バッジが並ぶ。

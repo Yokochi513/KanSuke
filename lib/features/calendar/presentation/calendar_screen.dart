@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -226,6 +227,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           bars: layout.bars,
                           markers: layout.markers,
                           membersById: membersById,
+                          currentUid: currentUid,
                           daysOfWeekHeight: _daysOfWeekHeight,
                           rowHeight: rowHeight,
                           colWidth: colWidth,
@@ -555,6 +557,7 @@ class _EventBarsOverlay extends StatelessWidget {
     required this.bars,
     required this.markers,
     required this.membersById,
+    required this.currentUid,
     required this.daysOfWeekHeight,
     required this.rowHeight,
     required this.colWidth,
@@ -566,6 +569,10 @@ class _EventBarsOverlay extends StatelessWidget {
   final List<_BarSegment> bars;
   final List<_OverflowMarker> markers;
   final Map<String, User> membersById;
+
+  /// 現在サインイン中のユーザ。マージ帯に自分の予定が含まれるとき、地色を
+  /// 自分の色へ寄せて「自分の予定が入っている」と一目で分かるようにする（Issue #105）。
+  final String? currentUid;
   final double daysOfWeekHeight;
   final double rowHeight;
   final double colWidth;
@@ -636,15 +643,29 @@ class _EventBarsOverlay extends StatelessWidget {
         for (final ids in bar.perDayMemberIds)
           [for (final id in ids) colorFromHex(membersById[id]?.color ?? '')],
       ];
+      // Issue #105: 自分の予定が束ねられていると中立グレーの地色に埋もれて
+      // 「自分の予定が見えない」ため、自分が参加者に含まれるなら地色を自分の
+      // 色へ寄せて色で判別できるようにする（FR-2）。
+      final self = currentUid != null ? membersById[currentUid] : null;
+      final selfColor = self != null && group.memberIds.contains(currentUid)
+          ? colorFromHex(self.color)
+          : null;
+      // Issue #105: 単タップで内訳シートが開くと、日を選ぶ/予定を足すつもりの
+      // ミスタップでも開いてしまい煩わしい。単タップは（通常バー同様）下のマスへ
+      // 通して日選択に使い、内訳シートは Web＝ダブルクリック／モバイル＝長押しで
+      // 開く。translucent にして単タップをマスへ透過させる。
+      void openSheet() => _showEventGroupSheet(context, group, membersById);
       return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _showEventGroupSheet(context, group, membersById),
+        behavior: HitTestBehavior.translucent,
+        onDoubleTap: kIsWeb ? openSheet : null,
+        onLongPress: kIsWeb ? null : openSheet,
         child: MergedEventBar(
           title: group.title,
           dayColors: dayColors,
           type: group.type,
           roundLeft: bar.roundLeft,
           roundRight: bar.roundRight,
+          selfColor: selfColor,
         ),
       );
     }
@@ -970,6 +991,7 @@ class MergedEventBar extends StatelessWidget {
     required this.type,
     this.roundLeft = true,
     this.roundRight = true,
+    this.selfColor,
     super.key,
   });
 
@@ -979,6 +1001,15 @@ class MergedEventBar extends StatelessWidget {
   final bool roundLeft;
   final bool roundRight;
 
+  /// 自分がこのグループの参加者に含まれるときの自分の識別色（Issue #105）。
+  /// 非 null なら地色を中立色からこの色へ少し寄せ、「自分の予定が入っている」と
+  /// 一目で分かるようにする。null（自分が不参加）なら従来どおり中立色のまま。
+  final Color? selfColor;
+
+  /// 地色を自分の色へ寄せる度合い。メンバー色そのものにはせず、あくまで中立色を
+  /// 帯びる程度にとどめ、地色の明度を大きく変えずタイトルの可読性を保つ。
+  static const double _selfTintFactor = 0.28;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -986,8 +1017,14 @@ class MergedEventBar extends StatelessWidget {
     // 束ねたバーの地色は、メンバー色（誰の予定か）と混同されないよう専用の
     // 中立色をテーマから引く（既定は KanSukeColors.mergedBar、Issue #76）。
     // タイトルのチップも同じ地色を敷き、背面のドットを隠して読めるようにする。
-    final barColor = KanSukeColors.of(context).mergedBar;
-    final textColor = scheme.onSurfaceVariant;
+    // Issue #105: 自分が参加者なら中立色を自分の色へ少し寄せ、埋もれないようにする。
+    final baseColor = KanSukeColors.of(context).mergedBar;
+    final barColor = selfColor != null
+        ? Color.lerp(baseColor, selfColor, _selfTintFactor)!
+        : baseColor;
+    // Issue #105: 従来の onSurfaceVariant はベージュ地で薄く「背景と同化」して
+    // 見えづらかったため、コントラストの高い onSurface に上げて読みやすくする。
+    final textColor = scheme.onSurface;
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);
 
