@@ -34,6 +34,40 @@ Future<FakeFirebaseFirestore> _firestoreWithCalendar() async {
   return firestore;
 }
 
+/// 2 つのカレンダー（A: me+mama / B: me+kids）と 3 名のユーザーを用意する。
+/// Issue #130: カレンダー切替で凡例が選択中カレンダーの参加者に切り替わることの検証用。
+Future<FakeFirebaseFirestore> _firestoreWithTwoCalendars() async {
+  final firestore = FakeFirebaseFirestore();
+  final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
+  for (final (id, name, memberIds) in const [
+    ('cal-a', 'カレンダーA', ['me', 'mama']),
+    ('cal-b', 'カレンダーB', ['me', 'kids']),
+  ]) {
+    await firestore.collection('calendars').doc(id).set({
+      'name': name,
+      'memberIds': memberIds,
+      'creatorId': 'me',
+      'ownerId': 'me',
+      'createdAt': now,
+      'updatedAt': now,
+    });
+  }
+  for (final (id, name, color) in const [
+    ('me', 'ぱぱ', '#1565C0'),
+    ('mama', 'まま', '#D84315'),
+    ('kids', 'きっず', '#2E7D32'),
+  ]) {
+    await firestore.collection('users').doc(id).set({
+      'name': name,
+      'email': '$id@example.com',
+      'color': color,
+      'createdAt': now,
+      'updatedAt': now,
+    });
+  }
+  return firestore;
+}
+
 Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
   final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
@@ -920,5 +954,50 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('EVENT_EDIT_SCREEN'), findsOneWidget);
+  });
+
+  testWidgets('カレンダーを切り替えると凡例が選択中カレンダーの参加者に切り替わる（Issue #130）', (tester) async {
+    final firestore = await _firestoreWithTwoCalendars();
+    // selectedCalendarIdProvider は上書きせず、calendarSelectionProvider を
+    // 操作して切替を再現する。凡例が「全カレンダーの和集合」ではなく「選択中
+    // カレンダーの参加者」に追従することを検証する（FR-2、基本設計 §6.3）。
+    final container = ProviderContainer(
+      overrides: [
+        firestoreProvider.overrideWithValue(firestore),
+        currentUidProvider.overrideWithValue('me'),
+        resolvedEventMergeEnabledProvider.overrideWithValue(true),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(calendarSelectionProvider.notifier).state = 'cal-a';
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildKanSukeTheme(),
+          home: const CalendarScreen(),
+          routes: {
+            AppRoutes.dayEvents: (_) =>
+                const Scaffold(body: Text('DAY_LIST_SCREEN')),
+            AppRoutes.settings: (_) => const Scaffold(body: Text('SETTINGS')),
+            AppRoutes.eventEdit: (_) =>
+                const Scaffold(body: Text('EVENT_EDIT_SCREEN')),
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // カレンダー A（me+mama）を選択中は A の参加者だけが凡例に出る。
+    expect(find.text('まま'), findsOneWidget);
+    expect(find.text('きっず'), findsNothing);
+
+    // カレンダー B（me+kids）へ切り替えると凡例も即座に追従する。
+    container.read(calendarSelectionProvider.notifier).state = 'cal-b';
+    await tester.pumpAndSettle();
+
+    expect(find.text('きっず'), findsOneWidget);
+    expect(find.text('まま'), findsNothing);
   });
 }

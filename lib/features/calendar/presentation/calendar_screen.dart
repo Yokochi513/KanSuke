@@ -1495,12 +1495,17 @@ class _ErrorBanner extends StatelessWidget {
 }
 
 /// メンバー色の凡例（FR-2、基本設計 §6.3）。
+///
+/// Issue #130: 凡例は「表示中カレンダー（[selectedCalendarIdProvider]）の参加者」だけを
+/// 出す。全参加カレンダーの和集合（[familyMembersProvider]）ではなく、参加者フィルタ
+/// （Issue #78）の候補と同一の [filterableMembersProvider] を購読することで、カレンダー
+/// 切替に即座に追従し、凡例とフィルタ候補の表示が食い違わないようにする。
 class _MemberLegend extends ConsumerWidget {
   const _MemberLegend();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final members = ref.watch(familyMembersProvider).asData?.value ?? const [];
+    final members = ref.watch(filterableMembersProvider);
     if (members.isEmpty) {
       return const SizedBox.shrink();
     }
