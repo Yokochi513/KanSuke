@@ -9,6 +9,8 @@ import 'package:kansuke/app/routes.dart';
 import 'package:kansuke/app/theme.dart';
 import 'package:kansuke/core/color_utils.dart';
 import 'package:kansuke/core/firebase_providers.dart';
+import 'package:kansuke/features/account/application/account_providers.dart';
+import 'package:kansuke/features/account/data/account_deletion_repository.dart';
 import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/auth/data/auth_repository.dart';
 import 'package:kansuke/features/notifications/application/notification_providers.dart';
@@ -267,6 +269,130 @@ void main() {
     expect(auth.signOutCount, 1);
   });
 
+  testWidgets('アカウント削除は二段確認と再認証を経て、削除後サインアウトする（Issue #102）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final firestore = await _seedUser();
+    final auth = _FakeAuthRepository();
+    final deletion = _FakeAccountDeletionRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+          authRepositoryProvider.overrideWithValue(auth),
+          accountDeletionRepositoryProvider.overrideWithValue(deletion),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('アカウントを削除'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('アカウントを削除'));
+    await tester.pumpAndSettle();
+
+    // 1 段目の確認。
+    expect(find.text('アカウントを削除しますか？'), findsOneWidget);
+    await tester.tap(find.text('続ける'));
+    await tester.pumpAndSettle();
+
+    // 2 段目の確認。
+    expect(find.text('本当に削除しますか？'), findsOneWidget);
+    await tester.tap(find.text('削除する'));
+    // 成功後は進捗スピナーを出したままログイン画面へ抜けるため、settle せず
+    // 非同期処理（再認証 → 削除 → サインアウト）が流れるだけ待つ。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // 再認証 → 削除 → サインアウトの順に実行される。
+    expect(auth.reauthenticateCount, 1);
+    expect(deletion.deleteCount, 1);
+    expect(auth.signOutCount, 1);
+  });
+
+  testWidgets('再認証をキャンセルするとアカウントを削除しない（Issue #102）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final firestore = await _seedUser();
+    final auth = _FakeAuthRepository(
+      reauthError: const AuthCancelledException(),
+    );
+    final deletion = _FakeAccountDeletionRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+          authRepositoryProvider.overrideWithValue(auth),
+          accountDeletionRepositoryProvider.overrideWithValue(deletion),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('アカウントを削除'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('アカウントを削除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('続ける'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('削除する'));
+    await tester.pumpAndSettle();
+
+    // 再認証は試みるが、キャンセルされたので削除もサインアウトもしない。
+    expect(auth.reauthenticateCount, 1);
+    expect(deletion.deleteCount, 0);
+    expect(auth.signOutCount, 0);
+  });
+
+  testWidgets('削除に失敗するとメッセージを表示し、サインアウトしない（Issue #102）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final firestore = await _seedUser();
+    final auth = _FakeAuthRepository();
+    final deletion = _FakeAccountDeletionRepository(
+      error: const AccountDeletionException('アカウントの削除に失敗しました。通信環境を確認してください。'),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+          authRepositoryProvider.overrideWithValue(auth),
+          accountDeletionRepositoryProvider.overrideWithValue(deletion),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('アカウントを削除'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('アカウントを削除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('続ける'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('削除する'));
+    await tester.pumpAndSettle();
+
+    expect(auth.reauthenticateCount, 1);
+    expect(deletion.deleteCount, 1);
+    expect(auth.signOutCount, 0);
+    expect(find.text('アカウントの削除に失敗しました。通信環境を確認してください。'), findsOneWidget);
+  });
+
   testWidgets('カレンダー管理をタップすると管理画面へ遷移する', (tester) async {
     final firestore = await _seedUser();
     await tester.pumpWidget(
@@ -321,7 +447,13 @@ class _FakeDeviceRegistrationService implements DeviceRegistrationService {
 }
 
 class _FakeAuthRepository implements AuthRepository {
+  _FakeAuthRepository({this.reauthError});
+
+  /// 再認証で投げる例外（null なら成功）。
+  final AuthException? reauthError;
+
   int signOutCount = 0;
+  int reauthenticateCount = 0;
 
   @override
   Stream<AuthSession?> authStateChanges() =>
@@ -341,5 +473,30 @@ class _FakeAuthRepository implements AuthRepository {
       const Stream<AuthException?>.empty();
 
   @override
+  Future<void> reauthenticate() async {
+    reauthenticateCount++;
+    if (reauthError case final error?) {
+      throw error;
+    }
+  }
+
+  @override
   Future<void> signOut() async => signOutCount++;
+}
+
+class _FakeAccountDeletionRepository implements AccountDeletionRepository {
+  _FakeAccountDeletionRepository({this.error});
+
+  /// 削除で投げる例外（null なら成功）。
+  final AccountDeletionException? error;
+
+  int deleteCount = 0;
+
+  @override
+  Future<void> deleteAccount() async {
+    deleteCount++;
+    if (error case final failure?) {
+      throw failure;
+    }
+  }
 }

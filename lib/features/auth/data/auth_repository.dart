@@ -11,6 +11,13 @@ abstract interface class AuthRepository {
 
   Future<void> signInWithApple();
 
+  /// 現在サインイン中のプロバイダ（Google / Apple）で再認証する（Issue #102）。
+  ///
+  /// アカウント削除など取り返しのつかない操作の直前に、誤操作・端末の乗っ取りを
+  /// 防ぐために求める。キャンセルは [AuthCancelledException]、失敗は
+  /// [AuthException]（サインインと同じ体系）で通知する。
+  Future<void> reauthenticate();
+
   Future<void> signOut();
 
   /// Google サインインの初期化（冪等）。

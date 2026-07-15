@@ -213,6 +213,9 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<void> reauthenticate() async {}
+
+  @override
   Future<void> signOut() async {
     signOutCount++;
     _session = null;

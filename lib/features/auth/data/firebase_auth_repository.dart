@@ -201,6 +201,88 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<void> reauthenticate() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AuthException();
+    }
+    // サインインに使ったプロバイダで再認証する（複数ある場合は先頭を採用）。
+    final providerId = user.providerData.isNotEmpty
+        ? user.providerData.first.providerId
+        : '';
+    try {
+      final credential = providerId == 'apple.com'
+          ? await _appleCredential()
+          : await _googleCredential();
+      await user.reauthenticateWithCredential(credential);
+    } on GoogleSignInException catch (error, stackTrace) {
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        throw const AuthCancelledException();
+      }
+      AppLogger.error(
+        'Reauthentication failed (Google)',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const AuthException();
+    } on SignInWithAppleAuthorizationException catch (error, stackTrace) {
+      if (error.code == AuthorizationErrorCode.canceled) {
+        throw const AuthCancelledException();
+      }
+      AppLogger.error(
+        'Reauthentication failed (Apple)',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const AuthException();
+    } on FirebaseException catch (error, stackTrace) {
+      AppLogger.error(
+        'Reauthentication failed (FirebaseException: ${error.code})',
+        tag: _logTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw _mapFirebaseException(error);
+    }
+  }
+
+  /// Google の再認証用クレデンシャルを取得する（サインインと同じ手順）。
+  Future<AuthCredential> _googleCredential() async {
+    await initializeGoogleSignIn();
+    final googleUser = await _googleSignIn.authenticate();
+    final googleAuth = googleUser.authentication;
+    return GoogleAuthProvider.credential(idToken: googleAuth.idToken);
+  }
+
+  /// Apple の再認証用クレデンシャルを取得する（サインインと同じ手順）。
+  Future<AuthCredential> _appleCredential() async {
+    final rawNonce = _createNonce();
+    final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
+    final appleCredential = await SignInWithApple.getAppleIDCredential(
+      scopes: const [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName,
+      ],
+      nonce: hashedNonce,
+    );
+    final identityToken = appleCredential.identityToken;
+    if (identityToken == null) {
+      throw const AuthException();
+    }
+    final fullName = AppleFullPersonName(
+      givenName: appleCredential.givenName,
+      familyName: appleCredential.familyName,
+    );
+    return AppleAuthProvider.credentialWithIDToken(
+      identityToken,
+      rawNonce,
+      fullName,
+    );
+  }
+
+  @override
   Future<void> signOut() async {
     await _auth.signOut();
     try {
