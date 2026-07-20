@@ -870,4 +870,94 @@ void main() {
     expect(data['calendarId'], 'solo');
     expect(data['participantIds'], ['me']);
   });
+
+  // #109: リマインドの幅を増やす。プリセット拡充＋カスタム入力。
+  group('リマインドの幅（#109）', () {
+    test('reminderOffsetLabel は分数を日本語ラベルへ整形する', () {
+      expect(reminderOffsetLabel(5), '5分前');
+      expect(reminderOffsetLabel(10), '10分前');
+      expect(reminderOffsetLabel(45), '45分前');
+      expect(reminderOffsetLabel(60), '1時間前');
+      expect(reminderOffsetLabel(90), '1時間30分前');
+      expect(reminderOffsetLabel(180), '3時間前');
+      expect(reminderOffsetLabel(720), '12時間前');
+      expect(reminderOffsetLabel(1440), '1日前');
+      expect(reminderOffsetLabel(1500), '1日1時間前');
+      expect(reminderOffsetLabel(10080), '7日前');
+      expect(reminderOffsetLabel(0), '開始時刻');
+    });
+
+    // プリセットに無い値（カスタム）も選択済みチップとして表示・保存できる。
+    testWidgets('プリセット外のリマインドは選択済みチップとして表示され保存で温存する', (tester) async {
+      final firestore = await _seedMember();
+      final start = DateTime(2026, 7, 5, 9);
+      final event = Event.create(
+        title: '通院',
+        creatorId: 'me',
+        participantIds: const ['me'],
+        startAt: start,
+        endAt: start.add(const Duration(hours: 1)),
+        allDay: false,
+        type: EventType.confirmed,
+        memo: '',
+        reminderOffsets: const {
+          'me': [45, 90],
+        },
+        updatedBy: 'me',
+        now: start,
+        calendarId: testCalendarId,
+      );
+      await firestore
+          .collection('events')
+          .doc(event.id)
+          .set(event.toFirestore(useServerTimestamp: false));
+
+      await _openEditor(tester, firestore, EventEditArgs.edit(event));
+
+      final chip45 = tester.widget<FilterChip>(
+        find.widgetWithText(FilterChip, '45分前'),
+      );
+      final chip90 = tester.widget<FilterChip>(
+        find.widgetWithText(FilterChip, '1時間30分前'),
+      );
+      expect(chip45.selected, isTrue);
+      expect(chip90.selected, isTrue);
+
+      await _tapVisible(tester, find.text('保存'));
+
+      final data = (await _events(firestore)).single.data();
+      expect(data['reminderOffsets'], {
+        'me': [45, 90],
+      });
+    });
+
+    // カスタム入力: 「カスタム」チップでピッカーを開き、既定（10分）を追加できる。
+    testWidgets('カスタムチップでピッカーを開いて追加できる', (tester) async {
+      final firestore = await _seedMember();
+      await _openEditor(
+        tester,
+        firestore,
+        EventEditArgs.create(DateTime(2026, 7, 5)),
+      );
+
+      await _tapVisible(tester, find.widgetWithText(ActionChip, 'カスタム'));
+      expect(find.text('開始何分前に通知'), findsOneWidget);
+
+      await _tapVisible(tester, find.text('追加'));
+
+      // 既定値（10分前）が選択済みチップになる。
+      final chip = tester.widget<FilterChip>(
+        find.widgetWithText(FilterChip, '10分前'),
+      );
+      expect(chip.selected, isTrue);
+
+      await tester.enterText(find.byType(TextFormField).first, '運動会');
+      await _tapVisible(tester, find.text('作成'));
+
+      final data = (await _events(firestore)).single.data();
+      expect(data['reminderOffsets'], {
+        'me': [10],
+      });
+    });
+  });
 }
