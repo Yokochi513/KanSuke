@@ -21,6 +21,11 @@ const _reminderPresets = <int, String>{
   1440: '1日前',
 };
 
+/// メモの最大文字数（#116）。Firestore は1ドキュメント約1MBが上限で、単一の
+/// メモフィールドに巨大な文字列を入れると保存に失敗する。家庭内の予定メモには
+/// 十分な長さに制限し、保存前に UI（入力制限＋バリデーション）で止める。
+const _memoMaxLength = 1000;
+
 enum _RecurrenceFrequencyOption { none, weekly, monthly, yearly }
 
 enum _RecurrenceCountMode { infinite, specified }
@@ -212,6 +217,16 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                       border: OutlineInputBorder(),
                     ),
                     maxLines: 3,
+                    // #116: 入力段階で上限を超えさせない（超過分は入力・貼り付け時に
+                    // 切り詰められ、残り文字数のカウンタも表示される）。
+                    maxLength: _memoMaxLength,
+                    // 本修正前に保存された巨大なメモを編集した場合は初期値設定が
+                    // 入力制限をすり抜けるため、保存時にも長さを検証して止める。
+                    validator: (value) =>
+                        (value != null &&
+                            value.characters.length > _memoMaxLength)
+                        ? 'メモは$_memoMaxLength文字以内で入力してください'
+                        : null,
                   ),
                   const SizedBox(height: 16),
                   _buildReminderField(membersAsync),
