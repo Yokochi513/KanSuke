@@ -12,14 +12,43 @@ import '../../users/application/user_providers.dart';
 import '../application/event_providers.dart';
 import 'event_edit_args.dart';
 
-/// 「開始 n 分前」のリマインド候補（FR-5）。値は分。
-const _reminderPresets = <int, String>{
-  10: '10分前',
-  30: '30分前',
-  60: '1時間前',
-  180: '3時間前',
-  1440: '1日前',
-};
+/// 「開始 n 分前」のリマインド候補（FR-5 / #109）。値は分。
+///
+/// #109「リマインドの幅を増やす」に対応し、直前〜数日前まで段階的に選べるよう
+/// 候補を拡充する。バックエンド（Functions の `normalizeOffsets`）は 0 以上の
+/// 任意の整数を受け付けるため、ここに無い値もカスタム入力で指定できる。
+const _reminderPresets = <int>[
+  5, // 5分前
+  10, // 10分前
+  15, // 15分前
+  30, // 30分前
+  60, // 1時間前
+  120, // 2時間前
+  180, // 3時間前
+  360, // 6時間前
+  720, // 12時間前
+  1440, // 1日前
+  2880, // 2日前
+  4320, // 3日前
+  10080, // 7日前
+];
+
+/// リマインドの「開始 n 分前」を日本語ラベルへ整形する（#109）。
+///
+/// 例: 5→「5分前」/ 60→「1時間前」/ 90→「1時間30分前」/ 1440→「1日前」/
+/// 10080→「7日前」。プリセットもカスタム入力もこの関数で表示を統一する。
+String reminderOffsetLabel(int minutes) {
+  if (minutes <= 0) return '開始時刻';
+  final days = minutes ~/ 1440;
+  final hours = (minutes % 1440) ~/ 60;
+  final mins = minutes % 60;
+  final buffer = StringBuffer();
+  if (days > 0) buffer.write('$days日');
+  if (hours > 0) buffer.write('$hours時間');
+  if (mins > 0) buffer.write('$mins分');
+  buffer.write('前');
+  return buffer.toString();
+}
 
 /// メモの最大文字数（#116）。Firestore は1ドキュメント約1MBが上限で、単一の
 /// メモフィールドに巨大な文字列を入れると保存に失敗する。家庭内の予定メモには
@@ -502,6 +531,11 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
         ? const <int>{}
         : (_reminderOffsets[uid] ?? const <int>{});
 
+    // プリセットと、カスタム入力で追加された自分の値をまとめて昇順に並べる
+    // （#109）。プリセットに無い値も選択済みチップとして表示・解除できるように
+    // するため。
+    final values = <int>{..._reminderPresets, ...mine}.toList()..sort();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -510,10 +544,10 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
         Wrap(
           spacing: 8,
           children: [
-            for (final entry in _reminderPresets.entries)
+            for (final value in values)
               FilterChip(
-                label: Text(entry.value),
-                selected: mine.contains(entry.key),
+                label: Text(reminderOffsetLabel(value)),
+                selected: mine.contains(value),
                 onSelected: uid == null
                     ? null
                     : (selected) => setState(() {
@@ -522,12 +556,18 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                           () => <int>{},
                         );
                         if (selected) {
-                          offsets.add(entry.key);
+                          offsets.add(value);
                         } else {
-                          offsets.remove(entry.key);
+                          offsets.remove(value);
                         }
                       }),
               ),
+            // カスタム入力（#109）: 任意の「n 分前」を指定できる。
+            ActionChip(
+              avatar: const Icon(Icons.add, size: 18),
+              label: const Text('カスタム'),
+              onPressed: uid == null ? null : () => _addCustomReminder(uid),
+            ),
           ],
         ),
         const SizedBox(height: 4),
@@ -537,6 +577,105 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
         ),
         _buildCreatorCaption(membersAsync),
       ],
+    );
+  }
+
+  /// 任意の「開始 n 分前」を追加する（#109）。日・時間・分ピッカーで指定する。
+  Future<void> _addCustomReminder(String uid) async {
+    final minutes = await _pickCustomOffset();
+    if (minutes == null) return;
+    if (minutes <= 0) {
+      _showSnack('1分以上を指定してください');
+      return;
+    }
+    final offsets = _reminderOffsets.putIfAbsent(uid, () => <int>{});
+    if (!offsets.add(minutes)) {
+      _showSnack('${reminderOffsetLabel(minutes)}は設定済みです');
+      return;
+    }
+    setState(() {});
+  }
+
+  /// 日・時間・分のホイールピッカーでリマインドの「開始 n 分前」を選ぶ（#109）。
+  Future<int?> _pickCustomOffset() {
+    var days = 0;
+    var hours = 0;
+    var mins = 10;
+    return showModalBottomSheet<int>(
+      context: context,
+      builder: (sheetContext) {
+        Widget wheel({
+          required int count,
+          required int initial,
+          required String suffix,
+          required ValueChanged<int> onChanged,
+        }) {
+          return Expanded(
+            child: CupertinoPicker(
+              scrollController: FixedExtentScrollController(
+                initialItem: initial,
+              ),
+              itemExtent: 36,
+              onSelectedItemChanged: onChanged,
+              children: [
+                for (var i = 0; i < count; i++)
+                  Center(child: Text('$i$suffix')),
+              ],
+            ),
+          );
+        }
+
+        return SafeArea(
+          child: SizedBox(
+            height: 320,
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('キャンセル'),
+                    ),
+                    const Text('開始何分前に通知'),
+                    TextButton(
+                      onPressed: () => Navigator.pop(
+                        sheetContext,
+                        (days * 24 + hours) * 60 + mins,
+                      ),
+                      child: const Text('追加'),
+                    ),
+                  ],
+                ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      wheel(
+                        count: 15,
+                        initial: days,
+                        suffix: '日',
+                        onChanged: (v) => days = v,
+                      ),
+                      wheel(
+                        count: 24,
+                        initial: hours,
+                        suffix: '時間',
+                        onChanged: (v) => hours = v,
+                      ),
+                      wheel(
+                        count: 60,
+                        initial: mins,
+                        suffix: '分',
+                        onChanged: (v) => mins = v,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
