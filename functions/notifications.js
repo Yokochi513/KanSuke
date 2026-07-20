@@ -1,9 +1,10 @@
 "use strict";
 
-// 予定の追加・変更・削除の共有通知（Issue #77、要件定義 FR-6 / FR-8）。
+// 予定の追加・変更・削除の共有通知（Issue #77 / #158、要件定義 FR-6 / FR-8）。
 //
-// 家族の誰かが予定を作成/更新/削除したとき、同じカレンダーの参加者のうち
-// **操作者本人を除くメンバー**の全デバイスへ FCM 通知する。FR-5 のリマインド
+// 家族の誰かが予定を作成/更新/削除したとき、その予定の参加者
+// （`participantIds`）のうち**操作者本人を除くメンバー**の全デバイスへ FCM 通知
+// する。カレンダーの全メンバーではなく参加者に限定する（Issue #158）。FR-5 のリマインド
 // （開始前のお知らせ、Issue #14 / reminders.js）とは別物で、こちらは「変更の
 // お知らせ」。
 //
@@ -170,19 +171,30 @@ function buildMessage(action, event, operatorName) {
 }
 
 /**
- * カレンダー参加者のうち操作者を除いた配信先を求める。
+ * 予定の参加者のうち操作者を除いた配信先を求める（Issue #158）。
+ *
+ * 宛先はカレンダーの全メンバーではなく、その予定の参加者
+ * （`event.participantIds`）に限定する。参加者以外のメンバーには通知しない。
+ * 参加者であってもすでにカレンダーから外れた uid には送らないよう、
+ * カレンダーの `memberIds` との積集合を取る。
  *
  * @param {object} db Firestore（Admin SDK）。
- * @param {string} calendarId 予定のカレンダー。
+ * @param {object} event 予定データ（`calendarId` / `participantIds`）。
  * @param {?string} operatorId 操作者の uid。
  * @return {Promise<string[]>} 配信先ユーザーの uid。
  */
-async function resolveRecipients(db, calendarId, operatorId) {
+async function resolveRecipients(db, event, operatorId) {
+  const calendarId = event.calendarId;
   if (!calendarId) return [];
   const snapshot = await db.doc(`calendars/${calendarId}`).get();
   if (!snapshot.exists) return [];
-  const memberIds = snapshot.data().memberIds || [];
-  return memberIds.filter((uid) => uid && uid !== operatorId);
+  const memberIds = new Set(snapshot.data().memberIds || []);
+  const participantIds = Array.isArray(event.participantIds) ?
+    event.participantIds :
+    [];
+  return participantIds.filter(
+    (uid) => uid && uid !== operatorId && memberIds.has(uid),
+  );
 }
 
 /**
@@ -278,7 +290,7 @@ async function notifyEventChange(db, messaging, change, deps) {
   if (!classified) return skip();
 
   const {action, event, operatorId} = classified;
-  const recipients = await resolveRecipients(db, event.calendarId, operatorId);
+  const recipients = await resolveRecipients(db, event, operatorId);
   if (recipients.length === 0) return skip(action);
 
   const now = deps.now();

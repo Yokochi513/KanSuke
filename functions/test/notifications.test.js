@@ -88,7 +88,7 @@ const event = (overrides = {}) => ({
   allDay: false,
   type: "confirmed",
   memo: "",
-  participantIds: ["papa", "mama"],
+  participantIds: ["papa", "mama", "kids"],
   reminderOffsets: {papa: [60]},
   updatedBy: "papa",
   deleted: false,
@@ -296,6 +296,34 @@ describe("notifyEventChange（配信先の選定と送信）", function() {
       calendarId: "cal1",
     });
     assert.strictEqual(db.store["eventNotifications/e1"].lastAction, "created");
+  });
+
+  it("参加者以外のカレンダーメンバーには送らない（Issue #158）", async function() {
+    // kids はカレンダーメンバーだが、この予定の参加者ではない。
+    const db = fakeDb(seed());
+    const messaging = fakeMessaging();
+
+    const result = await notifyEventChange(
+      db,
+      messaging,
+      {
+        eventId: "e1",
+        before: null,
+        after: event({participantIds: ["papa", "mama"]}),
+      },
+      {now: () => now},
+    );
+
+    // 参加者は papa（操作者）と mama のみ。宛先は mama だけ。
+    assert.strictEqual(result.recipients, 1);
+    assert.strictEqual(result.notified, 1);
+    const tokens = messaging.calls.flatMap((call) => call.tokens);
+    assert.deepStrictEqual(tokens.sort(), ["tokenM"]);
+    // kids のデバイスには一切送っていない。
+    assert.ok(
+      !tokens.includes("tokenK1") && !tokens.includes("tokenK2"),
+      "参加者以外の kids には送らない",
+    );
   });
 
   it("通知対象外（個人設定のみの更新）は送信しない", async function() {
