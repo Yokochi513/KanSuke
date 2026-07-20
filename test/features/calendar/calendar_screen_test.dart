@@ -956,6 +956,79 @@ void main() {
     expect(find.text('EVENT_EDIT_SCREEN'), findsOneWidget);
   });
 
+  testWidgets('月をまたぐマージ帯は翌月ビューでも同じマージ表示を保つ（Issue #108）', (tester) async {
+    // 夏休み: ぱぱは 8/24 まで・ままは 8/31 まで。9 月ビューのグリッド
+    // （8/30〜）にはぱぱの予定が重ならないが、取得をグリッドぴったりに絞ると
+    // グループ構成が月によって変わり、8 月ビューではマージ帯だった 8/30〜31 が
+    // 9 月ビューでは まま単独の予定バーに化けて表示がずれる。
+    final firestore = await _seedTitledEvents([
+      (
+        title: '夏休み',
+        creator: 'me',
+        start: DateTime(2026, 7, 18),
+        end: DateTime(2026, 8, 24),
+        type: EventType.confirmed,
+      ),
+      (
+        title: '夏休み',
+        creator: 'mama',
+        start: DateTime(2026, 7, 18),
+        end: DateTime(2026, 8, 31),
+        type: EventType.confirmed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 9, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    // 8 月ビューと同じく、8/30〜31 はマージ帯として描く（単独バーに化けない）。
+    expect(find.byType(MergedEventBar), findsOneWidget);
+    expect(find.byType(EventBar), findsNothing);
+
+    final bar = tester.widget<MergedEventBar>(find.byType(MergedEventBar));
+    // 実際の開始日（7/18）はグリッド外なので、開始端の角丸は付けない
+    // （前月から続いて見せる）。終了端（8/31）は実際の終了日なので角丸を付ける。
+    expect(bar.roundLeft, isFalse);
+    expect(bar.roundRight, isTrue);
+  });
+
+  testWidgets('グリッド外へ続く帯の端には開始・終了の角丸を付けない（Issue #108）', (tester) async {
+    // 7/18〜8/31 の予定を 7 月ビューで見る。グリッドは 8/8 で終わるが、予定は
+    // その先へ続くため、最終週の右端に終了の角丸を付けない（そこで終わるように
+    // 見せない）。開始端（7/18）はグリッド内の実際の開始日なので角丸を付ける。
+    final firestore = await _seedTitledEvents([
+      (
+        title: '夏休み',
+        creator: 'me',
+        start: DateTime(2026, 7, 18),
+        end: DateTime(2026, 8, 31),
+        type: EventType.confirmed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final bars = tester
+        .widgetList<EventBar>(
+          find.byWidgetPredicate(
+            (widget) => widget is EventBar && widget.title == '夏休み',
+          ),
+        )
+        .toList();
+
+    // 7 月ビュー（6/28〜8/8）では 7/18 の週から最終週まで 4 本に分かれる。
+    expect(bars, hasLength(4));
+    expect(bars.first.roundLeft, isTrue);
+    expect(bars.first.roundRight, isFalse);
+    expect(bars.last.roundLeft, isFalse);
+    expect(bars.last.roundRight, isFalse);
+  });
+
   testWidgets('カレンダーを切り替えると凡例が選択中カレンダーの参加者に切り替わる（Issue #130）', (tester) async {
     final firestore = await _firestoreWithTwoCalendars();
     // selectedCalendarIdProvider は上書きせず、calendarSelectionProvider を
