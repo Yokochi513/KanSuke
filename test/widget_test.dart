@@ -66,10 +66,10 @@ void main() {
   });
 
   testWidgets('サインアウトするとサインイン画面へ戻る', (tester) async {
-    // FR-8: 設定画面にカレンダーセクションが増え、既定のテスト表示領域では
+    // FR-8: 設定画面のセクションが増え、既定のテスト表示領域では
     // 末尾の要素が描画範囲外になる。ensureVisible が要素を見つけられるよう
     // 表示領域を広げる。
-    await tester.binding.setSurfaceSize(const Size(400, 1200));
+    await tester.binding.setSurfaceSize(const Size(400, 1700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final repository = FakeAuthRepository(initiallySignedIn: true);
     await tester.pumpWidget(await _testApp(repository));

@@ -23,6 +23,7 @@ import '../../events/presentation/event_edit_args.dart';
 import '../../events/presentation/event_type_badge.dart';
 import '../../events/presentation/member_filter_button.dart';
 import '../../settings/application/event_merge_provider.dart';
+import '../../settings/application/multi_member_display_provider.dart';
 import '../../users/application/user_providers.dart';
 
 /// カレンダー月表示（FR-4）。
@@ -156,6 +157,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
     final mergeEnabled = ref.watch(resolvedEventMergeEnabledProvider);
+    // Issue #112: 複数人予定の色の見せ方（丸マーク／色分け）は設定に従う。
+    final multiMemberDisplay = ref.watch(
+      resolvedMultiMemberEventDisplayProvider,
+    );
     // Issue #78: 参加者フィルタが有効なら、選択メンバーを含む予定だけに絞る
     // （表示上の絞り込みのみ。データは変更しない）。
     final memberFilter = ref.watch(memberFilterProvider);
@@ -249,6 +254,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           markers: layout.markers,
                           membersById: membersById,
                           currentUid: currentUid,
+                          multiMemberDisplay: multiMemberDisplay,
                           daysOfWeekHeight: _daysOfWeekHeight,
                           rowHeight: rowHeight,
                           colWidth: colWidth,
@@ -593,6 +599,7 @@ class _EventBarsOverlay extends StatelessWidget {
     required this.markers,
     required this.membersById,
     required this.currentUid,
+    required this.multiMemberDisplay,
     required this.daysOfWeekHeight,
     required this.rowHeight,
     required this.colWidth,
@@ -608,6 +615,9 @@ class _EventBarsOverlay extends StatelessWidget {
   /// 現在サインイン中のユーザ。マージ帯に自分の予定が含まれるとき、地色を
   /// 自分の色へ寄せて「自分の予定が入っている」と一目で分かるようにする（Issue #105）。
   final String? currentUid;
+
+  /// 複数人予定の色の見せ方（丸マーク／色分け、Issue #112）。設定に従う。
+  final MultiMemberEventDisplay multiMemberDisplay;
   final double daysOfWeekHeight;
   final double rowHeight;
   final double colWidth;
@@ -708,6 +718,17 @@ class _EventBarsOverlay extends StatelessWidget {
     final colors = group.memberIds
         .map((id) => colorFromHex(membersById[id]?.color ?? ''))
         .toList();
+    // Issue #112: 複数人の予定は、設定が「丸マーク」なら帯を塗り分けず、
+    // タイトルの右に参加者色の〇を並べる。1 人の予定は従来どおり単色。
+    final memberDots =
+        multiMemberDisplay == MultiMemberEventDisplay.dots && colors.length > 1;
+    // Issue #105 と同様、丸マーク表示の中立地色に自分の予定が埋もれないよう、
+    // 自分が参加者なら地色を自分の色へ寄せる（FR-2）。
+    final self = currentUid != null ? membersById[currentUid] : null;
+    final selfColor =
+        memberDots && self != null && group.memberIds.contains(currentUid)
+        ? colorFromHex(self.color)
+        : null;
     return IgnorePointer(
       child: EventBar(
         title: group.title,
@@ -715,6 +736,8 @@ class _EventBarsOverlay extends StatelessWidget {
         type: group.type,
         roundLeft: bar.roundLeft,
         roundRight: bar.roundRight,
+        memberDots: memberDots,
+        selfColor: selfColor,
       ),
     );
   }
@@ -894,6 +917,11 @@ class _HolidayLabel extends StatelessWidget {
   }
 }
 
+/// 中立地色（[KanSukeColors.mergedBar]）を自分の識別色へ寄せる度合い
+/// （Issue #105）。メンバー色そのものにはせず、あくまで中立色を帯びる程度に
+/// とどめ、地色の明度を大きく変えずタイトルの可読性を保つ。
+const double _selfTintFactor = 0.28;
+
 /// 予定を表す 1 本のバー（FR-2 / FR-3、基本設計 §6.3）。
 ///
 /// 参加メンバーの色で等分割して塗り、確定＝塗りつぶし・
@@ -905,6 +933,12 @@ class _HolidayLabel extends StatelessWidget {
 /// 同じ予定のバーと視覚的につながって見える。
 ///
 /// [showTitle] を false にするとタイトルを描画しない。
+///
+/// Issue #112: [memberDots] を true にすると、複数人の予定を色の塗り分けでは
+/// なく「中立地色の帯＋タイトル右に参加者色の〇」で描く。塗り分けは 3 人以上で
+/// 細切れになり見にくいというフィードバックに応えたもので、マージ帯
+/// （[MergedEventBar]）と同じデザイン言語（中立地色＋色ドット）に揃える。
+/// 参加者が 1 人のときは指定に関わらず従来どおり単色で塗る。
 class EventBar extends StatelessWidget {
   const EventBar({
     required this.title,
@@ -913,6 +947,8 @@ class EventBar extends StatelessWidget {
     this.roundLeft = true,
     this.roundRight = true,
     this.showTitle = true,
+    this.memberDots = false,
+    this.selfColor,
     super.key,
   });
 
@@ -923,8 +959,117 @@ class EventBar extends StatelessWidget {
   final bool roundRight;
   final bool showTitle;
 
+  /// 複数人の予定を「中立地色＋参加者色の〇」で描くか（Issue #112）。
+  final bool memberDots;
+
+  /// 丸マーク表示で自分がこの予定の参加者に含まれるときの自分の識別色
+  /// （Issue #105 / #112）。非 null なら中立地色をこの色へ少し寄せ、
+  /// 「自分の予定が入っている」と一目で分かるようにする。
+  final Color? selfColor;
+
+  /// 参加者色の〇の直径。バー高（16）に上下の余白が残るサイズにする。
+  static const double _dotSize = 10;
+
   @override
   Widget build(BuildContext context) {
+    if (memberDots && colors.length > 1) {
+      return _buildDotBar(context);
+    }
+    return _buildSplitBar(context);
+  }
+
+  /// 中立地色の帯＋タイトル右の参加者色〇で描く（Issue #112）。
+  ///
+  /// 地色・枠線・文字色はマージ帯（[MergedEventBar]）と揃え、「中立地色の帯＝
+  /// 複数人の予定」という見え方を統一する。仮が含まれる予定は枠付きで種別を
+  /// 区別する（FR-3）。
+  Widget _buildDotBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final confirmed = type == EventType.confirmed;
+    final baseColor = KanSukeColors.of(context).mergedBar;
+    final barColor = selfColor != null
+        ? Color.lerp(baseColor, selfColor, _selfTintFactor)!
+        : baseColor;
+    // 地色は設定で自由に変えられるため（Issue #112 フォローアップ）、文字色は
+    // 地色の明度から黒/白を選び、どの地色でも読めるようにする。
+    final textColor =
+        ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    const radius = Radius.circular(3);
+    final border = BorderSide(color: scheme.outline, width: 1);
+
+    return Container(
+      height: 16,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: barColor,
+        border: confirmed
+            ? null
+            : Border(
+                top: border,
+                bottom: border,
+                left: roundLeft ? border : BorderSide.none,
+                right: roundRight ? border : BorderSide.none,
+              ),
+        borderRadius: BorderRadius.only(
+          topLeft: roundLeft ? radius : Radius.zero,
+          bottomLeft: roundLeft ? radius : Radius.zero,
+          topRight: roundRight ? radius : Radius.zero,
+          bottomRight: roundRight ? radius : Radius.zero,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          children: [
+            if (showTitle)
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.0,
+                    fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
+                    color: textColor,
+                  ),
+                ),
+              ),
+            if (showTitle) const SizedBox(width: 4),
+            // マスが狭く〇が収まらないときは、〇の列ごと縮めてはみ出させない。
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final color in colors)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 1),
+                        child: Container(
+                          width: _dotSize,
+                          height: _dotSize,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 参加メンバーの色で帯を等分割して塗る従来表示。
+  Widget _buildSplitBar(BuildContext context) {
     final confirmed = type == EventType.confirmed;
     final primary = colors.first;
     final textColor = confirmed
@@ -1041,10 +1186,6 @@ class MergedEventBar extends StatelessWidget {
   /// 一目で分かるようにする。null（自分が不参加）なら従来どおり中立色のまま。
   final Color? selfColor;
 
-  /// 地色を自分の色へ寄せる度合い。メンバー色そのものにはせず、あくまで中立色を
-  /// 帯びる程度にとどめ、地色の明度を大きく変えずタイトルの可読性を保つ。
-  static const double _selfTintFactor = 0.28;
-
   /// タイトル行（チップの外側）の左右パディング。
   static const double _rowPadding = 2;
 
@@ -1068,8 +1209,13 @@ class MergedEventBar extends StatelessWidget {
         ? Color.lerp(baseColor, selfColor, _selfTintFactor)!
         : baseColor;
     // Issue #105: 従来の onSurfaceVariant はベージュ地で薄く「背景と同化」して
-    // 見えづらかったため、コントラストの高い onSurface に上げて読みやすくする。
-    final textColor = scheme.onSurface;
+    // 見えづらかったため、コントラストの高い色にする。地色は設定で自由に変え
+    // られるため（Issue #112 フォローアップ）、テーマ色ではなく地色の明度から
+    // 黒/白を選び、どの地色でも読めるようにする。
+    final textColor =
+        ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);
 

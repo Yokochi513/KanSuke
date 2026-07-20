@@ -12,6 +12,8 @@ import '../../auth/data/auth_repository.dart';
 import '../../users/application/user_providers.dart';
 import '../../version_check/application/version_check_provider.dart';
 import '../application/event_merge_provider.dart';
+import '../application/merged_bar_color_provider.dart';
+import '../application/multi_member_display_provider.dart';
 import '../application/notification_permission.dart';
 import '../application/theme_mode_provider.dart';
 
@@ -47,6 +49,12 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('予定のまとめ表示'),
           const _EventMergeSection(),
+          const Divider(),
+          const _SectionHeader('複数人の予定の表示'),
+          const _MultiMemberDisplaySection(),
+          const Divider(),
+          const _SectionHeader('まとめ帯の色'),
+          const _MergedBarColorSection(),
           const Divider(),
           const _SectionHeader('フィードバック'),
           const _FeedbackSection(),
@@ -202,6 +210,7 @@ class _ColorSection extends ConsumerWidget {
                         .updateColor(uid, hexFromColor(color)),
             ),
           _CustomColorSwatch(
+            key: const ValueKey('member-custom-color'),
             color: currentColor ?? MemberColors.palette.first,
             selected: currentColor != null && !selectedPaletteColor,
             onTap: uid == null
@@ -278,6 +287,7 @@ class _ColorSwatch extends StatelessWidget {
 
 class _CustomColorSwatch extends StatelessWidget {
   const _CustomColorSwatch({
+    super.key,
     required this.color,
     required this.selected,
     required this.onTap,
@@ -296,7 +306,6 @@ class _CustomColorSwatch extends StatelessWidget {
       child: InkResponse(
         onTap: onTap,
         child: Container(
-          key: const ValueKey('member-custom-color'),
           width: 44,
           height: 44,
           decoration: BoxDecoration(
@@ -511,6 +520,192 @@ class _EventMergeSection extends ConsumerWidget {
       value: enabled,
       onChanged: (value) =>
           ref.read(eventMergeEnabledProvider.notifier).setEnabled(value),
+    );
+  }
+}
+
+/// 月表示で複数人が参加する予定の色の見せ方（丸マーク／色分け、Issue #112）。
+///
+/// 帯を参加者色で塗り分ける従来表示（既定）は 3 人以上で細切れになり見にくい
+/// というフィードバックから、タイトル右に参加者色の丸を並べる「丸マーク」も
+/// 選べるようにする。
+/// 端末ローカルの設定のため、家族の他のメンバーの表示には影響しない。
+class _MultiMemberDisplaySection extends ConsumerWidget {
+  const _MultiMemberDisplaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(resolvedMultiMemberEventDisplayProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<MultiMemberEventDisplay>(
+              segments: [
+                for (final display in MultiMemberEventDisplay.values)
+                  ButtonSegment(
+                    value: display,
+                    icon: Icon(display.icon),
+                    label: Text(display.label),
+                    tooltip: display.label,
+                  ),
+              ],
+              selected: {selected},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) => ref
+                  .read(multiMemberEventDisplayProvider.notifier)
+                  .select(selection.single),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '「丸マーク」は予定名の右に参加者の色の丸を並べ、「色分け」は帯を参加者の色で塗り分けます。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// まとめ帯（マージ帯・丸マーク帯）の地色を選ぶ（Issue #112 フォローアップ）。
+///
+/// 既定色（中立ベージュ）が好みに合わないという声に応え、彩度を落とした
+/// 鼠系のパレット（[MergedBarColors.palette]）と自由選択から地色を変えられる
+/// ようにする。「標準」を選ぶとテーマ（和紙/墨）に合わせた既定色へ戻る。
+/// 端末ローカルの設定のため、家族の他のメンバーの表示には影響しない。
+class _MergedBarColorSection extends ConsumerWidget {
+  const _MergedBarColorSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final storedHex = ref.watch(mergedBarColorProvider).value;
+    final storedColor = storedHex == null ? null : colorFromHex(storedHex);
+    // 「標準」スワッチには現在のテーマの既定色を出す。テーマの mergedBar は
+    // 設定で上書きされている可能性があるため、既定値そのものを参照する。
+    final defaultColor = Theme.of(context).brightness == Brightness.dark
+        ? KanSukeColors.dark.mergedBar
+        : KanSukeColors.light.mergedBar;
+    final selectedPaletteColor =
+        storedColor != null &&
+        MergedBarColors.palette.any(
+          (paletteColor) => paletteColor.toARGB32() == storedColor.toARGB32(),
+        );
+
+    void select(Color? color) => ref
+        .read(mergedBarColorProvider.notifier)
+        .select(color == null ? null : hexFromColor(color));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _ThemeDefaultSwatch(
+                key: const ValueKey('merged-bar-color-default'),
+                color: defaultColor,
+                selected: storedHex == null,
+                onTap: () => select(null),
+              ),
+              for (final color in MergedBarColors.palette)
+                _ColorSwatch(
+                  key: ValueKey('merged-bar-color-${hexFromColor(color)}'),
+                  color: color,
+                  selected:
+                      storedColor != null &&
+                      storedColor.toARGB32() == color.toARGB32(),
+                  onTap: () => select(color),
+                ),
+              _CustomColorSwatch(
+                key: const ValueKey('merged-bar-custom-color'),
+                color: storedColor ?? MergedBarColors.palette.first,
+                selected: storedColor != null && !selectedPaletteColor,
+                onTap: () => _showCustomColorPicker(
+                  context,
+                  ref,
+                  storedColor ?? MergedBarColors.palette.first,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '「同じ予定をまとめる」の帯と「丸マーク」表示の帯の地色です。左端の「標準」でテーマに合わせた色へ戻ります。家族の色と紛らわしい色は避けるのがおすすめです。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCustomColorPicker(
+    BuildContext context,
+    WidgetRef ref,
+    Color initialColor,
+  ) async {
+    final controller = ref.read(mergedBarColorProvider.notifier);
+    final selectedColor = await showDialog<Color>(
+      context: context,
+      builder: (context) => _RgbColorPickerDialog(initialColor: initialColor),
+    );
+    if (selectedColor == null) {
+      return;
+    }
+    await controller.select(hexFromColor(selectedColor));
+  }
+}
+
+/// 「標準（テーマに合わせる）」を表すスワッチ。現在のテーマの既定色を見せつつ、
+/// リセットマークで既定へ戻す操作だと分かるようにする。
+class _ThemeDefaultSwatch extends StatelessWidget {
+  const _ThemeDefaultSwatch({
+    super.key,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Tooltip(
+      message: '標準（テーマに合わせる）',
+      child: InkResponse(
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? scheme.onSurface : scheme.outline,
+              width: selected ? 3 : 1,
+            ),
+          ),
+          child: Icon(
+            selected ? Icons.check : Icons.format_color_reset_outlined,
+            color: _foregroundForSwatch(color),
+          ),
+        ),
+      ),
     );
   }
 }

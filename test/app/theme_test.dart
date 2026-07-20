@@ -26,6 +26,41 @@ void main() {
     expect(buildKanSukeDarkTheme().scaffoldBackgroundColor, Colors.transparent);
   });
 
+  test('まとめ帯の色を指定するとテーマの mergedBar が差し替わる（Issue #112）', () {
+    const custom = Color(0xFFBDB9AE);
+
+    expect(
+      buildKanSukeTheme(
+        mergedBarColor: custom,
+      ).extension<KanSukeColors>()?.mergedBar,
+      custom,
+    );
+    expect(
+      buildKanSukeDarkTheme(
+        mergedBarColor: custom,
+      ).extension<KanSukeColors>()?.mergedBar,
+      custom,
+    );
+    // 未指定ならテーマ既定のまま。
+    expect(
+      buildKanSukeTheme().extension<KanSukeColors>()?.mergedBar,
+      KanSukeColors.light.mergedBar,
+    );
+    expect(
+      buildKanSukeDarkTheme().extension<KanSukeColors>()?.mergedBar,
+      KanSukeColors.dark.mergedBar,
+    );
+  });
+
+  test('まとめ帯パレットはメンバー識別色と重ならない', () {
+    final memberColors = MemberColors.palette
+        .map((color) => color.toARGB32())
+        .toSet();
+    for (final color in MergedBarColors.palette) {
+      expect(memberColors, isNot(contains(color.toARGB32())));
+    }
+  });
+
   test('メンバー識別色は 6 色で、すべて異なる', () {
     expect(MemberColors.palette, hasLength(6));
     expect(
