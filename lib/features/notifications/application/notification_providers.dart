@@ -6,6 +6,7 @@ import '../../../core/firebase_providers.dart';
 import '../../../core/logger.dart';
 import '../../auth/application/auth_state.dart';
 import '../data/device_repository.dart';
+import 'foreground_notification_presenter.dart';
 
 const _logTag = 'Notifications';
 
@@ -111,13 +112,18 @@ final notificationBootstrapProvider = FutureProvider<void>((ref) async {
   });
   ref.onDispose(tokenSubscription.cancel);
 
-  // スコープ外（詳細画面遷移は将来対応）。フォアグラウンド受信の最小ハンドリング
-  // としてログのみ残す。バックグラウンド/終了時は OS が通知を自動表示する。
+  // Android はフォアグラウンド時に OS が通知を自動表示しないため、ローカル通知
+  // として表示する（Issue #147）。iOS / Web はプレゼンターが no-op で、上記の
+  // setForegroundNotificationPresentationOptions により表示される（二重表示なし）。
+  // バックグラウンド/終了時は従来どおり OS が通知を自動表示する。
+  final presenter = ref.read(foregroundNotificationPresenterProvider);
+  await presenter.initialize();
   final messageSubscription = FirebaseMessaging.onMessage.listen((message) {
     AppLogger.info(
       'Received foreground message ${message.messageId}',
       tag: _logTag,
     );
+    presenter.show(message);
   });
   ref.onDispose(messageSubscription.cancel);
 });
