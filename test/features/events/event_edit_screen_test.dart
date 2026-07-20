@@ -641,6 +641,60 @@ void main() {
     expect(data['deleted'], true);
   });
 
+  // #116: メモ欄は入力段階で文字数上限を超えさせない（巨大メモでの保存失敗を防ぐ）。
+  testWidgets('メモ欄には文字数上限が設定されている', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    // 画面内の TextFormField はタイトルとメモの2つ。メモは末尾側。
+    final memoField = tester.widget<TextField>(
+      find
+          .descendant(
+            of: find.byType(TextFormField),
+            matching: find.byType(TextField),
+          )
+          .last,
+    );
+    expect(memoField.maxLength, 1000);
+  });
+
+  // #116: 本修正前に保存された上限超過のメモを編集した場合は、入力制限を
+  // すり抜けるため、保存時のバリデーションで止める。
+  testWidgets('文字数上限を超えるメモは保存をブロックする', (tester) async {
+    final firestore = await _seedMember();
+    final start = DateTime(2026, 7, 5, 9);
+    final event = Event.create(
+      title: '長文メモの予定',
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.tentative,
+      memo: 'あ' * 1001, // 上限（1000）超過
+      reminderOffsets: const {},
+      updatedBy: 'me',
+      now: start,
+      calendarId: testCalendarId,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+
+    await _openEditor(tester, firestore, EventEditArgs.edit(event));
+    await _tapVisible(tester, find.text('保存'));
+
+    expect(find.text('メモは1000文字以内で入力してください'), findsOneWidget);
+    // 保存されず、元の巨大メモのまま（更新でエラーになる状況を未然に防ぐ）。
+    final data = (await _events(firestore)).single.data();
+    expect((data['memo'] as String).length, 1001);
+  });
+
   testWidgets('新規作成した予定にはカレンダーIDが保存される', (tester) async {
     final firestore = await _seedCalendars(await _seedMember());
     await _openEditor(
