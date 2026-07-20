@@ -23,6 +23,7 @@ import '../../events/presentation/event_edit_args.dart';
 import '../../events/presentation/event_type_badge.dart';
 import '../../events/presentation/member_filter_button.dart';
 import '../../settings/application/event_merge_provider.dart';
+import '../../settings/application/multi_member_display_provider.dart';
 import '../../users/application/user_providers.dart';
 
 /// カレンダー月表示（FR-4）。
@@ -83,7 +84,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// 画面に実際に見えている 6 週グリッドの範囲 `[先頭日, 最終日の翌日)`。
   ///
   /// Issue #59 / FR-4: 前後月の日付セルも表示しているため、そのセルの予定も
-  /// 読み込む。当月だけではなく 42 日分に限定して取得し、月切替の軽さを保つ。
+  /// 読み込む。バーの配置計算はこの範囲を基準にする。
   DateRange get _visibleCalendarRange {
     final monthStart = DateTime(_focusedDay.year, _focusedDay.month, 1);
     final firstVisibleDay = monthStart.subtract(
@@ -92,6 +93,25 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     return (
       start: firstVisibleDay,
       end: firstVisibleDay.add(const Duration(days: _weekRows * 7)),
+    );
+  }
+
+  /// 予定の取得範囲。表示中グリッドの前後 1 グリッド分（6 週）を広げる。
+  ///
+  /// Issue #108: マージ表示（Issue #76）は同名・期間が連なる予定を 1 グループに
+  /// 束ねるが、取得をグリッドの 42 日ちょうどに絞ると、連なりの一部（例: 早く
+  /// 終わる子の夏休み）が翌月のグリッドと重ならず取得されない。するとグループの
+  /// 構成が月ビューごとに変わり、同じ日の帯が月によってマージ帯になったり単独の
+  /// 予定バーになったりと表示がずれる。グリッド外へ続く連なりも束ねたまま描ける
+  /// よう、取得は前後へパディングする（それ以上離れた連なりは束ね対象として
+  /// 追跡しない）。表示するバー自体は従来どおり [_visibleCalendarRange] で
+  /// クリップするため、増えるのは取得量のみで描画は変わらない（NFR-1）。
+  DateRange get _eventFetchRange {
+    final visible = _visibleCalendarRange;
+    const padding = Duration(days: _weekRows * 7);
+    return (
+      start: visible.start.subtract(padding),
+      end: visible.end.add(padding),
     );
   }
 
@@ -123,18 +143,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final visibleRange = _visibleCalendarRange;
+    // Issue #108: 取得はグリッドより広い範囲で行い、月をまたいで連なる予定の
+    // マージ構成が月ビューごとに変わらないようにする。
+    final fetchRange = _eventFetchRange;
     final calendarId = ref.watch(selectedCalendarIdProvider);
     final eventsAsync = ref.watch(
       eventsInRangeProvider((
-        start: visibleRange.start,
-        end: visibleRange.end,
+        start: fetchRange.start,
+        end: fetchRange.end,
         calendarId: calendarId,
       )),
     );
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
     final mergeEnabled = ref.watch(resolvedEventMergeEnabledProvider);
+    // Issue #112: 複数人予定の色の見せ方（丸マーク／色分け）は設定に従う。
+    final multiMemberDisplay = ref.watch(
+      resolvedMultiMemberEventDisplayProvider,
+    );
     // Issue #78: 参加者フィルタが有効なら、選択メンバーを含む予定だけに絞る
     // （表示上の絞り込みのみ。データは変更しない）。
     final memberFilter = ref.watch(memberFilterProvider);
@@ -144,7 +170,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
     if (eventsAsync.hasError) {
       AppLogger.error(
-        'eventsInRangeProvider errored for $visibleRange/$calendarId',
+        'eventsInRangeProvider errored for $fetchRange/$calendarId',
         tag: 'CalendarScreen',
         error: eventsAsync.error,
         stackTrace: eventsAsync.stackTrace,
@@ -228,6 +254,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           markers: layout.markers,
                           membersById: membersById,
                           currentUid: currentUid,
+                          multiMemberDisplay: multiMemberDisplay,
                           daysOfWeekHeight: _daysOfWeekHeight,
                           rowHeight: rowHeight,
                           colWidth: colWidth,
@@ -346,7 +373,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final capacity = available <= 0 ? 0 : (available ~/ _barSlot);
 
     // グループごとに表示範囲でクリップした開始・終了日（期間の和集合）を求める。
-    final clippedRanges = <EventGroup, ({DateTime start, DateTime end})>{};
+    // startDay / endDay はクリップ前の実際の開始・終了日。グリッド外へ続く帯の
+    // 端に開始・終了の角丸を付けないための判定に使う（Issue #108）。
+    final clippedRanges =
+        <
+          EventGroup,
+          ({DateTime start, DateTime end, DateTime startDay, DateTime endDay})
+        >{};
     for (final group in groups) {
       final groupStartDay = _dateKey(group.startAt.toLocal());
       final groupEndDay = _dateKey(group.endAt.toLocal());
@@ -358,7 +391,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           : groupEndDay;
       // FR-4: 既存の終日単日予定（startAt == endAt）を保つため終了日も含める。
       if (end.isBefore(start)) continue;
-      clippedRanges[group] = (start: start, end: end);
+      clippedRanges[group] = (
+        start: start,
+        end: end,
+        startDay: groupStartDay,
+        endDay: groupEndDay,
+      );
     }
 
     DateTime weekStart(DateTime day) =>
@@ -444,8 +482,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               lane: lane,
               // 実際の開始・終了日にあたる端だけ角丸/枠線を付け、週をまたぐ
               // 継続端（週頭・週末）は角を落として次週へ連結して見せる。
-              roundLeft: segStart.isAtSameMomentAs(r.start),
-              roundRight: segEnd.isAtSameMomentAs(r.end),
+              // Issue #108: 比較はクリップ後（r.start / r.end）ではなく実際の
+              // 開始・終了日と行う。グリッド外へ続く帯（月をまたぐ予定）の端に
+              // 角丸を付けると、そこで始まる・終わるように見えてしまうため。
+              roundLeft: segStart.isAtSameMomentAs(r.startDay),
+              roundRight: segEnd.isAtSameMomentAs(r.endDay),
               // 束ねたバーは日別ストリップ用に、この週スライスの各日で実際に
               // 参加しているメンバーを求める（Issue #76）。
               perDayMemberIds: group.isMerged
@@ -494,7 +535,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 /// [weekIndex] は表示中 6 週のうちの行（0〜5）、[startCol] / [endCol] は
 /// その週での開始・終了列（0＝日曜〜6＝土曜）、[lane] は縦位置。
 /// [roundLeft] / [roundRight] は、その端が予定の実際の開始・終了日
-/// （＝週をまたぐ継続端ではない）かどうかを表す。[group] は 1 件のみなら
+/// （＝週やグリッド端をまたぐ継続端ではない）かどうかを表す。[group] は 1 件のみなら
 /// 普通の予定、2 件以上なら束ねた予定グループ（Issue #76）。
 class _BarSegment {
   const _BarSegment({
@@ -558,6 +599,7 @@ class _EventBarsOverlay extends StatelessWidget {
     required this.markers,
     required this.membersById,
     required this.currentUid,
+    required this.multiMemberDisplay,
     required this.daysOfWeekHeight,
     required this.rowHeight,
     required this.colWidth,
@@ -573,6 +615,9 @@ class _EventBarsOverlay extends StatelessWidget {
   /// 現在サインイン中のユーザ。マージ帯に自分の予定が含まれるとき、地色を
   /// 自分の色へ寄せて「自分の予定が入っている」と一目で分かるようにする（Issue #105）。
   final String? currentUid;
+
+  /// 複数人予定の色の見せ方（丸マーク／色分け、Issue #112）。設定に従う。
+  final MultiMemberEventDisplay multiMemberDisplay;
   final double daysOfWeekHeight;
   final double rowHeight;
   final double colWidth;
@@ -673,6 +718,17 @@ class _EventBarsOverlay extends StatelessWidget {
     final colors = group.memberIds
         .map((id) => colorFromHex(membersById[id]?.color ?? ''))
         .toList();
+    // Issue #112: 複数人の予定は、設定が「丸マーク」なら帯を塗り分けず、
+    // タイトルの右に参加者色の〇を並べる。1 人の予定は従来どおり単色。
+    final memberDots =
+        multiMemberDisplay == MultiMemberEventDisplay.dots && colors.length > 1;
+    // Issue #105 と同様、丸マーク表示の中立地色に自分の予定が埋もれないよう、
+    // 自分が参加者なら地色を自分の色へ寄せる（FR-2）。
+    final self = currentUid != null ? membersById[currentUid] : null;
+    final selfColor =
+        memberDots && self != null && group.memberIds.contains(currentUid)
+        ? colorFromHex(self.color)
+        : null;
     return IgnorePointer(
       child: EventBar(
         title: group.title,
@@ -680,6 +736,8 @@ class _EventBarsOverlay extends StatelessWidget {
         type: group.type,
         roundLeft: bar.roundLeft,
         roundRight: bar.roundRight,
+        memberDots: memberDots,
+        selfColor: selfColor,
       ),
     );
   }
@@ -859,6 +917,17 @@ class _HolidayLabel extends StatelessWidget {
   }
 }
 
+/// 中立地色（[KanSukeColors.mergedBar]）を自分の識別色へ寄せる度合い
+/// （Issue #105）。メンバー色そのものにはせず、あくまで中立色を帯びる程度に
+/// とどめ、地色の明度を大きく変えずタイトルの可読性を保つ。
+const double _selfTintFactor = 0.28;
+
+/// 仮の予定の地色（識別色）の不透明度（Issue #106、基本設計 §6.3「半透明」）。
+///
+/// 確定（塗りつぶし）と一目で区別しつつ、薄い識別色（例: 水色 #81D4FA）でも帯
+/// の存在が背景に埋もれないよう、従来の 0.16 よりわずかに濃くする。
+const double _tentativeFillAlpha = 0.22;
+
 /// 予定を表す 1 本のバー（FR-2 / FR-3、基本設計 §6.3）。
 ///
 /// 参加メンバーの色で等分割して塗り、確定＝塗りつぶし・
@@ -870,6 +939,12 @@ class _HolidayLabel extends StatelessWidget {
 /// 同じ予定のバーと視覚的につながって見える。
 ///
 /// [showTitle] を false にするとタイトルを描画しない。
+///
+/// Issue #112: [memberDots] を true にすると、複数人の予定を色の塗り分けでは
+/// なく「中立地色の帯＋タイトル右に参加者色の〇」で描く。塗り分けは 3 人以上で
+/// 細切れになり見にくいというフィードバックに応えたもので、マージ帯
+/// （[MergedEventBar]）と同じデザイン言語（中立地色＋色ドット）に揃える。
+/// 参加者が 1 人のときは指定に関わらず従来どおり単色で塗る。
 class EventBar extends StatelessWidget {
   const EventBar({
     required this.title,
@@ -878,6 +953,8 @@ class EventBar extends StatelessWidget {
     this.roundLeft = true,
     this.roundRight = true,
     this.showTitle = true,
+    this.memberDots = false,
+    this.selfColor,
     super.key,
   });
 
@@ -888,15 +965,135 @@ class EventBar extends StatelessWidget {
   final bool roundRight;
   final bool showTitle;
 
+  /// 複数人の予定を「中立地色＋参加者色の〇」で描くか（Issue #112）。
+  final bool memberDots;
+
+  /// 丸マーク表示で自分がこの予定の参加者に含まれるときの自分の識別色
+  /// （Issue #105 / #112）。非 null なら中立地色をこの色へ少し寄せ、
+  /// 「自分の予定が入っている」と一目で分かるようにする。
+  final Color? selfColor;
+
+  /// 参加者色の〇の直径。バー高（16）に上下の余白が残るサイズにする。
+  static const double _dotSize = 10;
+
   @override
   Widget build(BuildContext context) {
+    if (memberDots && colors.length > 1) {
+      return _buildDotBar(context);
+    }
+    return _buildSplitBar(context);
+  }
+
+  /// 中立地色の帯＋タイトル右の参加者色〇で描く（Issue #112）。
+  ///
+  /// 地色・枠線・文字色はマージ帯（[MergedEventBar]）と揃え、「中立地色の帯＝
+  /// 複数人の予定」という見え方を統一する。仮が含まれる予定は枠付きで種別を
+  /// 区別する（FR-3）。
+  Widget _buildDotBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final confirmed = type == EventType.confirmed;
+    final baseColor = KanSukeColors.of(context).mergedBar;
+    final barColor = selfColor != null
+        ? Color.lerp(baseColor, selfColor, _selfTintFactor)!
+        : baseColor;
+    // 地色は設定で自由に変えられるため（Issue #112 フォローアップ）、文字色は
+    // 地色の明度から黒/白を選び、どの地色でも読めるようにする。
+    final textColor =
+        ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    const radius = Radius.circular(3);
+    final border = BorderSide(color: scheme.outline, width: 1);
+
+    return Container(
+      height: 16,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: barColor,
+        border: confirmed
+            ? null
+            : Border(
+                top: border,
+                bottom: border,
+                left: roundLeft ? border : BorderSide.none,
+                right: roundRight ? border : BorderSide.none,
+              ),
+        borderRadius: BorderRadius.only(
+          topLeft: roundLeft ? radius : Radius.zero,
+          bottomLeft: roundLeft ? radius : Radius.zero,
+          topRight: roundRight ? radius : Radius.zero,
+          bottomRight: roundRight ? radius : Radius.zero,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          children: [
+            if (showTitle)
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.0,
+                    fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
+                    color: textColor,
+                  ),
+                ),
+              ),
+            if (showTitle) const SizedBox(width: 4),
+            // マスが狭く〇が収まらないときは、〇の列ごと縮めてはみ出させない。
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final color in colors)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 1),
+                        child: Container(
+                          width: _dotSize,
+                          height: _dotSize,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 参加メンバーの色で帯を等分割して塗る従来表示。
+  Widget _buildSplitBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final confirmed = type == EventType.confirmed;
     final primary = colors.first;
-    final textColor = confirmed
-        ? (ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
-              ? Colors.white
-              : Colors.black)
-        : primary;
+    // Issue #106: 仮の文字色に識別色をそのまま使うと、薄い色（例: 水色
+    // #81D4FA）では明るい背景に埋もれて読めなかった。確定と同じく実効地色
+    // （仮は識別色を surface に合成した半透明相当の色）の明度から黒/白を選び、
+    // どの識別色でもタイトルが読めるようにする（ドット帯・マージ帯と同じ方式）。
+    final effectiveBackground = confirmed
+        ? primary
+        : Color.alphaBlend(
+            primary.withValues(alpha: _tentativeFillAlpha),
+            scheme.surface,
+          );
+    final textColor =
+        ThemeData.estimateBrightnessForColor(effectiveBackground) ==
+            Brightness.dark
+        ? Colors.white
+        : Colors.black;
     const radius = Radius.circular(3);
 
     return Container(
@@ -940,7 +1137,7 @@ class EventBar extends StatelessWidget {
                         child: ColoredBox(
                           color: confirmed
                               ? color
-                              : color.withValues(alpha: 0.16),
+                              : color.withValues(alpha: _tentativeFillAlpha),
                         ),
                       ),
                   ],
@@ -1006,9 +1203,15 @@ class MergedEventBar extends StatelessWidget {
   /// 一目で分かるようにする。null（自分が不参加）なら従来どおり中立色のまま。
   final Color? selfColor;
 
-  /// 地色を自分の色へ寄せる度合い。メンバー色そのものにはせず、あくまで中立色を
-  /// 帯びる程度にとどめ、地色の明度を大きく変えずタイトルの可読性を保つ。
-  static const double _selfTintFactor = 0.28;
+  /// タイトル行（チップの外側）の左右パディング。
+  static const double _rowPadding = 2;
+
+  /// タイトルチップ内側の左右パディング。
+  static const double _chipPadding = 2;
+
+  /// タイトルの文字スタイル。チップ右端の実測（[_chipRightEdge]）と描画で
+  /// 同じ値を使い、計算と見た目がずれないようにする（Issue #125）。
+  static const double _titleFontSize = 11;
 
   @override
   Widget build(BuildContext context) {
@@ -1023,17 +1226,29 @@ class MergedEventBar extends StatelessWidget {
         ? Color.lerp(baseColor, selfColor, _selfTintFactor)!
         : baseColor;
     // Issue #105: 従来の onSurfaceVariant はベージュ地で薄く「背景と同化」して
-    // 見えづらかったため、コントラストの高い onSurface に上げて読みやすくする。
-    final textColor = scheme.onSurface;
+    // 見えづらかったため、コントラストの高い色にする。地色は設定で自由に変え
+    // られるため（Issue #112 フォローアップ）、テーマ色ではなく地色の明度から
+    // 黒/白を選び、どの地色でも読めるようにする。
+    final textColor =
+        ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);
 
     Widget chip(Widget child) => ColoredBox(
       color: barColor,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: _chipPadding),
         child: child,
       ),
+    );
+
+    final titleStyle = TextStyle(
+      fontSize: _titleFontSize,
+      height: 1.0,
+      fontWeight: FontWeight.w600,
+      color: textColor,
     );
 
     return Container(
@@ -1057,39 +1272,80 @@ class MergedEventBar extends StatelessWidget {
           bottomRight: roundRight ? radius : Radius.zero,
         ),
       ),
-      child: Stack(
-        children: [
-          // 背面: 予定が入っている日に、その日の参加者色の〇をバー高いっぱいに
-          // 近いサイズで並べる（FR-2）。
-          Positioned.fill(child: _DayDots(dayColors: dayColors)),
-          // 前面: タイトル（先頭に 1 回）。チップでドットの上に載せる。
-          Positioned.fill(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Row(
-                children: [
-                  Flexible(
-                    child: chip(
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.0,
-                          fontWeight: FontWeight.w600,
-                          color: textColor,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            children: [
+              // 背面: 予定が入っている日に、その日の参加者色の〇をバー高
+              // いっぱいに近いサイズで並べる（FR-2）。Issue #125: チップに
+              // 一部だけ隠れた〇が欠けた形でタイトル脇にはみ出して文字と
+              // 重なって見えるため、チップ右端に掛かる〇は描かない。
+              Positioned.fill(
+                child: _DayDots(
+                  dayColors: dayColors,
+                  leadingExclusion: _chipRightEdge(
+                    context,
+                    titleStyle,
+                    constraints.maxWidth,
+                  ),
+                ),
+              ),
+              // 前面: タイトル（先頭に 1 回）。チップでドットの上に載せる。
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: _rowPadding),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: chip(
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
+  }
+
+  /// タイトルチップの右端 x（バー内座標）を実測する（Issue #125）。
+  ///
+  /// 描画される [Text] と同じスタイル・スケール・省略記号で [TextPainter] に
+  /// レイアウトさせ、チップのパディングを加えて右端を求める。[_DayDots] は
+  /// この x に掛かる〇を描かず、タイトルと〇の重なりを防ぐ。
+  double _chipRightEdge(
+    BuildContext context,
+    TextStyle titleStyle,
+    double maxWidth,
+  ) {
+    final chipMaxWidth = maxWidth - (_rowPadding + _chipPadding) * 2;
+    if (chipMaxWidth <= 0) {
+      return maxWidth;
+    }
+    final painter = TextPainter(
+      text: TextSpan(
+        text: title,
+        // 実際の描画と同様に DefaultTextStyle（フォントファミリ等）を継承する。
+        style: DefaultTextStyle.of(context).style.merge(titleStyle),
+      ),
+      textDirection: Directionality.of(context),
+      maxLines: 1,
+      // [TextOverflow.ellipsis] と同じ省略記号で折り返し時の幅も一致させる。
+      ellipsis: '…',
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: chipMaxWidth);
+    final textWidth = painter.width;
+    painter.dispose();
+    return _rowPadding + _chipPadding * 2 + textWidth;
   }
 }
 
@@ -1099,12 +1355,41 @@ class MergedEventBar extends StatelessWidget {
 /// 描く。予定のない日は空ける。〇はバー高と同等〜気持ち小さいサイズにし、
 /// 一目で判別できるようにする。
 class _DayDots extends StatelessWidget {
-  const _DayDots({required this.dayColors});
+  const _DayDots({required this.dayColors, this.leadingExclusion = 0});
 
   final List<List<Color>> dayColors;
 
+  /// バー先頭からこの x 座標までに（一部でも）掛かる〇は描かない（Issue #125）。
+  ///
+  /// 〇はタイトルチップの背面に描くため、チップの右端が〇の途中に掛かると
+  /// 欠けた〇がタイトル脇にはみ出し、文字と重なって見える。チップに完全に
+  /// 隠れる〇は元々見えないので、掛かる〇ごと描かないことで表示の情報量を
+  /// 変えずに重なりを解消する。
+  final double leadingExclusion;
+
   /// 〇の直径。バー高（16）より気持ち小さくして上下に少し余白を残す。
   static const double _dotSize = 12;
+
+  /// 〇 1 個分の横スロット（直径＋左右パディング 1）。位置計算にも使う。
+  static const double _dotSpan = _dotSize + 2;
+
+  /// この〇（[dayIndex] 日目の [dotIndex] 個目）がタイトルチップに掛からず
+  /// 完全に見えるか（Issue #125）。[Center]＋[Row] のレイアウトと同じ計算で
+  /// 〇の左端 x を求め、[leadingExclusion] より右にあるものだけ描く。
+  bool _isDotClearOfTitle(
+    int dayIndex,
+    int dotIndex,
+    int dotCount,
+    double dayWidth,
+  ) {
+    if (leadingExclusion <= 0) {
+      return true;
+    }
+    final rowWidth = dotCount * _dotSpan;
+    final rowStart = dayIndex * dayWidth + (dayWidth - rowWidth) / 2;
+    final dotLeft = rowStart + dotIndex * _dotSpan + 1;
+    return dotLeft >= leadingExclusion;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1116,7 +1401,7 @@ class _DayDots extends StatelessWidget {
         final dayWidth = constraints.maxWidth / dayColors.length;
         return Row(
           children: [
-            for (final colors in dayColors)
+            for (final (dayIndex, colors) in dayColors.indexed)
               SizedBox(
                 width: dayWidth,
                 height: constraints.maxHeight,
@@ -1126,19 +1411,32 @@ class _DayDots extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            for (final color in colors)
+                            for (final (dotIndex, color) in colors.indexed)
                               Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 1,
                                 ),
-                                child: Container(
-                                  width: _dotSize,
-                                  height: _dotSize,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
+                                // チップに掛かる〇は描かず、レイアウトだけ保つ
+                                // 同サイズの空白に置き換える（Issue #125）。
+                                child:
+                                    _isDotClearOfTitle(
+                                      dayIndex,
+                                      dotIndex,
+                                      colors.length,
+                                      dayWidth,
+                                    )
+                                    ? Container(
+                                        width: _dotSize,
+                                        height: _dotSize,
+                                        decoration: BoxDecoration(
+                                          color: color,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      )
+                                    : const SizedBox(
+                                        width: _dotSize,
+                                        height: _dotSize,
+                                      ),
                               ),
                           ],
                         ),

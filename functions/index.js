@@ -14,6 +14,7 @@ const {handleBeforeCreate} = require("./handlers");
 const deleteaccount = require("./deleteaccount");
 const invites = require("./invites");
 const membership = require("./membership");
+const notifications = require("./notifications");
 const reminders = require("./reminders");
 
 admin.initializeApp();
@@ -138,18 +139,24 @@ const reminderDeps = {now: () => new Date(), newId: randomUUID};
 // リマインド（FR-5 / 基本設計 §5.1、Issue #14）。関数名は 2nd gen の制約に
 // 合わせて小文字（仕様上の名前は onEventWrite / sendDueReminders）。
 
-// 予定の書き込みごとに reminders を再生成する（旧分破棄 → triggerAt 再計算）。
+// 予定の書き込みごとに (1) reminders を再生成し（旧分破棄 → triggerAt 再計算、
+// Issue #14）、(2) 追加/変更/削除を同カレンダー参加者（操作者除く）へ共有通知する
+// （Issue #77）。どちらも events/{id} の onWrite が契機のため 1 つの関数にまとめる。
 exports.oneventwrite = onDocumentWritten("events/{eventId}", async (event) => {
   const before = event.data && event.data.before;
   const after = event.data && event.data.after;
-  await reminders.syncEventReminders(
+  const change = {
+    eventId: event.params.eventId,
+    before: before && before.exists ? before.data() : null,
+    after: after && after.exists ? after.data() : null,
+  };
+
+  await reminders.syncEventReminders(admin.firestore(), change, reminderDeps);
+  await notifications.notifyEventChange(
     admin.firestore(),
-    {
-      eventId: event.params.eventId,
-      before: before && before.exists ? before.data() : null,
-      after: after && after.exists ? after.data() : null,
-    },
-    reminderDeps,
+    getMessaging(),
+    change,
+    {now: () => new Date()},
   );
 });
 
