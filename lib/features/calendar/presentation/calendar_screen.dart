@@ -1045,6 +1045,16 @@ class MergedEventBar extends StatelessWidget {
   /// 帯びる程度にとどめ、地色の明度を大きく変えずタイトルの可読性を保つ。
   static const double _selfTintFactor = 0.28;
 
+  /// タイトル行（チップの外側）の左右パディング。
+  static const double _rowPadding = 2;
+
+  /// タイトルチップ内側の左右パディング。
+  static const double _chipPadding = 2;
+
+  /// タイトルの文字スタイル。チップ右端の実測（[_chipRightEdge]）と描画で
+  /// 同じ値を使い、計算と見た目がずれないようにする（Issue #125）。
+  static const double _titleFontSize = 11;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -1066,9 +1076,16 @@ class MergedEventBar extends StatelessWidget {
     Widget chip(Widget child) => ColoredBox(
       color: barColor,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: _chipPadding),
         child: child,
       ),
+    );
+
+    final titleStyle = TextStyle(
+      fontSize: _titleFontSize,
+      height: 1.0,
+      fontWeight: FontWeight.w600,
+      color: textColor,
     );
 
     return Container(
@@ -1092,39 +1109,80 @@ class MergedEventBar extends StatelessWidget {
           bottomRight: roundRight ? radius : Radius.zero,
         ),
       ),
-      child: Stack(
-        children: [
-          // 背面: 予定が入っている日に、その日の参加者色の〇をバー高いっぱいに
-          // 近いサイズで並べる（FR-2）。
-          Positioned.fill(child: _DayDots(dayColors: dayColors)),
-          // 前面: タイトル（先頭に 1 回）。チップでドットの上に載せる。
-          Positioned.fill(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Row(
-                children: [
-                  Flexible(
-                    child: chip(
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.0,
-                          fontWeight: FontWeight.w600,
-                          color: textColor,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            children: [
+              // 背面: 予定が入っている日に、その日の参加者色の〇をバー高
+              // いっぱいに近いサイズで並べる（FR-2）。Issue #125: チップに
+              // 一部だけ隠れた〇が欠けた形でタイトル脇にはみ出して文字と
+              // 重なって見えるため、チップ右端に掛かる〇は描かない。
+              Positioned.fill(
+                child: _DayDots(
+                  dayColors: dayColors,
+                  leadingExclusion: _chipRightEdge(
+                    context,
+                    titleStyle,
+                    constraints.maxWidth,
+                  ),
+                ),
+              ),
+              // 前面: タイトル（先頭に 1 回）。チップでドットの上に載せる。
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: _rowPadding),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: chip(
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
+  }
+
+  /// タイトルチップの右端 x（バー内座標）を実測する（Issue #125）。
+  ///
+  /// 描画される [Text] と同じスタイル・スケール・省略記号で [TextPainter] に
+  /// レイアウトさせ、チップのパディングを加えて右端を求める。[_DayDots] は
+  /// この x に掛かる〇を描かず、タイトルと〇の重なりを防ぐ。
+  double _chipRightEdge(
+    BuildContext context,
+    TextStyle titleStyle,
+    double maxWidth,
+  ) {
+    final chipMaxWidth = maxWidth - (_rowPadding + _chipPadding) * 2;
+    if (chipMaxWidth <= 0) {
+      return maxWidth;
+    }
+    final painter = TextPainter(
+      text: TextSpan(
+        text: title,
+        // 実際の描画と同様に DefaultTextStyle（フォントファミリ等）を継承する。
+        style: DefaultTextStyle.of(context).style.merge(titleStyle),
+      ),
+      textDirection: Directionality.of(context),
+      maxLines: 1,
+      // [TextOverflow.ellipsis] と同じ省略記号で折り返し時の幅も一致させる。
+      ellipsis: '…',
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: chipMaxWidth);
+    final textWidth = painter.width;
+    painter.dispose();
+    return _rowPadding + _chipPadding * 2 + textWidth;
   }
 }
 
@@ -1134,12 +1192,41 @@ class MergedEventBar extends StatelessWidget {
 /// 描く。予定のない日は空ける。〇はバー高と同等〜気持ち小さいサイズにし、
 /// 一目で判別できるようにする。
 class _DayDots extends StatelessWidget {
-  const _DayDots({required this.dayColors});
+  const _DayDots({required this.dayColors, this.leadingExclusion = 0});
 
   final List<List<Color>> dayColors;
 
+  /// バー先頭からこの x 座標までに（一部でも）掛かる〇は描かない（Issue #125）。
+  ///
+  /// 〇はタイトルチップの背面に描くため、チップの右端が〇の途中に掛かると
+  /// 欠けた〇がタイトル脇にはみ出し、文字と重なって見える。チップに完全に
+  /// 隠れる〇は元々見えないので、掛かる〇ごと描かないことで表示の情報量を
+  /// 変えずに重なりを解消する。
+  final double leadingExclusion;
+
   /// 〇の直径。バー高（16）より気持ち小さくして上下に少し余白を残す。
   static const double _dotSize = 12;
+
+  /// 〇 1 個分の横スロット（直径＋左右パディング 1）。位置計算にも使う。
+  static const double _dotSpan = _dotSize + 2;
+
+  /// この〇（[dayIndex] 日目の [dotIndex] 個目）がタイトルチップに掛からず
+  /// 完全に見えるか（Issue #125）。[Center]＋[Row] のレイアウトと同じ計算で
+  /// 〇の左端 x を求め、[leadingExclusion] より右にあるものだけ描く。
+  bool _isDotClearOfTitle(
+    int dayIndex,
+    int dotIndex,
+    int dotCount,
+    double dayWidth,
+  ) {
+    if (leadingExclusion <= 0) {
+      return true;
+    }
+    final rowWidth = dotCount * _dotSpan;
+    final rowStart = dayIndex * dayWidth + (dayWidth - rowWidth) / 2;
+    final dotLeft = rowStart + dotIndex * _dotSpan + 1;
+    return dotLeft >= leadingExclusion;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1151,7 +1238,7 @@ class _DayDots extends StatelessWidget {
         final dayWidth = constraints.maxWidth / dayColors.length;
         return Row(
           children: [
-            for (final colors in dayColors)
+            for (final (dayIndex, colors) in dayColors.indexed)
               SizedBox(
                 width: dayWidth,
                 height: constraints.maxHeight,
@@ -1161,19 +1248,32 @@ class _DayDots extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            for (final color in colors)
+                            for (final (dotIndex, color) in colors.indexed)
                               Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 1,
                                 ),
-                                child: Container(
-                                  width: _dotSize,
-                                  height: _dotSize,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
+                                // チップに掛かる〇は描かず、レイアウトだけ保つ
+                                // 同サイズの空白に置き換える（Issue #125）。
+                                child:
+                                    _isDotClearOfTitle(
+                                      dayIndex,
+                                      dotIndex,
+                                      colors.length,
+                                      dayWidth,
+                                    )
+                                    ? Container(
+                                        width: _dotSize,
+                                        height: _dotSize,
+                                        decoration: BoxDecoration(
+                                          color: color,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      )
+                                    : const SizedBox(
+                                        width: _dotSize,
+                                        height: _dotSize,
+                                      ),
                               ),
                           ],
                         ),
