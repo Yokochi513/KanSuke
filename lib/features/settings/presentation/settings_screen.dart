@@ -12,6 +12,7 @@ import '../../auth/data/auth_repository.dart';
 import '../../users/application/user_providers.dart';
 import '../../version_check/application/version_check_provider.dart';
 import '../application/event_merge_provider.dart';
+import '../application/multi_member_display_provider.dart';
 import '../application/notification_permission.dart';
 import '../application/theme_mode_provider.dart';
 
@@ -47,6 +48,9 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('予定のまとめ表示'),
           const _EventMergeSection(),
+          const Divider(),
+          const _SectionHeader('複数人の予定の表示'),
+          const _MultiMemberDisplaySection(),
           const Divider(),
           const _SectionHeader('フィードバック'),
           const _FeedbackSection(),
@@ -511,6 +515,56 @@ class _EventMergeSection extends ConsumerWidget {
       value: enabled,
       onChanged: (value) =>
           ref.read(eventMergeEnabledProvider.notifier).setEnabled(value),
+    );
+  }
+}
+
+/// 月表示で複数人が参加する予定の色の見せ方（丸マーク／色分け、Issue #112）。
+///
+/// 帯を参加者色で塗り分ける従来表示は 3 人以上で細切れになり見にくいという
+/// フィードバックから、既定はタイトル右に参加者色の丸を並べる「丸マーク」に
+/// する。従来の「色分け」も選べるよう残す。
+/// 端末ローカルの設定のため、家族の他のメンバーの表示には影響しない。
+class _MultiMemberDisplaySection extends ConsumerWidget {
+  const _MultiMemberDisplaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(resolvedMultiMemberEventDisplayProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<MultiMemberEventDisplay>(
+              segments: [
+                for (final display in MultiMemberEventDisplay.values)
+                  ButtonSegment(
+                    value: display,
+                    icon: Icon(display.icon),
+                    label: Text(display.label),
+                    tooltip: display.label,
+                  ),
+              ],
+              selected: {selected},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) => ref
+                  .read(multiMemberEventDisplayProvider.notifier)
+                  .select(selection.single),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '「丸マーク」は予定名の右に参加者の色の丸を並べ、「色分け」は帯を参加者の色で塗り分けます。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

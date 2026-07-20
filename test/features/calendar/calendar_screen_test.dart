@@ -12,6 +12,7 @@ import 'package:kansuke/features/calendar/presentation/calendar_screen.dart';
 import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/events/presentation/event_type_badge.dart';
 import 'package:kansuke/features/settings/application/event_merge_provider.dart';
+import 'package:kansuke/features/settings/application/multi_member_display_provider.dart';
 import 'package:kansuke/models/models.dart';
 import 'package:table_calendar/table_calendar.dart';
 
@@ -186,6 +187,45 @@ Future<FakeFirebaseFirestore> _seedCurrentUserPriority({
   return firestore;
 }
 
+/// ぱぱ・まま 2 人が参加する予定を 1 件投入する（複数人表示の検証用）。
+Future<FakeFirebaseFirestore> _seedSharedEvent({
+  required DateTime today,
+}) async {
+  final firestore = await _firestoreWithCalendar();
+  for (final (id, name, color) in const [
+    ('me', 'ぱぱ', '#1565C0'),
+    ('mama', 'まま', '#D84315'),
+  ]) {
+    await firestore.collection('users').doc(id).set({
+      'name': name,
+      'email': '$id@example.com',
+      'color': color,
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
+  final start = DateTime(today.year, today.month, today.day, 9);
+  final sharedEvent = Event.create(
+    title: '家族の予定',
+    creatorId: 'me',
+    participantIds: const ['me', 'mama'],
+    startAt: start,
+    endAt: start.add(const Duration(hours: 1)),
+    allDay: false,
+    type: EventType.confirmed,
+    memo: '',
+    reminderOffsets: const {},
+    updatedBy: 'me',
+    now: start,
+    calendarId: testCalendarId,
+  );
+  await firestore
+      .collection('events')
+      .doc(sharedEvent.id)
+      .set(sharedEvent.toFirestore(useServerTimestamp: false));
+  return firestore;
+}
+
 Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
   final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
@@ -335,12 +375,17 @@ Widget _wrap(
   FakeFirebaseFirestore firestore, {
   DateTime? initialFocusedDay,
   bool mergeEnabled = true,
+  // アプリの既定（丸マーク、Issue #112）に合わせる。
+  MultiMemberEventDisplay multiMemberDisplay = MultiMemberEventDisplay.dots,
 }) {
   return ProviderScope(
     overrides: [
       firestoreProvider.overrideWithValue(firestore),
       currentUidProvider.overrideWithValue('me'),
       resolvedEventMergeEnabledProvider.overrideWithValue(mergeEnabled),
+      resolvedMultiMemberEventDisplayProvider.overrideWithValue(
+        multiMemberDisplay,
+      ),
       // 月表示の描画に集中するため、表示中カレンダーは固定する（カレンダーの
       // 解決自体は calendar_providers_test で検証する）。
       selectedCalendarIdProvider.overrideWithValue(testCalendarId),
@@ -583,6 +628,50 @@ void main() {
     ]);
   });
 
+  testWidgets('EventBarの丸マーク表示は帯を塗り分けず参加者色の〇を描く（Issue #112）', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: EventBar(
+            title: 'ディズニー',
+            colors: [Color(0xFF1565C0), Color(0xFFD84315), Color(0xFF2E7D32)],
+            type: EventType.confirmed,
+            memberDots: true,
+          ),
+        ),
+      ),
+    );
+
+    // 帯は参加者色で塗り分けない（等分割の ColoredBox を作らない）。
+    expect(
+      find.descendant(
+        of: find.byType(EventBar),
+        matching: find.byType(ColoredBox),
+      ),
+      findsNothing,
+    );
+
+    // タイトルの右に参加者 3 人分の〇が色順どおりに並ぶ。
+    final dotColors = tester
+        .widgetList<Container>(
+          find.descendant(
+            of: find.byType(EventBar),
+            matching: find.byType(Container),
+          ),
+        )
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>()
+        .where((decoration) => decoration.shape == BoxShape.circle)
+        .map((decoration) => decoration.color)
+        .toList();
+    expect(dotColors, [
+      const Color(0xFF1565C0),
+      const Color(0xFFD84315),
+      const Color(0xFF2E7D32),
+    ]);
+    expect(find.text('ディズニー'), findsOneWidget);
+  });
+
   testWidgets('ヘッダの年月タップでホイールピッカーを表示し、月を選ぶとその月へ飛ぶ', (tester) async {
     final focusedDay = DateTime(2024, 7, 1);
     final firestore = await _seed(today: focusedDay);
@@ -647,42 +736,13 @@ void main() {
     expect(find.text('2024年7月'), findsOneWidget);
   });
 
-  testWidgets('参加者がいる予定はマス目のバーもメンバー数だけ分割される', (tester) async {
+  testWidgets('「色分け」設定では参加者がいる予定のバーをメンバー数だけ分割する（Issue #112）', (tester) async {
     final today = DateTime.now();
-    final firestore = await _firestoreWithCalendar();
-    for (final (id, name, color) in const [
-      ('me', 'ぱぱ', '#1565C0'),
-      ('mama', 'まま', '#D84315'),
-    ]) {
-      await firestore.collection('users').doc(id).set({
-        'name': name,
-        'email': '$id@example.com',
-        'color': color,
-        'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
-        'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
-      });
-    }
-    final start = DateTime(today.year, today.month, today.day, 9);
-    final sharedEvent = Event.create(
-      title: '家族の予定',
-      creatorId: 'me',
-      participantIds: const ['me', 'mama'],
-      startAt: start,
-      endAt: start.add(const Duration(hours: 1)),
-      allDay: false,
-      type: EventType.confirmed,
-      memo: '',
-      reminderOffsets: const {},
-      updatedBy: 'me',
-      now: start,
-      calendarId: testCalendarId,
-    );
-    await firestore
-        .collection('events')
-        .doc(sharedEvent.id)
-        .set(sharedEvent.toFirestore(useServerTimestamp: false));
+    final firestore = await _seedSharedEvent(today: today);
 
-    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpWidget(
+      _wrap(firestore, multiMemberDisplay: MultiMemberEventDisplay.split),
+    );
     await tester.pumpAndSettle();
 
     final bar = tester.widget<EventBar>(
@@ -692,6 +752,54 @@ void main() {
     );
 
     expect(bar.colors, [const Color(0xFF1565C0), const Color(0xFFD84315)]);
+    // 従来どおり塗り分けで描く（丸マークにしない）。
+    expect(bar.memberDots, isFalse);
+  });
+
+  testWidgets('既定（丸マーク）では複数人の予定を塗り分けず参加者色の〇を並べる（Issue #112）', (tester) async {
+    final today = DateTime.now();
+    final firestore = await _seedSharedEvent(today: today);
+
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    final barFinder = find.byWidgetPredicate(
+      (widget) => widget is EventBar && widget.title == '家族の予定',
+    );
+    final bar = tester.widget<EventBar>(barFinder);
+    expect(bar.memberDots, isTrue);
+    // Issue #105 と同様、自分(me)が参加者なので地色を自分の色へ寄せる。
+    expect(bar.selfColor, const Color(0xFF1565C0));
+
+    // タイトルの右に参加者色の〇（ぱぱ＝青・まま＝橙）が並ぶ。
+    final dotColors = tester
+        .widgetList<Container>(
+          find.descendant(of: barFinder, matching: find.byType(Container)),
+        )
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>()
+        .where((decoration) => decoration.shape == BoxShape.circle)
+        .map((decoration) => decoration.color)
+        .toList();
+    expect(dotColors, [const Color(0xFF1565C0), const Color(0xFFD84315)]);
+  });
+
+  testWidgets('丸マーク設定でも1人の予定は従来どおり単色で塗る（Issue #112）', (tester) async {
+    final today = DateTime.now();
+    final firestore = await _seed(today: today);
+
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    final bar = tester.widget<EventBar>(
+      find.byWidgetPredicate(
+        (widget) => widget is EventBar && widget.title == '会議',
+      ),
+    );
+
+    // 参加者が 1 人なら丸マークは付けず単色のまま（memberDots を渡さない）。
+    expect(bar.memberDots, isFalse);
+    expect(bar.colors, [const Color(0xFF1565C0)]);
   });
 
   testWidgets('月表示は前後月セルにある予定も表示する（Issue #59）', (tester) async {
