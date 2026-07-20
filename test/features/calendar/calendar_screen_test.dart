@@ -759,6 +759,43 @@ void main() {
     expect(find.text('2025年7月'), findsOneWidget);
   });
 
+  testWidgets('左右スワイプでスライドして前後の月へ切り替わる（Issue #134）', (tester) async {
+    final focusedDay = DateTime(2024, 7, 1);
+    final firestore = await _seed(today: focusedDay);
+
+    await tester.pumpWidget(_wrap(firestore, initialFocusedDay: focusedDay));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2024年7月'), findsOneWidget);
+    // グリッドとバーをまとめてスライドさせる AnimatedSwitcher が居る。
+    expect(find.byType(AnimatedSwitcher), findsOneWidget);
+    // 静止時はカレンダーページ（グリッド）が 1 枚だけ。
+    expect(find.byType(TableCalendar<Event>), findsOneWidget);
+
+    // 左へフリック → 翌月へ。遷移中は新旧 2 枚のグリッドがスライドで共存する
+    // （瞬時の差し替えではなくアニメーションで切り替わっている証跡）。
+    await tester.fling(
+      find.byType(TableCalendar<Event>),
+      const Offset(-300, 0),
+      1000,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(find.byType(TableCalendar<Event>), findsNWidgets(2));
+    await tester.pumpAndSettle();
+    // スワイプ方向（左＝進む）と月の進退（翌月）が一致する。
+    expect(find.text('2024年8月'), findsOneWidget);
+
+    // 右へフリック → 前月へ戻る。
+    await tester.fling(
+      find.byType(TableCalendar<Event>),
+      const Offset(300, 0),
+      1000,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2024年7月'), findsOneWidget);
+  });
+
   testWidgets('ホイールピッカーでキャンセルすると月が変わらない', (tester) async {
     final focusedDay = DateTime(2024, 7, 1);
     final firestore = await _seed(today: focusedDay);

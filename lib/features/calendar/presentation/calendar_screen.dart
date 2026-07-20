@@ -83,6 +83,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// 横スワイプを月送りと判定する速度しきい値（論理px/秒）。
   static const double _swipeVelocityThreshold = 200;
 
+  /// Issue #134: 月切替時にカレンダーをスライドさせるアニメーションの長さ。
+  static const Duration _monthTransitionDuration = Duration(milliseconds: 280);
+
+  /// Issue #134: 直前に描いた月（年月キー）。ビルド時に現在の月と比較して
+  /// スライド方向（進む/戻る）を決めるために保持する。初回は null。
+  DateTime? _prevMonthKey;
+
+  /// Issue #134: 月送りの向き。true＝翌月へ（新しい月が右から入る）、
+  /// false＝前月へ（左から入る）。[build] で [_prevMonthKey] と比較して更新する。
+  bool _slideForward = true;
+
   @override
   void initState() {
     super.initState();
@@ -151,6 +162,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Issue #134: 表示中の月（年月キー）。直前に描いた月と比べて、月が変わった
+    // ときだけスライドの向きを更新する。データ更新などで月が変わらない再描画では
+    // 向きを保ち、余計なスライドを起こさない。
+    final monthKey = DateTime(_focusedDay.year, _focusedDay.month);
+    if (_prevMonthKey != null && monthKey != _prevMonthKey) {
+      _slideForward = monthKey.isAfter(_prevMonthKey!);
+    }
+    _prevMonthKey = monthKey;
+
     // Issue #108: 取得はグリッドより広い範囲で行い、月をまたいで連なる予定の
     // マージ構成が月ビューごとに変わらないようにする。
     final fetchRange = _eventFetchRange;
@@ -246,20 +266,16 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   dayNumberHeight: dayNumberHeight,
                   barSlot: barSlot,
                 );
-                // Issue #72: TableCalendar 内蔵の横スワイプ（PageView）は
-                // オーバーレイと同期しないため無効化し、代わりに横フリックを
-                // 自前で拾って月送りする。月切替は setState による瞬時の
-                // 差し替えとなり、グリッドとバーがずれない。
-                return GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onHorizontalDragEnd: (details) {
-                    final velocity = details.primaryVelocity ?? 0;
-                    if (velocity < -_swipeVelocityThreshold) {
-                      _changeMonth(1);
-                    } else if (velocity > _swipeVelocityThreshold) {
-                      _changeMonth(-1);
-                    }
-                  },
+                // Issue #72 / #134: TableCalendar 内蔵の横スワイプ（PageView）は
+                // グリッドだけを動かし、上に重ねたバーのオーバーレイと同期しない
+                // ため無効化している。代わりに横フリックを自前で拾って月送りし、
+                // グリッドとバーをまとめた 1 枚（下の [SizedBox]）を
+                // [AnimatedSwitcher] でスライドさせる。これによりグリッドとバーが
+                // ずれないまま、月が変わったことをスライドで示せる（Issue #134）。
+                final page = SizedBox(
+                  key: ValueKey(monthKey),
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
                   child: Stack(
                     children: [
                       _buildCalendar(compact),
@@ -283,6 +299,44 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         ),
                       ),
                     ],
+                  ),
+                );
+                return GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (velocity < -_swipeVelocityThreshold) {
+                      _changeMonth(1);
+                    } else if (velocity > _swipeVelocityThreshold) {
+                      _changeMonth(-1);
+                    }
+                  },
+                  child: AnimatedSwitcher(
+                    duration: _monthTransitionDuration,
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    // 月が変わると新旧 2 枚が同時に生き、逆向きにスライドする。
+                    // スワイプ方向と月の進退を一致させるため、進む向きでは新しい月を
+                    // 右（Offset(1,0)）から入れて古い月を左へ、戻る向きでは逆にする。
+                    transitionBuilder: (child, animation) {
+                      final incoming =
+                          (child.key as ValueKey?)?.value == monthKey;
+                      final begin = _slideForward
+                          ? (incoming
+                                ? const Offset(1, 0)
+                                : const Offset(-1, 0))
+                          : (incoming
+                                ? const Offset(-1, 0)
+                                : const Offset(1, 0));
+                      return SlideTransition(
+                        position: Tween<Offset>(
+                          begin: begin,
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      );
+                    },
+                    child: page,
                   ),
                 );
               },
@@ -322,8 +376,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       sixWeekMonthsEnforced: true,
       // Expanded で与えた高さぴったりにマスを敷き詰める（行高は内部で算出）。
       shouldFillViewport: true,
-      // Issue #72: 横スワイプ／ページ送りアニメーションはオーバーレイと
-      // 同期しないため止める。月送りは自前の横フリックとヘッダのボタンで行う。
+      // Issue #72 / #134: 横スワイプ／ページ送りアニメーションはグリッドだけを
+      // 動かしオーバーレイと同期しないため止める。月送りは自前の横フリックと
+      // ヘッダのボタンで行い、スライドはグリッド＋バーをまとめて包んだ
+      // [AnimatedSwitcher]（build 内）が担う。
       availableGestures: AvailableGestures.none,
       pageAnimationEnabled: false,
       selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
