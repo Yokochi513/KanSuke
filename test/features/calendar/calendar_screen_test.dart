@@ -598,6 +598,27 @@ void main() {
     expect(tentative.border, isNotNull);
   });
 
+  testWidgets('仮の予定のタイトルは薄い識別色でも読める色で描く（Issue #106）', (tester) async {
+    // 薄い水色（#81D4FA）は明るく、識別色をそのまま文字色にすると背景に
+    // 埋もれて読めない。実効地色の明度から選んだ黒/白で描かれることを確かめる。
+    const lightBlue = Color(0xFF81D4FA);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: EventBar(
+            title: 'いゆはの予定',
+            colors: [lightBlue],
+            type: EventType.tentative,
+          ),
+        ),
+      ),
+    );
+
+    final titleColor = tester.widget<Text>(find.text('いゆはの予定')).style!.color;
+    expect(titleColor, isNot(lightBlue));
+    expect(titleColor, Colors.black);
+  });
+
   testWidgets('EventBarは参加メンバー数だけ色を分割して表示する', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
