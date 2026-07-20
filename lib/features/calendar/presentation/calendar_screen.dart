@@ -83,7 +83,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// 画面に実際に見えている 6 週グリッドの範囲 `[先頭日, 最終日の翌日)`。
   ///
   /// Issue #59 / FR-4: 前後月の日付セルも表示しているため、そのセルの予定も
-  /// 読み込む。当月だけではなく 42 日分に限定して取得し、月切替の軽さを保つ。
+  /// 読み込む。バーの配置計算はこの範囲を基準にする。
   DateRange get _visibleCalendarRange {
     final monthStart = DateTime(_focusedDay.year, _focusedDay.month, 1);
     final firstVisibleDay = monthStart.subtract(
@@ -92,6 +92,25 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     return (
       start: firstVisibleDay,
       end: firstVisibleDay.add(const Duration(days: _weekRows * 7)),
+    );
+  }
+
+  /// 予定の取得範囲。表示中グリッドの前後 1 グリッド分（6 週）を広げる。
+  ///
+  /// Issue #108: マージ表示（Issue #76）は同名・期間が連なる予定を 1 グループに
+  /// 束ねるが、取得をグリッドの 42 日ちょうどに絞ると、連なりの一部（例: 早く
+  /// 終わる子の夏休み）が翌月のグリッドと重ならず取得されない。するとグループの
+  /// 構成が月ビューごとに変わり、同じ日の帯が月によってマージ帯になったり単独の
+  /// 予定バーになったりと表示がずれる。グリッド外へ続く連なりも束ねたまま描ける
+  /// よう、取得は前後へパディングする（それ以上離れた連なりは束ね対象として
+  /// 追跡しない）。表示するバー自体は従来どおり [_visibleCalendarRange] で
+  /// クリップするため、増えるのは取得量のみで描画は変わらない（NFR-1）。
+  DateRange get _eventFetchRange {
+    final visible = _visibleCalendarRange;
+    const padding = Duration(days: _weekRows * 7);
+    return (
+      start: visible.start.subtract(padding),
+      end: visible.end.add(padding),
     );
   }
 
@@ -123,12 +142,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final visibleRange = _visibleCalendarRange;
+    // Issue #108: 取得はグリッドより広い範囲で行い、月をまたいで連なる予定の
+    // マージ構成が月ビューごとに変わらないようにする。
+    final fetchRange = _eventFetchRange;
     final calendarId = ref.watch(selectedCalendarIdProvider);
     final eventsAsync = ref.watch(
       eventsInRangeProvider((
-        start: visibleRange.start,
-        end: visibleRange.end,
+        start: fetchRange.start,
+        end: fetchRange.end,
         calendarId: calendarId,
       )),
     );
@@ -144,7 +165,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
     if (eventsAsync.hasError) {
       AppLogger.error(
-        'eventsInRangeProvider errored for $visibleRange/$calendarId',
+        'eventsInRangeProvider errored for $fetchRange/$calendarId',
         tag: 'CalendarScreen',
         error: eventsAsync.error,
         stackTrace: eventsAsync.stackTrace,
@@ -346,7 +367,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final capacity = available <= 0 ? 0 : (available ~/ _barSlot);
 
     // グループごとに表示範囲でクリップした開始・終了日（期間の和集合）を求める。
-    final clippedRanges = <EventGroup, ({DateTime start, DateTime end})>{};
+    // startDay / endDay はクリップ前の実際の開始・終了日。グリッド外へ続く帯の
+    // 端に開始・終了の角丸を付けないための判定に使う（Issue #108）。
+    final clippedRanges =
+        <
+          EventGroup,
+          ({DateTime start, DateTime end, DateTime startDay, DateTime endDay})
+        >{};
     for (final group in groups) {
       final groupStartDay = _dateKey(group.startAt.toLocal());
       final groupEndDay = _dateKey(group.endAt.toLocal());
@@ -358,7 +385,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           : groupEndDay;
       // FR-4: 既存の終日単日予定（startAt == endAt）を保つため終了日も含める。
       if (end.isBefore(start)) continue;
-      clippedRanges[group] = (start: start, end: end);
+      clippedRanges[group] = (
+        start: start,
+        end: end,
+        startDay: groupStartDay,
+        endDay: groupEndDay,
+      );
     }
 
     DateTime weekStart(DateTime day) =>
@@ -444,8 +476,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               lane: lane,
               // 実際の開始・終了日にあたる端だけ角丸/枠線を付け、週をまたぐ
               // 継続端（週頭・週末）は角を落として次週へ連結して見せる。
-              roundLeft: segStart.isAtSameMomentAs(r.start),
-              roundRight: segEnd.isAtSameMomentAs(r.end),
+              // Issue #108: 比較はクリップ後（r.start / r.end）ではなく実際の
+              // 開始・終了日と行う。グリッド外へ続く帯（月をまたぐ予定）の端に
+              // 角丸を付けると、そこで始まる・終わるように見えてしまうため。
+              roundLeft: segStart.isAtSameMomentAs(r.startDay),
+              roundRight: segEnd.isAtSameMomentAs(r.endDay),
               // 束ねたバーは日別ストリップ用に、この週スライスの各日で実際に
               // 参加しているメンバーを求める（Issue #76）。
               perDayMemberIds: group.isMerged
@@ -494,7 +529,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 /// [weekIndex] は表示中 6 週のうちの行（0〜5）、[startCol] / [endCol] は
 /// その週での開始・終了列（0＝日曜〜6＝土曜）、[lane] は縦位置。
 /// [roundLeft] / [roundRight] は、その端が予定の実際の開始・終了日
-/// （＝週をまたぐ継続端ではない）かどうかを表す。[group] は 1 件のみなら
+/// （＝週やグリッド端をまたぐ継続端ではない）かどうかを表す。[group] は 1 件のみなら
 /// 普通の予定、2 件以上なら束ねた予定グループ（Issue #76）。
 class _BarSegment {
   const _BarSegment({
