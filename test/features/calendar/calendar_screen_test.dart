@@ -475,6 +475,27 @@ void main() {
     expect(find.textContaining('+'), findsWidgets);
   });
 
+  testWidgets('横画面など行が低くても各日に最低1件は予定バーを表示する（Issue #126）', (tester) async {
+    // 横画面相当の低い行高では、既定寸法だと日付の下に帯が 1 本も入らず
+    // 「+N」だけになってしまう。圧縮表示へ切り替え、最低 1 件は帯を出す
+    // （「帯が細くなってもいいから一つは情報がほしい」というフィードバック）。
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final today = DateTime.now();
+    final firestore = await _seedManyOnOneDay(today: today);
+
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    // 低い行でも予定バーが最低 1 本は描かれる（従来は「+N」だけになっていた）。
+    expect(find.byType(EventBar), findsWidgets);
+    // 1 行しか入らない低い行では「+N」より帯 1 件を優先し、「+N」は出さない。
+    expect(find.textContaining('+'), findsNothing);
+  });
+
   testWidgets('月表示では自分が参加者の予定を同日の先頭に表示する', (tester) async {
     final today = DateTime.now();
     final firestore = await _seedCurrentUserPriority(today: today);

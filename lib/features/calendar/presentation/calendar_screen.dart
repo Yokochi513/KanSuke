@@ -72,6 +72,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// バーの高さ。
   static const double _barHeight = 16;
 
+  /// Issue #126: 横画面など行が低く、既定寸法（[_dayNumberHeight] ＋ [_barSlot]）
+  /// では帯が 1 本も入らないときに使う圧縮寸法。日付欄と行間だけを詰め、帯自体の
+  /// 高さ（[_barHeight]）は変えないので可読性は保ったまま「+N」だけになるのを
+  /// 防ぎ、どの日も最低 1 件は帯（情報）を出す（「帯が細くなってもいいから一つは
+  /// 情報がほしい」というフィードバックに対応）。
+  static const double _dayNumberHeightCompact = 15;
+  static const double _barSlotCompact = 17;
+
   /// 横スワイプを月送りと判定する速度しきい値（論理px/秒）。
   static const double _swipeVelocityThreshold = 200;
 
@@ -213,6 +221,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 final rowHeight =
                     (constraints.maxHeight - _daysOfWeekHeight) / _weekRows;
                 final colWidth = constraints.maxWidth / 7;
+                // Issue #126: 既定寸法（日付欄 [_dayNumberHeight] ＋帯スロット
+                // [_barSlot]）が 1 行分も入らない低い行（横画面など）では、日付欄と
+                // 行間を詰めた圧縮寸法へ切り替える。これにより予定が 1 件も見えず
+                // 「+N」だけになる状態を避け、最低 1 件は帯を出す。
+                final compact = rowHeight - _dayNumberHeight - 2 < _barSlot;
+                final dayNumberHeight = compact
+                    ? _dayNumberHeightCompact
+                    : _dayNumberHeight;
+                final barSlot = compact ? _barSlotCompact : _barSlot;
                 // Issue #76: マージ ON なら同名・期間が連なる予定を 1 グループに
                 // 束ね、OFF なら従来どおり 1 予定 = 1 グループとして扱う。以降の
                 // レーン配置・「+N」計算はグループ単位で行う。
@@ -226,6 +243,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   range: _visibleCalendarRange,
                   currentUid: currentUid,
                   rowHeight: rowHeight,
+                  dayNumberHeight: dayNumberHeight,
+                  barSlot: barSlot,
                 );
                 // Issue #72: TableCalendar 内蔵の横スワイプ（PageView）は
                 // オーバーレイと同期しないため無効化し、代わりに横フリックを
@@ -243,7 +262,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   },
                   child: Stack(
                     children: [
-                      _buildCalendar(),
+                      _buildCalendar(compact),
                       // バーはグリッドの上に載せる。普通のバー・「+N」は
                       // [IgnorePointer] でタップを下のマスへ通し、「日を選択→
                       // 再タップで日別一覧」の操作を保つ。束ねたバー（Issue #76）
@@ -258,8 +277,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           daysOfWeekHeight: _daysOfWeekHeight,
                           rowHeight: rowHeight,
                           colWidth: colWidth,
-                          dayNumberHeight: _dayNumberHeight,
-                          barSlot: _barSlot,
+                          dayNumberHeight: dayNumberHeight,
+                          barSlot: barSlot,
                           barHeight: _barHeight,
                         ),
                       ),
@@ -276,7 +295,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _buildCalendar() {
+  Widget _buildCalendar(bool compact) {
     Widget cellBuilder(
       DateTime day, {
       bool isToday = false,
@@ -288,6 +307,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         isToday: isToday,
         isSelected: isSelected,
         isOutside: isOutside,
+        compact: compact,
       );
     }
 
@@ -362,6 +382,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     required DateRange range,
     required String? currentUid,
     required double rowHeight,
+    required double dayNumberHeight,
+    required double barSlot,
   }) {
     final firstVisibleDay = _dateKey(range.start);
     final lastVisibleDay = _dateKey(
@@ -369,8 +391,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     ).subtract(const Duration(days: 1));
 
     // マスの高さから、表示できるバー本数を見積もる（[_DayCell] と同じ基準）。
-    final available = rowHeight - _dayNumberHeight - 2;
-    final capacity = available <= 0 ? 0 : (available ~/ _barSlot);
+    // Issue #126: 圧縮時は詰めた日付欄高・行間で見積もる。
+    final available = rowHeight - dayNumberHeight - 2;
+    var capacity = available <= 0 ? 0 : (available ~/ barSlot);
+    // Issue #126: 行に日付欄ぶんの余白があるなら、帯が多少はみ出しても最低 1 本は
+    // 出す（「帯が細くなってもいいから一つは情報がほしい」というフィードバック）。
+    if (capacity == 0 && available > 0) {
+      capacity = 1;
+    }
 
     // グループごとに表示範囲でクリップした開始・終了日（期間の和集合）を求める。
     // startDay / endDay はクリップ前の実際の開始・終了日。グリッド外へ続く帯の
@@ -459,9 +487,19 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       }
 
       // 全レーンが収まらないときは、最後の 1 行を「+N」用に空ける。
-      final maxVisibleLanes = laneCount <= capacity
-          ? laneCount
-          : (capacity - 1).clamp(0, laneCount);
+      // Issue #126: ただし 1 行しか入らない（capacity == 1）低い行では、「+N」より
+      // 1 件の帯を優先して表示し、「+N」は省く（低い行でも最低 1 件は帯が見える）。
+      final int maxVisibleLanes;
+      if (laneCount <= capacity) {
+        maxVisibleLanes = laneCount;
+      } else if (capacity <= 1) {
+        maxVisibleLanes = capacity;
+      } else {
+        maxVisibleLanes = capacity - 1;
+      }
+      // 「+N」用の行を確保できたときだけマーカーを出す。確保できないまま出すと
+      // 帯の真下（＝次の行）に重なって描かれてしまうため（Issue #126）。
+      final showOverflowMarkers = maxVisibleLanes < capacity;
 
       final hiddenPerCol = List<int>.filled(7, 0);
       for (final group in weekGroups) {
@@ -502,7 +540,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       }
 
       for (var col = 0; col < 7; col++) {
-        if (hiddenPerCol[col] > 0) {
+        if (showOverflowMarkers && hiddenPerCol[col] > 0) {
           markers.add(
             _OverflowMarker(
               weekIndex: weekIndex,
@@ -789,6 +827,7 @@ class _DayCell extends StatelessWidget {
     required this.isToday,
     required this.isSelected,
     required this.isOutside,
+    this.compact = false,
   });
 
   final DateTime day;
@@ -796,7 +835,12 @@ class _DayCell extends StatelessWidget {
   final bool isSelected;
   final bool isOutside;
 
-  static const double _headerHeight = 22;
+  /// Issue #126: 圧縮表示か。true のとき日付欄を詰め、帯 1 本ぶんの余白を空ける。
+  /// [_CalendarScreenState._dayNumberHeightCompact]（15）＝上パディング(1)＋
+  /// 日付ラベル高(14) に合わせる。
+  final bool compact;
+
+  double get _headerHeight => compact ? 14 : 22;
 
   @override
   Widget build(BuildContext context) {
@@ -860,8 +904,9 @@ class _DayCell extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 20,
-            height: 18,
+            // Issue #126: 圧縮時は日付の丸を一回り小さくして帯ぶんの高さを空ける。
+            width: compact ? 18 : 20,
+            height: compact ? 13 : 18,
             alignment: Alignment.center,
             decoration: isToday
                 ? BoxDecoration(
@@ -872,7 +917,7 @@ class _DayCell extends StatelessWidget {
             child: Text(
               '${day.day}',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: compact ? 11 : 12,
                 fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
                 color: isToday
                     ? (isHoliday ? scheme.onError : scheme.onPrimary)
@@ -881,7 +926,9 @@ class _DayCell extends StatelessWidget {
             ),
           ),
           if (holidayName != null)
-            Expanded(child: _HolidayLabel(name: holidayName)),
+            Expanded(
+              child: _HolidayLabel(name: holidayName, compact: compact),
+            ),
         ],
       ),
     );
@@ -891,14 +938,19 @@ class _DayCell extends StatelessWidget {
 /// 祝日名ラベル（例: 「海の日」）。"祝" という記号だけでは何の祝日か
 /// わからないため、名称そのものを表示して一目で判別できるようにする。
 class _HolidayLabel extends StatelessWidget {
-  const _HolidayLabel({required this.name});
+  const _HolidayLabel({required this.name, this.compact = false});
 
   final String name;
+
+  /// Issue #126: 圧縮時は詰めた日付欄（高さ 14）に収まるよう余白・文字を小さくする。
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 2, top: 3),
+      padding: compact
+          ? const EdgeInsets.only(left: 2, top: 1)
+          : const EdgeInsets.only(left: 2, top: 3),
       child: Tooltip(
         message: name,
         child: Text(
@@ -906,7 +958,7 @@ class _HolidayLabel extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 9,
+            fontSize: compact ? 8 : 9,
             height: 1,
             fontWeight: FontWeight.w600,
             color: KanSukeColors.of(context).holiday,
