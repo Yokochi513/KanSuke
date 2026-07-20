@@ -64,6 +64,23 @@ abstract final class MemberColors {
   ];
 }
 
+/// まとめ帯（マージ帯・丸マーク帯）の地色パレット（Issue #112 フォローアップ）。
+///
+/// 「誰の予定か」を表すメンバー色（[MemberColors.palette]）と混同されないよう、
+/// 彩度を落とした鼠系の和色から選ぶ。ライト・ダークどちらのテーマでも沈まず、
+/// 明度による文字色の自動切り替え（黒/白）で題名が読める中間〜明るめの色に
+/// とどめる。
+abstract final class MergedBarColors {
+  static const palette = <Color>[
+    Color(0xFFBDB9AE), // 薄鼠
+    Color(0xFFD8C6A2), // 香色
+    Color(0xFFB9C8CF), // 水浅葱鼠
+    Color(0xFFBFCBB2), // 柳鼠
+    Color(0xFFC5BDD2), // 薄藤鼠
+    Color(0xFFD9C2C6), // 桜鼠
+  ];
+}
+
 /// 明朝体のフォント候補。
 ///
 /// 和風の見た目は書体の寄与が大きいため、見出しには明朝体を当てる。
@@ -259,10 +276,20 @@ const _darkScheme = ColorScheme(
   inversePrimary: WashiColors.kon,
 );
 
-ThemeData buildKanSukeTheme() => _buildTheme(_lightScheme, KanSukeColors.light);
+/// ライトテーマを構築する。
+///
+/// [mergedBarColor] を渡すと、まとめ帯（[KanSukeColors.mergedBar]）の地色を
+/// テーマ既定から差し替える（Issue #112 フォローアップ。設定画面で選べる）。
+ThemeData buildKanSukeTheme({Color? mergedBarColor}) => _buildTheme(
+  _lightScheme,
+  KanSukeColors.light.copyWith(mergedBar: mergedBarColor),
+);
 
-ThemeData buildKanSukeDarkTheme() =>
-    _buildTheme(_darkScheme, KanSukeColors.dark);
+/// ダークテーマを構築する。[mergedBarColor] は [buildKanSukeTheme] と同様。
+ThemeData buildKanSukeDarkTheme({Color? mergedBarColor}) => _buildTheme(
+  _darkScheme,
+  KanSukeColors.dark.copyWith(mergedBar: mergedBarColor),
+);
 
 ThemeData _buildTheme(ColorScheme scheme, KanSukeColors kanSukeColors) {
   final base = ThemeData(colorScheme: scheme, useMaterial3: true);

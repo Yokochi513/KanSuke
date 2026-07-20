@@ -375,8 +375,8 @@ Widget _wrap(
   FakeFirebaseFirestore firestore, {
   DateTime? initialFocusedDay,
   bool mergeEnabled = true,
-  // アプリの既定（丸マーク、Issue #112）に合わせる。
-  MultiMemberEventDisplay multiMemberDisplay = MultiMemberEventDisplay.dots,
+  // アプリの既定（色分け、Issue #112）に合わせる。
+  MultiMemberEventDisplay multiMemberDisplay = MultiMemberEventDisplay.split,
 }) {
   return ProviderScope(
     overrides: [
@@ -756,11 +756,13 @@ void main() {
     expect(bar.memberDots, isFalse);
   });
 
-  testWidgets('既定（丸マーク）では複数人の予定を塗り分けず参加者色の〇を並べる（Issue #112）', (tester) async {
+  testWidgets('「丸マーク」設定では複数人の予定を塗り分けず参加者色の〇を並べる（Issue #112）', (tester) async {
     final today = DateTime.now();
     final firestore = await _seedSharedEvent(today: today);
 
-    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpWidget(
+      _wrap(firestore, multiMemberDisplay: MultiMemberEventDisplay.dots),
+    );
     await tester.pumpAndSettle();
 
     final barFinder = find.byWidgetPredicate(
@@ -788,7 +790,9 @@ void main() {
     final today = DateTime.now();
     final firestore = await _seed(today: today);
 
-    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpWidget(
+      _wrap(firestore, multiMemberDisplay: MultiMemberEventDisplay.dots),
+    );
     await tester.pumpAndSettle();
 
     final bar = tester.widget<EventBar>(

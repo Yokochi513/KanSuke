@@ -990,6 +990,12 @@ class EventBar extends StatelessWidget {
     final barColor = selfColor != null
         ? Color.lerp(baseColor, selfColor, _selfTintFactor)!
         : baseColor;
+    // 地色は設定で自由に変えられるため（Issue #112 フォローアップ）、文字色は
+    // 地色の明度から黒/白を選び、どの地色でも読めるようにする。
+    final textColor =
+        ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);
 
@@ -1027,7 +1033,7 @@ class EventBar extends StatelessWidget {
                     fontSize: 11,
                     height: 1.0,
                     fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
-                    color: scheme.onSurface,
+                    color: textColor,
                   ),
                 ),
               ),
@@ -1203,8 +1209,13 @@ class MergedEventBar extends StatelessWidget {
         ? Color.lerp(baseColor, selfColor, _selfTintFactor)!
         : baseColor;
     // Issue #105: 従来の onSurfaceVariant はベージュ地で薄く「背景と同化」して
-    // 見えづらかったため、コントラストの高い onSurface に上げて読みやすくする。
-    final textColor = scheme.onSurface;
+    // 見えづらかったため、コントラストの高い色にする。地色は設定で自由に変え
+    // られるため（Issue #112 フォローアップ）、テーマ色ではなく地色の明度から
+    // 黒/白を選び、どの地色でも読めるようにする。
+    final textColor =
+        ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);
 

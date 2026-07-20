@@ -13,6 +13,7 @@ import '../features/events/presentation/event_edit_screen.dart';
 import '../features/notifications/application/notification_providers.dart';
 import '../features/invites/presentation/invite_accept_screen.dart';
 import '../features/invites/presentation/invite_link_gate.dart';
+import '../features/settings/application/merged_bar_color_provider.dart';
 import '../features/settings/application/theme_mode_provider.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/version_check/presentation/release_history_screen.dart';
@@ -38,8 +39,13 @@ class KanSukeApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       // FR-9: 招待リンクでの起動は画面の外から遷移を起こすため（Issue #90）。
       navigatorKey: ref.watch(navigatorKeyProvider),
-      theme: buildKanSukeTheme(),
-      darkTheme: buildKanSukeDarkTheme(),
+      // まとめ帯の地色は設定で差し替えられる（null ならテーマ既定、Issue #112）。
+      theme: buildKanSukeTheme(
+        mergedBarColor: ref.watch(resolvedMergedBarColorProvider),
+      ),
+      darkTheme: buildKanSukeDarkTheme(
+        mergedBarColor: ref.watch(resolvedMergedBarColorProvider),
+      ),
       // 設定画面での選択に従う（未設定なら端末のダークモード設定に追従）。
       themeMode: ref.watch(resolvedThemeModeProvider),
       // 和紙の地は全画面共通の背景として Navigator の背後に一度だけ敷く。

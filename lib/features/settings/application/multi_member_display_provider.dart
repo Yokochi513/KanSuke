@@ -16,10 +16,10 @@ enum MultiMemberEventDisplay {
 /// 複数人予定の表示方法の設定（Issue #112）。
 ///
 /// 帯を参加者色で塗り分ける従来表示は 3 人以上で細切れになり見にくいという
-/// フィードバックから、既定はタイトル右に参加者色の丸を並べる [dots] にする。
-/// 従来の塗り分け（[split]）も選べるよう残す。端末ローカルの設定なので
-/// Firestore ではなく [SharedPreferences] に保存し、家族の他のメンバーには
-/// 影響させない。読み込み前・読み込み失敗時は既定（[dots]）として扱う
+/// フィードバックから、タイトル右に参加者色の丸を並べる [dots] を選べるように
+/// する。既定は従来の塗り分け（[split]）のまま変えない。端末ローカルの設定
+/// なので Firestore ではなく [SharedPreferences] に保存し、家族の他のメンバー
+/// には影響させない。読み込み前・読み込み失敗時は既定（[split]）として扱う
 /// （[resolvedMultiMemberEventDisplayProvider]）。
 final multiMemberEventDisplayProvider =
     AsyncNotifierProvider<
@@ -27,11 +27,11 @@ final multiMemberEventDisplayProvider =
       MultiMemberEventDisplay
     >(MultiMemberEventDisplayController.new);
 
-/// 実際に月表示へ渡す表示方法。読み込み中・失敗時は既定（丸マーク）に従う。
+/// 実際に月表示へ渡す表示方法。読み込み中・失敗時は既定（色分け）に従う。
 final resolvedMultiMemberEventDisplayProvider =
     Provider<MultiMemberEventDisplay>((ref) {
       return ref.watch(multiMemberEventDisplayProvider).value ??
-          MultiMemberEventDisplay.dots;
+          MultiMemberEventDisplay.split;
     });
 
 class MultiMemberEventDisplayController
@@ -54,7 +54,7 @@ class MultiMemberEventDisplayController
 }
 
 /// 保存済みの文字列を [MultiMemberEventDisplay] に戻す。未保存・未知の値は
-/// 既定（丸マーク）として扱う。
+/// 既定（色分け）として扱う。
 MultiMemberEventDisplay multiMemberEventDisplayFromName(String? name) {
   return MultiMemberEventDisplay.values.firstWhere(
     (display) => display.name == name,

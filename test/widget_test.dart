@@ -69,7 +69,7 @@ void main() {
     // FR-8: 設定画面のセクションが増え、既定のテスト表示領域では
     // 末尾の要素が描画範囲外になる。ensureVisible が要素を見つけられるよう
     // 表示領域を広げる。
-    await tester.binding.setSurfaceSize(const Size(400, 1500));
+    await tester.binding.setSurfaceSize(const Size(400, 1700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final repository = FakeAuthRepository(initiallySignedIn: true);
     await tester.pumpWidget(await _testApp(repository));

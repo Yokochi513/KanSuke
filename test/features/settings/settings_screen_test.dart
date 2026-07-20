@@ -49,7 +49,7 @@ void main() {
   });
 
   testWidgets('更新履歴の導線に現在のバージョンが表示され、タップで更新履歴画面へ遷移する', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1600));
+    await tester.binding.setSurfaceSize(const Size(400, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     await tester.pumpWidget(
@@ -146,20 +146,93 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 既定は「丸マーク」。「色分け」を選ぶと保存される。
+    // 既定は「色分け」。「丸マーク」を選ぶと保存される。
     await tester.scrollUntilVisible(
-      find.text('色分け'),
+      find.text('丸マーク'),
       120,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.text('色分け'));
+    await tester.tap(find.text('丸マーク'));
     await tester.pumpAndSettle();
 
     final prefs = await SharedPreferences.getInstance();
     expect(
       prefs.getString('settings.multi_member_event_display'),
-      MultiMemberEventDisplay.split.name,
+      MultiMemberEventDisplay.dots.name,
     );
+  });
+
+  testWidgets('まとめ帯の色を選ぶと保存され、「標準」でテーマ既定へ戻せる（Issue #112）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // パレットの色を選ぶと #RRGGBB で保存される。
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('merged-bar-color-#BDB9AE')),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('merged-bar-color-#BDB9AE')));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('settings.merged_bar_color'), '#BDB9AE');
+
+    // 「標準」を選ぶと保存が消え、テーマ既定へ戻る。
+    await tester.tap(find.byKey(const ValueKey('merged-bar-color-default')));
+    await tester.pumpAndSettle();
+
+    expect(prefs.getString('settings.merged_bar_color'), isNull);
+  });
+
+  testWidgets('まとめ帯の色は自由選択（RGB）でも保存される（Issue #112）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final firestore = await _seedUser();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          firestoreProvider.overrideWithValue(firestore),
+          currentUidProvider.overrideWithValue('me'),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('merged-bar-custom-color')),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('merged-bar-custom-color')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('色を選択'), findsOneWidget);
+
+    tester.widget<Slider>(find.byType(Slider).at(0)).onChanged!(255);
+    await tester.pump();
+    tester.widget<Slider>(find.byType(Slider).at(1)).onChanged!(51);
+    await tester.pump();
+    tester.widget<Slider>(find.byType(Slider).at(2)).onChanged!(102);
+    await tester.pump();
+
+    await tester.tap(find.text('決定'));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('settings.merged_bar_color'), '#FF3366');
   });
 
   testWidgets('自分の色を選ぶと users/{uid}.color が更新される', (tester) async {
@@ -275,7 +348,7 @@ void main() {
     // FR-8: セクション追加で一覧が伸びたため、既定のテスト表示領域では
     // 末尾の要素がリストの描画範囲外になる。ensureVisible が要素を見つけられる
     // よう表示領域を広げる。
-    await tester.binding.setSurfaceSize(const Size(400, 1500));
+    await tester.binding.setSurfaceSize(const Size(400, 1700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository();
@@ -300,7 +373,7 @@ void main() {
   });
 
   testWidgets('アカウント削除は二段確認と再認証を経て、削除後サインアウトする（Issue #102）', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1600));
+    await tester.binding.setSurfaceSize(const Size(400, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository();
@@ -346,7 +419,7 @@ void main() {
   });
 
   testWidgets('再認証をキャンセルするとアカウントを削除しない（Issue #102）', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1600));
+    await tester.binding.setSurfaceSize(const Size(400, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository(
@@ -385,7 +458,7 @@ void main() {
   });
 
   testWidgets('削除に失敗するとメッセージを表示し、サインアウトしない（Issue #102）', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1600));
+    await tester.binding.setSurfaceSize(const Size(400, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository();

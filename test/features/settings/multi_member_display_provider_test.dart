@@ -6,12 +6,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('未保存・未知の値は既定（丸マーク）として扱う', () {
-    expect(multiMemberEventDisplayFromName(null), MultiMemberEventDisplay.dots);
-    expect(multiMemberEventDisplayFromName(''), MultiMemberEventDisplay.dots);
+  test('未保存・未知の値は既定（色分け）として扱う', () {
+    expect(
+      multiMemberEventDisplayFromName(null),
+      MultiMemberEventDisplay.split,
+    );
+    expect(multiMemberEventDisplayFromName(''), MultiMemberEventDisplay.split);
     expect(
       multiMemberEventDisplayFromName('stripe'),
-      MultiMemberEventDisplay.dots,
+      MultiMemberEventDisplay.split,
     );
     expect(
       multiMemberEventDisplayFromName('split'),
@@ -25,18 +28,18 @@ void main() {
 
   test('保存済みの表示方法を読み込む', () async {
     SharedPreferences.setMockInitialValues({
-      'settings.multi_member_event_display': 'split',
+      'settings.multi_member_event_display': 'dots',
     });
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
     expect(
       await container.read(multiMemberEventDisplayProvider.future),
-      MultiMemberEventDisplay.split,
+      MultiMemberEventDisplay.dots,
     );
     expect(
       container.read(resolvedMultiMemberEventDisplayProvider),
-      MultiMemberEventDisplay.split,
+      MultiMemberEventDisplay.dots,
     );
   });
 
@@ -48,19 +51,19 @@ void main() {
 
     await container
         .read(multiMemberEventDisplayProvider.notifier)
-        .select(MultiMemberEventDisplay.split);
+        .select(MultiMemberEventDisplay.dots);
 
     expect(
       container.read(resolvedMultiMemberEventDisplayProvider),
-      MultiMemberEventDisplay.split,
+      MultiMemberEventDisplay.dots,
     );
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('settings.multi_member_event_display'), 'split');
+    expect(prefs.getString('settings.multi_member_event_display'), 'dots');
   });
 
-  test('読み込み中は既定（丸マーク）に従う', () {
+  test('読み込み中は既定（色分け）に従う', () {
     SharedPreferences.setMockInitialValues({
-      'settings.multi_member_event_display': 'split',
+      'settings.multi_member_event_display': 'dots',
     });
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -68,7 +71,7 @@ void main() {
     // await せずに読むと build() は未完了なので、既定値へ落ちる。
     expect(
       container.read(resolvedMultiMemberEventDisplayProvider),
-      MultiMemberEventDisplay.dots,
+      MultiMemberEventDisplay.split,
     );
   });
 }
