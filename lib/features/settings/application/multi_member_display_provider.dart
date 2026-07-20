@@ -58,7 +58,7 @@ class MultiMemberEventDisplayController
 MultiMemberEventDisplay multiMemberEventDisplayFromName(String? name) {
   return MultiMemberEventDisplay.values.firstWhere(
     (display) => display.name == name,
-    orElse: () => MultiMemberEventDisplay.dots,
+    orElse: () => MultiMemberEventDisplay.split,
   );
 }
 
