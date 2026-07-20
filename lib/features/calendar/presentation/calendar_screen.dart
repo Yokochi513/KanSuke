@@ -922,6 +922,12 @@ class _HolidayLabel extends StatelessWidget {
 /// とどめ、地色の明度を大きく変えずタイトルの可読性を保つ。
 const double _selfTintFactor = 0.28;
 
+/// 仮の予定の地色（識別色）の不透明度（Issue #106、基本設計 §6.3「半透明」）。
+///
+/// 確定（塗りつぶし）と一目で区別しつつ、薄い識別色（例: 水色 #81D4FA）でも帯
+/// の存在が背景に埋もれないよう、従来の 0.16 よりわずかに濃くする。
+const double _tentativeFillAlpha = 0.22;
+
 /// 予定を表す 1 本のバー（FR-2 / FR-3、基本設計 §6.3）。
 ///
 /// 参加メンバーの色で等分割して塗り、確定＝塗りつぶし・
@@ -1070,13 +1076,24 @@ class EventBar extends StatelessWidget {
 
   /// 参加メンバーの色で帯を等分割して塗る従来表示。
   Widget _buildSplitBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final confirmed = type == EventType.confirmed;
     final primary = colors.first;
-    final textColor = confirmed
-        ? (ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
-              ? Colors.white
-              : Colors.black)
-        : primary;
+    // Issue #106: 仮の文字色に識別色をそのまま使うと、薄い色（例: 水色
+    // #81D4FA）では明るい背景に埋もれて読めなかった。確定と同じく実効地色
+    // （仮は識別色を surface に合成した半透明相当の色）の明度から黒/白を選び、
+    // どの識別色でもタイトルが読めるようにする（ドット帯・マージ帯と同じ方式）。
+    final effectiveBackground = confirmed
+        ? primary
+        : Color.alphaBlend(
+            primary.withValues(alpha: _tentativeFillAlpha),
+            scheme.surface,
+          );
+    final textColor =
+        ThemeData.estimateBrightnessForColor(effectiveBackground) ==
+            Brightness.dark
+        ? Colors.white
+        : Colors.black;
     const radius = Radius.circular(3);
 
     return Container(
@@ -1120,7 +1137,7 @@ class EventBar extends StatelessWidget {
                         child: ColoredBox(
                           color: confirmed
                               ? color
-                              : color.withValues(alpha: 0.16),
+                              : color.withValues(alpha: _tentativeFillAlpha),
                         ),
                       ),
                   ],
