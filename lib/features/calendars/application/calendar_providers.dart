@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/firebase_providers.dart';
 import '../../../models/models.dart';
@@ -29,11 +29,37 @@ final myCalendarsProvider = StreamProvider<List<Calendar>>((ref) {
   return ref.watch(calendarRepositoryProvider).watchMine(uid);
 });
 
+const _selectedCalendarIdKey = 'calendars.selected_id';
+
 /// ユーザーがカレンダー切替で明示的に選んだカレンダー ID（未選択なら null）。
+///
+/// 端末ローカル（[SharedPreferences]）に保存し、起動時に前回開いていたカレンダーを
+/// 復元する（Issue #167）。どのカレンダーを開いているかは端末ごとの都合なので、
+/// テーマ設定と同じく Firestore ではなくローカルに持ち、家族の他メンバーや他端末に
+/// 影響させない。
 ///
 /// 表示に使う ID は [selectedCalendarIdProvider] で解決する。切替 UI 以外から
 /// このプロバイダを直接読まないこと。
-final calendarSelectionProvider = StateProvider<String?>((ref) => null);
+final calendarSelectionProvider =
+    AsyncNotifierProvider<CalendarSelectionController, String?>(
+      CalendarSelectionController.new,
+    );
+
+class CalendarSelectionController extends AsyncNotifier<String?> {
+  @override
+  Future<String?> build() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_selectedCalendarIdKey);
+  }
+
+  /// 表示するカレンダーを切り替えて保存する。
+  Future<void> select(String calendarId) async {
+    // 保存の完了を待たずに画面へ反映し、切り替えを即座に見せる。
+    state = AsyncData(calendarId);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_selectedCalendarIdKey, calendarId);
+  }
+}
 
 /// 月表示・日別一覧で現在表示しているカレンダー ID（FR-8）。画面をまたいで共有する。
 ///
@@ -41,10 +67,18 @@ final calendarSelectionProvider = StateProvider<String?>((ref) => null);
 /// （未選択、退出済み、別端末で選んだカレンダーなど）は、一覧の先頭を表示する。
 /// アカウント作成時に個人カレンダーが必ず 1 つ作られるため、一覧が空になるのは
 /// 初回同期を待っている間だけで、その間は空文字（＝該当予定なし）を返す。
+///
+/// 保存済みの選択を読み込み終えるまでも同じく空文字を返す（Issue #167）。先に一覧の
+/// 先頭を返してしまうと、読み込み完了時に別のカレンダーへ切り替わってちらつくため。
+/// 読み込みに失敗した場合は値を持たないまま先頭へフォールバックする。
 final selectedCalendarIdProvider = Provider<String>((ref) {
+  final selection = ref.watch(calendarSelectionProvider);
+  if (selection.isLoading && !selection.hasValue) {
+    return '';
+  }
   final calendars =
       ref.watch(myCalendarsProvider).asData?.value ?? const <Calendar>[];
-  final selectedId = ref.watch(calendarSelectionProvider);
+  final selectedId = selection.value;
   if (calendars.any((calendar) => calendar.id == selectedId)) {
     return selectedId!;
   }

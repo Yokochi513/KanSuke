@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/events/application/event_filter.dart';
 import 'package:kansuke/models/models.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Calendar _calendar(String id, String name) {
   return Calendar(
@@ -31,10 +32,16 @@ Future<ProviderContainer> _containerWithCalendars() async {
   // 監視状態にしてから最初の値を待つ。
   container.listen(myCalendarsProvider, (_, _) {});
   await container.read(myCalendarsProvider.future);
+  // 保存済みの選択（Issue #167）を読み終えるまでは表示対象が決まらない。
+  await container.read(calendarSelectionProvider.future);
   return container;
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   test('toggle で選択と解除を切り替える', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -68,7 +75,7 @@ void main() {
 
     // 別カレンダーへ切り替えると、絞り込みは自動で解除される（build 中の状態変更を
     // 避けるため、リセットはマイクロタスクで反映される）。
-    container.read(calendarSelectionProvider.notifier).state = 'second';
+    await container.read(calendarSelectionProvider.notifier).select('second');
     expect(container.read(selectedCalendarIdProvider), 'second');
     await Future<void>.delayed(Duration.zero);
     expect(container.read(memberFilterProvider), isEmpty);
@@ -80,7 +87,7 @@ void main() {
 
     container.read(memberFilterProvider.notifier).toggle('papa');
     // 表示中のカレンダー（先頭）を選び直しても値は変わらないのでリセットされない。
-    container.read(calendarSelectionProvider.notifier).state = 'first';
+    await container.read(calendarSelectionProvider.notifier).select('first');
     await Future<void>.delayed(Duration.zero);
     expect(container.read(memberFilterProvider), {'papa'});
   });

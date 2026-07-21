@@ -14,6 +14,7 @@ import 'package:kansuke/features/events/presentation/event_type_badge.dart';
 import 'package:kansuke/features/settings/application/event_merge_provider.dart';
 import 'package:kansuke/features/settings/application/multi_member_display_provider.dart';
 import 'package:kansuke/models/models.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 /// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
@@ -405,6 +406,8 @@ Widget _wrap(
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('月表示と凡例を描画する', (tester) async {
     final today = DateTime.now();
     final firestore = await _seed(today: today);
@@ -1259,7 +1262,7 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container.read(calendarSelectionProvider.notifier).state = 'cal-a';
+    await container.read(calendarSelectionProvider.notifier).select('cal-a');
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -1284,7 +1287,7 @@ void main() {
     expect(find.text('きっず'), findsNothing);
 
     // カレンダー B（me+kids）へ切り替えると凡例も即座に追従する。
-    container.read(calendarSelectionProvider.notifier).state = 'cal-b';
+    await container.read(calendarSelectionProvider.notifier).select('cal-b');
     await tester.pumpAndSettle();
 
     expect(find.text('きっず'), findsOneWidget);
