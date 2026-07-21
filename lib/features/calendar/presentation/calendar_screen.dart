@@ -1106,10 +1106,7 @@ class EventBar extends StatelessWidget {
         : baseColor;
     // 地色は設定で自由に変えられるため（Issue #112 フォローアップ）、文字色は
     // 地色の明度から黒/白を選び、どの地色でも読めるようにする。
-    final textColor =
-        ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
-        ? Colors.white
-        : Colors.black;
+    final textColor = readableTextColor(barColor);
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);
 
@@ -1191,17 +1188,12 @@ class EventBar extends StatelessWidget {
     // #81D4FA）では明るい背景に埋もれて読めなかった。確定と同じく実効地色
     // （仮は識別色を surface に合成した半透明相当の色）の明度から黒/白を選び、
     // どの識別色でもタイトルが読めるようにする（ドット帯・マージ帯と同じ方式）。
-    final effectiveBackground = confirmed
-        ? primary
+    Color effectiveBackground(Color color) => confirmed
+        ? color
         : Color.alphaBlend(
-            primary.withValues(alpha: _tentativeFillAlpha),
+            color.withValues(alpha: _tentativeFillAlpha),
             scheme.surface,
           );
-    final textColor =
-        ThemeData.estimateBrightnessForColor(effectiveBackground) ==
-            Brightness.dark
-        ? Colors.white
-        : Colors.black;
     const radius = Radius.circular(3);
 
     return Container(
@@ -1227,51 +1219,75 @@ class EventBar extends StatelessWidget {
           bottomRight: roundRight ? radius : Radius.zero,
         ),
       ),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            // Row+Expanded の等分割は Flutter 3.41.6 でこの構成だと塗りが
-            // 描画されないため、LayoutBuilder で幅を計算し固定幅の
-            // SizedBox で等分割している（flex レイアウトを使わない）。
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final segmentWidth = constraints.maxWidth / colors.length;
-                return Row(
-                  children: [
-                    for (final color in colors)
-                      SizedBox(
-                        width: segmentWidth,
-                        height: constraints.maxHeight,
-                        child: ColoredBox(
-                          color: confirmed
-                              ? color
-                              : color.withValues(alpha: _tentativeFillAlpha),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-          if (showTitle)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    height: 1.0,
-                    fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
-                    color: textColor,
-                  ),
+      // Row+Expanded の等分割は Flutter 3.41.6 でこの構成だと塗りが
+      // 描画されないため、LayoutBuilder で幅を計算し固定幅で等分割している
+      // （flex レイアウトを使わない）。
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final height = constraints.maxHeight;
+          final segmentWidth = width / colors.length;
+
+          // Issue #133: 2 人以上の帯ではタイトルが隣の色にまたがるため、
+          // 先頭色だけで文字色を決めると「片方の帯（例: 水色）に白文字」で
+          // 埋もれた。区画ごとに同じタイトルをその区画の地色に合う文字色で
+          // 描き、区画の幅でクリップすることで、どの色の上でも読めるようにする。
+          Widget titleFor(Color background) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.0,
+                  fontWeight: confirmed ? FontWeight.w600 : FontWeight.w500,
+                  color: readableTextColor(effectiveBackground(background)),
                 ),
               ),
             ),
-        ],
+          );
+
+          return Stack(
+            children: [
+              for (var i = 0; i < colors.length; i++)
+                Positioned(
+                  left: i * segmentWidth,
+                  top: 0,
+                  width: segmentWidth,
+                  height: height,
+                  child: ClipRect(
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ColoredBox(
+                            color: confirmed
+                                ? colors[i]
+                                : colors[i].withValues(
+                                    alpha: _tentativeFillAlpha,
+                                  ),
+                          ),
+                        ),
+                        // 帯全幅ぶんのタイトルを左へずらして置き、この区画に
+                        // 掛かる部分だけが見える。折り返し位置や省略記号は
+                        // 全区画で同一になる。
+                        if (showTitle)
+                          Positioned(
+                            left: -i * segmentWidth,
+                            top: 0,
+                            width: width,
+                            height: height,
+                            child: titleFor(colors[i]),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1337,10 +1353,7 @@ class MergedEventBar extends StatelessWidget {
     // 見えづらかったため、コントラストの高い色にする。地色は設定で自由に変え
     // られるため（Issue #112 フォローアップ）、テーマ色ではなく地色の明度から
     // 黒/白を選び、どの地色でも読めるようにする。
-    final textColor =
-        ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
-        ? Colors.white
-        : Colors.black;
+    final textColor = readableTextColor(barColor);
     const radius = Radius.circular(3);
     final border = BorderSide(color: scheme.outline, width: 1);
 
