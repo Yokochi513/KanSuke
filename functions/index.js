@@ -73,6 +73,15 @@ exports.transferownership = onCall(async (request) => {
   );
 });
 
+// カレンダーの削除（Issue #169）。`firestore.rules` に `allow delete` は無く、
+// 配下の `events` のカスケード削除も必要なため、削除経路はこの Callable のみ。
+exports.deletecalendar = onCall(async (request) => {
+  await membership.deleteCalendar(admin.firestore(), {
+    uid: request.auth && request.auth.uid,
+    calendarId: request.data && request.data.calendarId,
+  });
+});
+
 // アカウント削除（退会導線、Issue #102）。Auth ユーザーの削除・他人のカレンダーの
 // 更新・関連データの整理は Security Rules では行えないため、退会処理はこの Callable
 // （Admin SDK）に一本化する。削除対象は常に呼び出し元本人（`request.auth.uid`）。
