@@ -69,7 +69,6 @@ class CalendarManagementScreen extends ConsumerWidget {
               return _CalendarTile(
                 key: ValueKey(calendar.id),
                 calendar: calendar,
-                index: index,
               );
             },
           );
@@ -80,10 +79,9 @@ class CalendarManagementScreen extends ConsumerWidget {
 }
 
 class _CalendarTile extends StatelessWidget {
-  const _CalendarTile({super.key, required this.calendar, required this.index});
+  const _CalendarTile({super.key, required this.calendar});
 
   final Calendar calendar;
-  final int index;
 
   @override
   Widget build(BuildContext context) {
@@ -94,11 +92,6 @@ class _CalendarTile extends StatelessWidget {
           leading: const Icon(Icons.calendar_month_outlined),
           title: Text(calendar.name),
           subtitle: Text('参加者 ${calendar.memberIds.length}人'),
-          // 長押しに頼らず、掴む場所を明示する（Issue #168）。
-          trailing: ReorderableDragStartListener(
-            index: index,
-            child: const Icon(Icons.drag_handle),
-          ),
           onTap: () => Navigator.pushNamed(
             context,
             AppRoutes.calendarEdit,

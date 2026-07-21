@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,10 +72,11 @@ void main() {
     await tester.pumpWidget(_wrap(firestore));
     await tester.pumpAndSettle();
 
-    // 2 件目のハンドルを掴んで先頭へ移動する。
-    final handle = find.byIcon(Icons.drag_handle).at(1);
-    final drag = await tester.startGesture(tester.getCenter(handle));
-    await tester.pump(const Duration(milliseconds: 100));
+    // 2 件目を長押しして掴み（ReorderableListView の既定操作）、先頭へ移動する。
+    final drag = await tester.startGesture(
+      tester.getCenter(find.text('わが家より後ろ')),
+    );
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
     for (var i = 0; i < 10; i++) {
       await drag.moveBy(const Offset(0, -12));
       await tester.pump(const Duration(milliseconds: 16));
