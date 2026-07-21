@@ -27,7 +27,7 @@ Cloudflare ダッシュボード → Workers & Pages → Create → Pages → Co
 | Build command | `npm run build` |
 | Build output directory | `dist` |
 
-デプロイ後、Custom domains から `docs.<ドメイン>` を割り当てる。
+デプロイ後、Custom domains から `docs.dreamyard.cc` を割り当てる。
 
 ## 公開範囲
 

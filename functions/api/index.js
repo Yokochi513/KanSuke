@@ -77,7 +77,7 @@ async function verifyUid(auth, idToken) {
 /**
  * Cloudflare Worker が付与する共有シークレットを検証する（プロキシ経由の強制）。
  *
- * 公開 URL は `https://api.<ドメイン>`（Cloudflare Worker）に一本化し、素の
+ * 公開 URL は `https://api.dreamyard.cc`（Cloudflare Worker）に一本化し、素の
  * `*.cloudfunctions.net` を直接叩く経路を塞ぐための関門。鍵が一致しない場合は
  * **401/403 ではなく 404** を返す。「鍵が違う」と答えると、この URL に API が
  * 存在すること自体を教えてしまうため。

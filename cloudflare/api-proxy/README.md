@@ -1,11 +1,11 @@
 # kansuke-api-proxy（Cloudflare Worker）
 
-外部向け REST API（Issue #103）の公開 URL を `https://api.<ドメイン>` に一本化する
+外部向け REST API（Issue #103）の公開 URL を `https://api.dreamyard.cc` に一本化する
 リバースプロキシ。実体の `*.cloudfunctions.net` URL とプロジェクト ID を表に出さず、
 かつ共有シークレットで直アクセスを塞ぐ。
 
 ```
-クライアント ──► https://api.<ドメイン>/v1/events
+クライアント ──► https://api.dreamyard.cc/v1/events
                      │  Cloudflare Worker
                      │  X-Api-Proxy-Key を付与
                      ▼
@@ -15,19 +15,14 @@
 
 ## セットアップ
 
-### 1. ドメインを設定する
+### 1. DNS を用意する
 
-`wrangler.toml` の `routes` を自分のドメインに書き換える。**置き換えるのはここだけ。**
+ルートは `wrangler.toml` に設定済み（`api.dreamyard.cc/*`）。ドメインを変える場合は
+`wrangler.toml` の `routes` と `docs/api.md` のベース URL の 2 箇所を合わせる。
 
-```toml
-routes = [
-  { pattern = "api.example.com/*", zone_name = "example.com" }
-]
-```
-
-ゾーン（ドメイン）が Cloudflare に登録済みであること。`api` の DNS レコードは
-Worker のルートが引き受けるため、プロキシ済み（オレンジ雲）の A レコード
-`192.0.2.1`（ダミー）または AAAA `100::` を 1 本置いておく。
+`dreamyard.cc` が Cloudflare に登録済みであること。`api` の DNS レコードは Worker の
+ルートが引き受けるため、**プロキシ済み（オレンジ雲）**のダミーレコードを 1 本置いておく
+（A `192.0.2.1` か AAAA `100::`）。DNS のみ（グレー雲）だと Worker が発火しない。
 
 ### 2. 共有シークレットを作る
 
@@ -61,7 +56,7 @@ firebase deploy --only functions:api
 
 ```bash
 # プロキシ経由（正常）
-curl -s -H "Authorization: Bearer $TOKEN" https://api.example.com/v1/me
+curl -s -H "Authorization: Bearer $TOKEN" https://api.dreamyard.cc/v1/me
 
 # 直アクセス（404 になること）
 curl -s -o /dev/null -w '%{http_code}\n' \

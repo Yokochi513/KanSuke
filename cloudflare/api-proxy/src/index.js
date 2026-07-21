@@ -1,6 +1,6 @@
 // KanSuke 外部向け REST API のリバースプロキシ（Issue #103）。
 //
-// 公開する URL を `https://api.<ドメイン>` に一本化し、実体である
+// 公開する URL を `https://api.dreamyard.cc` に一本化し、実体である
 // `*.cloudfunctions.net` の URL とプロジェクト ID を表に出さないためのもの。
 //
 // 単なる URL の付け替えではなく、共有シークレット `API_PROXY_KEY` を

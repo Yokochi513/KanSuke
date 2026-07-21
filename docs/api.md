@@ -11,7 +11,7 @@ OAuth2 は行わない）。
 
 | 項目 | 内容 |
 | --- | --- |
-| ベース URL | `https://api.kansuke.example` |
+| ベース URL | `https://api.dreamyard.cc` |
 | メソッド | **`GET` のみ**（v1 は読み取り専用。書き込みは未実装） |
 | 認証 | `Authorization: Bearer <Firebase ID トークン>` |
 | 形式 | リクエスト・レスポンスとも JSON（UTF-8） |
@@ -25,7 +25,7 @@ OAuth2 は行わない）。
 Functions（`*.cloudfunctions.net`）は表に出さない。
 
 ```
-クライアント ──► https://api.kansuke.example/v1/...    Cloudflare Worker
+クライアント ──► https://api.dreamyard.cc/v1/...    Cloudflare Worker
                                 │  X-Api-Proxy-Key を付与
                                 ▼
                           Cloud Functions（api）
@@ -94,7 +94,7 @@ await firebase.auth().currentUser.getIdToken()
 以下、`TOKEN` に ID トークン、`BASE` にベース URL が入っているものとする。
 
 ```bash
-export BASE="https://api.kansuke.example"
+export BASE="https://api.dreamyard.cc"
 export TOKEN="<Firebase ID トークン>"
 ```
 

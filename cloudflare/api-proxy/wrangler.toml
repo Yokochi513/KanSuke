@@ -2,12 +2,11 @@ name = "kansuke-api-proxy"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 
-# ==== 独自ドメインの設定（デプロイ前に自分のドメインへ置き換える） ====
+# api.dreamyard.cc が、外部に公開する唯一の API URL。
 # `zone_name` は Cloudflare に登録済みのゾーン（ドメイン）名。
-# `pattern` の api.<ドメイン> が、外部に公開する唯一の API URL になる。
-# 置き換えるのはここだけ。docs/api.md のベース URL も同じ値に合わせること。
+# 変更する場合は docs/api.md のベース URL も同じ値に合わせること。
 routes = [
-  { pattern = "api.kansuke.example/*", zone_name = "kansuke.example" }
+  { pattern = "api.dreamyard.cc/*", zone_name = "dreamyard.cc" }
 ]
 
 # シークレットは wrangler.toml には書かない（コミットされるため）。
