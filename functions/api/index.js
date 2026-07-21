@@ -84,14 +84,17 @@ async function verifyUid(auth, idToken) {
  *
  * `API_PROXY_KEY` 未設定時は検証しない（エミュレータ・ローカルテスト用）。
  *
+ * 鍵は CLI にパイプで設定することが多く、末尾の改行が値に紛れ込みやすい。
+ * 両側を trim してから比較し、「見た目は同じなのに 404」で悩まないようにする。
+ *
  * @param {*} expected 期待する鍵（Secret Manager 由来）。
  * @param {*} actual リクエストヘッダの値。
  * @return {void}
  */
 function verifyProxyKey(expected, actual) {
-  if (typeof expected !== "string" || expected === "") return;
-  const provided = Buffer.from(String(actual || ""), "utf8");
-  const secret = Buffer.from(expected, "utf8");
+  if (typeof expected !== "string" || expected.trim() === "") return;
+  const provided = Buffer.from(String(actual || "").trim(), "utf8");
+  const secret = Buffer.from(expected.trim(), "utf8");
   // timingSafeEqual は長さが違うと例外を投げるため、先に長さで弾く
   // （長さの一致だけは漏れるが、鍵の中身は総当たりできない）。
   if (provided.length !== secret.length) throw notFound();

@@ -63,7 +63,10 @@ export default {
       );
     }
 
-    if (!env.API_PROXY_KEY) {
+    // CLI からパイプで設定すると末尾に改行が残ることがある。改行を含む値は
+    // ヘッダに設定できず例外になるため、ここで落とす（Functions 側も trim する）。
+    const proxyKey = (env.API_PROXY_KEY || "").trim();
+    if (!proxyKey) {
       // 鍵未設定のまま公開すると、Functions 側の関門が無効な状態と組み合わさって
       // 直アクセスが素通りしうる。気づけるよう明示的に落とす。
       return errorResponse(
@@ -81,7 +84,7 @@ export default {
       const value = request.headers.get(name);
       if (value) headers.set(name, value);
     }
-    headers.set("x-api-proxy-key", env.API_PROXY_KEY);
+    headers.set("x-api-proxy-key", proxyKey);
 
     let upstream;
     try {

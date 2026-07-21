@@ -516,6 +516,23 @@ describe("外部向け読み取り専用 REST API（Issue #103）", function() {
         assert.strictEqual(res.statusCode, 404);
       });
 
+      it("CLI 由来の余分な改行・空白は無視する", async function() {
+        const db = seed();
+        const handler = createApiHandler({
+          db,
+          auth: fakeAuth,
+          env: {API_PROXY_KEY: "s3cret-key\n"},
+        });
+
+        const res = await call(db, {
+          path: "/v1/me",
+          handler,
+          proxyKey: "s3cret-key",
+        });
+
+        assert.strictEqual(res.status, 200);
+      });
+
       it("API_PROXY_KEY 未設定なら検証しない（エミュレータ用）",
         async function() {
           const db = seed();
