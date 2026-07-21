@@ -670,6 +670,32 @@ void main() {
     ]);
   });
 
+  testWidgets('EventBarの塗り分け帯は区画ごとに読める文字色でタイトルを描く（Issue #133）', (tester) async {
+    // 濃紺（#1565C0）と薄い水色（#81D4FA）の 2 人帯。先頭色だけで文字色を
+    // 決めると、水色の区画にまたがった文字が白のままで埋もれる。
+    const navy = Color(0xFF1565C0);
+    const lightBlue = Color(0xFF81D4FA);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: EventBar(
+            title: '家族会議',
+            colors: [navy, lightBlue],
+            type: EventType.confirmed,
+          ),
+        ),
+      ),
+    );
+
+    final titleColors = tester
+        .widgetList<Text>(find.text('家族会議'))
+        .map((text) => text.style!.color)
+        .toList();
+
+    // 区画数ぶんのタイトルが、それぞれの地色に合う色で描かれる。
+    expect(titleColors, [Colors.white, Colors.black]);
+  });
+
   testWidgets('EventBarの丸マーク表示は帯を塗り分けず参加者色の〇を描く（Issue #112）', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
