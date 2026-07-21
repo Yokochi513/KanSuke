@@ -5,6 +5,7 @@ import 'package:kansuke/features/calendars/application/calendar_providers.dart';
 import 'package:kansuke/features/invites/application/invite_providers.dart';
 import 'package:kansuke/features/invites/data/invite_repository.dart';
 import 'package:kansuke/features/invites/presentation/invite_accept_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fake_invite_repository.dart';
 
@@ -30,6 +31,8 @@ Future<ProviderContainer> _openAccept(
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('受諾前にカレンダー名と招待者名を表示する（FR-9 / Issue #90）', (tester) async {
     final invites = FakeInviteRepository();
 
@@ -49,7 +52,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(invites.calls, ['previewInvite(token-1)', 'acceptInvite(token-1)']);
-    expect(container.read(calendarSelectionProvider), 'shared');
+    expect(container.read(calendarSelectionProvider).value, 'shared');
     // 受諾待ちは解除され、同じリンクで再び開かれない。
     expect(container.read(pendingInviteTokenProvider), isNull);
     expect(find.text('「わが家」に参加しました'), findsOneWidget);

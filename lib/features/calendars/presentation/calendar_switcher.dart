@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -65,8 +67,12 @@ class CalendarSwitcherTitle extends ConsumerWidget {
                   ),
                   title: Text(calendar.name),
                   onTap: () {
-                    ref.read(calendarSelectionProvider.notifier).state =
-                        calendar.id;
+                    // 保存（Issue #167）は待たずに閉じる。状態は同期的に反映される。
+                    unawaited(
+                      ref
+                          .read(calendarSelectionProvider.notifier)
+                          .select(calendar.id),
+                    );
                     Navigator.pop(sheetContext);
                   },
                 ),
