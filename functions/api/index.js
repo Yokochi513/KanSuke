@@ -12,17 +12,17 @@
 // 認可（カレンダーのメンバーシップ検証）は router 側の共通関門で行う。
 // Admin SDK で読むため Security Rules は効かない点に注意（router.js 冒頭参照）。
 
-const {ApiError} = require("./errors");
+const {timingSafeEqual} = require("node:crypto");
+
+const {ApiError, notFound} = require("./errors");
 const {createRateLimiter} = require("./ratelimit");
 const {handleApiRequest} = require("./router");
 
-// 既定の許可オリジン（Web 版のホスティングドメイン）。環境変数
-// `API_ALLOWED_ORIGINS`（カンマ区切り）で上書きできる。curl 等の
-// 非ブラウザクライアントは Origin を送らないため、この設定に影響されない。
-const DEFAULT_ALLOWED_ORIGINS = [
-  "https://kansuke-b6d32.web.app",
-  "https://kansuke-b6d32.firebaseapp.com",
-];
+// 既定の許可オリジン（Web 版の配信元）。Web 版は GitHub Pages で配信している
+// （.github/workflows/deploy-pages.yml）。環境変数 `API_ALLOWED_ORIGINS`
+// （カンマ区切り）で上書きできる。curl 等の非ブラウザクライアントは Origin を
+// 送らないため、この設定に影響されない。
+const DEFAULT_ALLOWED_ORIGINS = ["https://yokochi513.github.io"];
 
 /**
  * 環境変数から許可オリジンを読む。
@@ -75,6 +75,30 @@ async function verifyUid(auth, idToken) {
 }
 
 /**
+ * Cloudflare Worker が付与する共有シークレットを検証する（プロキシ経由の強制）。
+ *
+ * 公開 URL は `https://api.<ドメイン>`（Cloudflare Worker）に一本化し、素の
+ * `*.cloudfunctions.net` を直接叩く経路を塞ぐための関門。鍵が一致しない場合は
+ * **401/403 ではなく 404** を返す。「鍵が違う」と答えると、この URL に API が
+ * 存在すること自体を教えてしまうため。
+ *
+ * `API_PROXY_KEY` 未設定時は検証しない（エミュレータ・ローカルテスト用）。
+ *
+ * @param {*} expected 期待する鍵（Secret Manager 由来）。
+ * @param {*} actual リクエストヘッダの値。
+ * @return {void}
+ */
+function verifyProxyKey(expected, actual) {
+  if (typeof expected !== "string" || expected === "") return;
+  const provided = Buffer.from(String(actual || ""), "utf8");
+  const secret = Buffer.from(expected, "utf8");
+  // timingSafeEqual は長さが違うと例外を投げるため、先に長さで弾く
+  // （長さの一致だけは漏れるが、鍵の中身は総当たりできない）。
+  if (provided.length !== secret.length) throw notFound();
+  if (!timingSafeEqual(provided, secret)) throw notFound();
+}
+
+/**
  * HTTP ハンドラ（`onRequest` に渡す関数）を作る。
  *
  * @param {{db: object, auth: object, env?: object, now?: function(): Date,
@@ -100,12 +124,20 @@ function createApiHandler(deps) {
     res.set("Vary", "Origin");
     res.set("Cache-Control", "no-store");
 
-    if (req.method === "OPTIONS") {
-      res.status(204).send("");
-      return;
-    }
-
     try {
+      // 鍵の検証は認証より先に行う。プロキシを経由しないリクエストには、
+      // トークンの有無にかかわらず何も返さない。
+      // シークレットは実行時に注入されるため、毎回 env から読む。
+      verifyProxyKey(
+        env.API_PROXY_KEY,
+        req.headers && req.headers["x-api-proxy-key"],
+      );
+
+      if (req.method === "OPTIONS") {
+        res.status(204).send("");
+        return;
+      }
+
       const uid = await verifyUid(
         auth,
         bearerTokenOf(req.headers && req.headers.authorization),
@@ -137,4 +169,5 @@ module.exports = {
   allowedOriginsFrom,
   bearerTokenOf,
   createApiHandler,
+  verifyProxyKey,
 };

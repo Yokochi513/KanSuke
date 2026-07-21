@@ -7,6 +7,7 @@ const {getMessaging} = require("firebase-admin/messaging");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {beforeUserCreated} = require("firebase-functions/v2/identity");
 const {onCall, onRequest} = require("firebase-functions/v2/https");
+const {defineSecret} = require("firebase-functions/params");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {setGlobalOptions} = require("firebase-functions/v2");
 
@@ -140,8 +141,14 @@ exports.listinvites = onCall(async (request) => {
 // サインインで得られる Firebase ID トークン（`Authorization: Bearer ...`）。
 // CORS 設定はハンドラ側で自前に持つため onRequest の cors は無効にする。
 // 関数名は 2nd gen の制約に合わせて小文字。仕様は docs/api.md。
+//
+// 公開 URL は Cloudflare Worker（`cloudflare/api-proxy/`）に一本化し、この
+// `*.cloudfunctions.net` を直接叩く経路は共有シークレット `API_PROXY_KEY` で
+// 塞ぐ。鍵は Secret Manager に置き、Worker 側にも同じ値を設定する。
+const apiProxyKey = defineSecret("API_PROXY_KEY");
+
 exports.api = onRequest(
-  {cors: false},
+  {cors: false, secrets: [apiProxyKey]},
   api.createApiHandler({db: admin.firestore(), auth: admin.auth()}),
 );
 

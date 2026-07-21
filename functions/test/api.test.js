@@ -179,11 +179,12 @@ function seed() {
 
 // ハンドラを 1 回呼び、ステータスとボディを返す。
 async function call(db, {path, query = {}, token = "token-papa", method = "GET",
-  handler = null} = {}) {
+  handler = null, proxyKey = null} = {}) {
   const apiHandler = handler || createApiHandler({db, auth: fakeAuth});
   const res = fakeRes();
   const headers = {};
   if (token !== null) headers.authorization = `Bearer ${token}`;
+  if (proxyKey !== null) headers["x-api-proxy-key"] = proxyKey;
   await apiHandler({method, path, query, headers}, res);
   return {status: res.statusCode, body: res.body, headers: res.headers};
 }
@@ -448,6 +449,83 @@ describe("外部向け読み取り専用 REST API（Issue #103）", function() {
       assert.strictEqual(third.body.error.code, "resource_exhausted");
     });
   });
+
+  describe("プロキシ共有シークレット（Cloudflare Worker 経由の強制）",
+    function() {
+      const withKey = (db) => createApiHandler({
+        db,
+        auth: fakeAuth,
+        env: {API_PROXY_KEY: "s3cret-key"},
+      });
+
+      it("正しい鍵があれば通る", async function() {
+        const db = seed();
+
+        const res = await call(db, {
+          path: "/v1/me",
+          handler: withKey(db),
+          proxyKey: "s3cret-key",
+        });
+
+        assert.strictEqual(res.status, 200);
+      });
+
+      it("鍵が無い直アクセスは 404（存在を教えない）", async function() {
+        const db = seed();
+
+        const res = await call(db, {path: "/v1/me", handler: withKey(db)});
+
+        assert.strictEqual(res.status, 404);
+        assert.strictEqual(res.body.error.code, "not_found");
+      });
+
+      it("鍵が違えば 404。長さが同じでも通さない", async function() {
+        const db = seed();
+
+        const res = await call(db, {
+          path: "/v1/me",
+          handler: withKey(db),
+          proxyKey: "s3cret-kex",
+        });
+
+        assert.strictEqual(res.status, 404);
+      });
+
+      it("鍵の検証は認証より先に行う（トークン不正でも 404）",
+        async function() {
+          const db = seed();
+
+          const res = await call(db, {
+            path: "/v1/me",
+            handler: withKey(db),
+            token: "bogus",
+          });
+
+          assert.strictEqual(res.status, 404);
+        });
+
+      it("鍵が無ければプリフライトも通さない", async function() {
+        const db = seed();
+        const res = fakeRes();
+
+        await withKey(db)(
+          {method: "OPTIONS", path: "/v1/me", query: {}, headers: {}},
+          res,
+        );
+
+        assert.strictEqual(res.statusCode, 404);
+      });
+
+      it("API_PROXY_KEY 未設定なら検証しない（エミュレータ用）",
+        async function() {
+          const db = seed();
+          const handler = createApiHandler({db, auth: fakeAuth, env: {}});
+
+          const res = await call(db, {path: "/v1/me", handler});
+
+          assert.strictEqual(res.status, 200);
+        });
+    });
 
   it("未知のパスは 404", async function() {
     const res = await call(seed(), {path: "/v2/events"});

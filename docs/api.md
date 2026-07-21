@@ -11,13 +11,30 @@ OAuth2 は行わない）。
 
 | 項目 | 内容 |
 | --- | --- |
-| ベース URL | `https://asia-northeast1-kansuke-b6d32.cloudfunctions.net/api` |
+| ベース URL | `https://api.kansuke.example` |
 | メソッド | **`GET` のみ**（v1 は読み取り専用。書き込みは未実装） |
 | 認証 | `Authorization: Bearer <Firebase ID トークン>` |
 | 形式 | リクエスト・レスポンスとも JSON（UTF-8） |
 | 時刻 | すべて ISO 8601（UTC）。例 `2026-07-14T09:00:00Z` |
-| CORS | 許可オリジンのみ（環境変数 `API_ALLOWED_ORIGINS`、既定は Web 版のホスティングドメイン）。curl 等は Origin を送らないため影響を受けない |
+| CORS | 許可オリジンのみ（環境変数 `API_ALLOWED_ORIGINS`、既定は Web 版の配信元 `https://yokochi513.github.io`）。curl 等は Origin を送らないため影響を受けない |
 | レートリミット | uid 単位で 120 リクエスト / 分（インスタンス内のベストエフォート。超過は 429） |
+
+### 配信経路
+
+公開する URL は Cloudflare Worker（`cloudflare/api-proxy/`）の 1 つだけ。実体の Cloud
+Functions（`*.cloudfunctions.net`）は表に出さない。
+
+```
+クライアント ──► https://api.kansuke.example/v1/...    Cloudflare Worker
+                                │  X-Api-Proxy-Key を付与
+                                ▼
+                          Cloud Functions（api）
+                          鍵が一致しなければ 404
+```
+
+Worker は共有シークレット `API_PROXY_KEY` をヘッダで付与し、Functions 側は一致しない
+リクエストを **404** で落とす。したがって Cloud Functions の URL を知られても、そこを直接
+叩く経路は使えない（URL を隠すだけの対策では終わらせていない）。
 
 ### アクセス制御（重要）
 
@@ -77,7 +94,7 @@ await firebase.auth().currentUser.getIdToken()
 以下、`TOKEN` に ID トークン、`BASE` にベース URL が入っているものとする。
 
 ```bash
-export BASE="https://asia-northeast1-kansuke-b6d32.cloudfunctions.net/api"
+export BASE="https://api.kansuke.example"
 export TOKEN="<Firebase ID トークン>"
 ```
 
@@ -222,9 +239,29 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/v1/events/8b2f1a90-..."
 | `functions/api/ratelimit.js` | uid 単位の簡易レートリミット |
 | `functions/api/errors.js` | エラーコードと HTTP ステータスの対応 |
 | `functions/test/api.test.js` | ユニットテスト |
+| `cloudflare/api-proxy/` | 公開 URL の Worker（リバースプロキシ＋共有シークレット付与） |
+| `docs-site/` | このページ（`docs/api.md` → HTML）の Cloudflare Pages ビルド |
 
 `events` の期間クエリは既存の複合インデックス `(deleted, calendarId, startAt)`
 （`firestore.indexes.json`）をそのまま使うため、インデックスの追加は不要。
+
+### デプロイ
+
+```bash
+# 1. 共有シークレットを両側に同じ値で設定（初回のみ）
+openssl rand -base64 48
+firebase functions:secrets:set API_PROXY_KEY
+cd cloudflare/api-proxy && npx wrangler secret put API_PROXY_KEY
+
+# 2. Functions
+firebase deploy --only functions:api
+
+# 3. Cloudflare Worker
+cd cloudflare/api-proxy && npx wrangler deploy
+```
+
+ドキュメントページ（Cloudflare Pages）は `main` への push で自動ビルドされる。
+詳細は `cloudflare/api-proxy/README.md` と `docs-site/README.md` を参照。
 
 ## v1 のスコープ外
 
