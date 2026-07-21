@@ -80,6 +80,54 @@ void main() {
     });
   });
 
+  group('カレンダーの並び順（Issue #168）', () {
+    test('並べ替えた順序を端末ローカルに保存する', () async {
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+      await container.read(calendarOrderProvider.future);
+
+      await container.read(calendarOrderProvider.notifier).save([
+        'shared',
+        'personal',
+      ]);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('calendars.order'), ['shared', 'personal']);
+    });
+
+    test('起動時に保存済みの並び順を復元する', () async {
+      SharedPreferences.setMockInitialValues({
+        'calendars.order': ['shared', 'personal'],
+      });
+
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+      await container.read(calendarOrderProvider.future);
+
+      expect(
+        [for (final c in container.read(orderedCalendarsProvider)) c.id],
+        ['shared', 'personal'],
+      );
+    });
+
+    test('並び順が未保存なら名前昇順（Firestore のクエリ順）のまま', () async {
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+      await container.read(calendarOrderProvider.future);
+
+      expect(
+        [for (final c in container.read(orderedCalendarsProvider)) c.id],
+        ['personal', 'shared'],
+      );
+    });
+  });
+
   group('起動時のカレンダー復元（Issue #167）', () {
     test('切り替えたカレンダー ID を端末ローカルに保存する', () async {
       final container = await _containerWith([
