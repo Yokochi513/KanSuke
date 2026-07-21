@@ -1,11 +1,11 @@
 # kansuke-api-proxy（Cloudflare Worker）
 
-外部向け REST API（Issue #103）の公開 URL を `https://api.dreamyard.cc` に一本化する
+外部向け REST API（Issue #103）の公開 URL を `https://kansuke-api.dreamyard.cc` に一本化する
 リバースプロキシ。実体の `*.cloudfunctions.net` URL とプロジェクト ID を表に出さず、
 かつ共有シークレットで直アクセスを塞ぐ。
 
 ```
-クライアント ──► https://api.dreamyard.cc/v1/events
+クライアント ──► https://kansuke-api.dreamyard.cc/v1/events
                      │  Cloudflare Worker
                      │  X-Api-Proxy-Key を付与
                      ▼
@@ -17,7 +17,7 @@
 
 ### 1. ドメイン
 
-公開ホスト名は `wrangler.toml` に設定済み（`api.dreamyard.cc`、`custom_domain = true`）。
+公開ホスト名は `wrangler.toml` に設定済み（`kansuke-api.dreamyard.cc`、`custom_domain = true`）。
 `dreamyard.cc` が Cloudflare に登録済みであれば、**DNS レコードと証明書は
 `wrangler deploy` が自動で用意する**ので手作業は不要。
 
@@ -56,7 +56,7 @@ firebase deploy --only functions:api
 
 ```bash
 # プロキシ経由（正常）
-curl -s -H "Authorization: Bearer $TOKEN" https://api.dreamyard.cc/v1/me
+curl -s -H "Authorization: Bearer $TOKEN" https://kansuke-api.dreamyard.cc/v1/me
 
 # 直アクセス（404 になること）
 curl -s -o /dev/null -w '%{http_code}\n' \
