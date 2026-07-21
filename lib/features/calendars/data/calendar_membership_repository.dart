@@ -8,7 +8,8 @@ const _logTag = 'CalendarMembershipRepository';
 ///
 /// `memberIds` / `ownerId` は Security Rules でクライアントからの書き換えを禁止して
 /// いるため、メンバーの削除・退出・オーナー移譲は Callable Function（`functions/
-/// membership.js`）を唯一の経路とする。
+/// membership.js`）を唯一の経路とする。カレンダー自体の削除（Issue #169）も同じく
+/// `allow delete` を持たないため、ここを経路にする。
 abstract interface class CalendarMembershipRepository {
   /// メンバーを削除する（オーナーのみ）。
   Future<void> removeMember({required String calendarId, required String uid});
@@ -21,6 +22,12 @@ abstract interface class CalendarMembershipRepository {
     required String calendarId,
     required String uid,
   });
+
+  /// カレンダーを配下の予定ごと削除する（オーナーのみ、Issue #169）。
+  ///
+  /// 全メンバーのカレンダーから消える。参加しているカレンダーが 1 つだけのときは
+  /// Function 側で拒否される。
+  Future<void> deleteCalendar(String calendarId);
 }
 
 /// 操作が拒否された理由。UI ではこのメッセージをそのまま表示する。
@@ -59,6 +66,11 @@ class FunctionsCalendarMembershipRepository
       'calendarId': calendarId,
       'targetUid': uid,
     });
+  }
+
+  @override
+  Future<void> deleteCalendar(String calendarId) {
+    return _call('deletecalendar', {'calendarId': calendarId});
   }
 
   Future<void> _call(String name, Map<String, Object?> parameters) async {

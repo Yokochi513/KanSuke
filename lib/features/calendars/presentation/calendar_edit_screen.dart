@@ -18,9 +18,10 @@ import 'calendar_edit_args.dart';
 /// - カレンダー名の変更（オーナーのみ）
 /// - メンバー一覧の表示、メンバーの削除・オーナー移譲（オーナーのみ）
 /// - 自分の退出（オーナーは移譲するまで退出できない）
+/// - カレンダー自体の削除（オーナーのみ、Issue #169）
 ///
-/// `memberIds` / `ownerId` はクライアントから直接書けないため、削除・退出・移譲は
-/// Callable Function（[CalendarMembershipRepository]）経由で行う。
+/// `memberIds` / `ownerId` はクライアントから直接書けないため、削除・退出・移譲と
+/// カレンダーの削除は Callable Function（[CalendarMembershipRepository]）経由で行う。
 class CalendarEditScreen extends ConsumerStatefulWidget {
   const CalendarEditScreen({super.key});
 
@@ -112,6 +113,13 @@ class _CalendarEditScreenState extends ConsumerState<CalendarEditScreen> {
                     CalendarInvitesSection(calendar: calendar),
                     const SizedBox(height: 24),
                     _buildLeaveButton(calendar),
+                    // 削除できるのはオーナーだけ（Issue #169）。参加カレンダーが
+                    // これ 1 つきりのときは、カレンダーが 0 個になってしまうため
+                    // 導線を出さない（Function 側でも拒否する）。
+                    if (isOwner && _hasOtherCalendars(calendar)) ...[
+                      const SizedBox(height: 12),
+                      _buildDeleteButton(calendar),
+                    ],
                   ],
                 ],
               ),
@@ -238,6 +246,27 @@ class _CalendarEditScreenState extends ConsumerState<CalendarEditScreen> {
     );
   }
 
+  /// このカレンダーの他にも参加カレンダーがあるか（Issue #169）。
+  bool _hasOtherCalendars(Calendar calendar) {
+    final calendars =
+        ref.watch(myCalendarsProvider).asData?.value ?? const <Calendar>[];
+    return calendars.any((other) => other.id != calendar.id);
+  }
+
+  Widget _buildDeleteButton(Calendar calendar) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _saving ? null : () => _confirmDelete(calendar),
+        icon: const Icon(Icons.delete_forever),
+        label: const Text('このカレンダーを削除'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.error,
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmRemoveMember(
     Calendar calendar,
     String memberId,
@@ -290,6 +319,34 @@ class _CalendarEditScreenState extends ConsumerState<CalendarEditScreen> {
       success: '「${calendar.name}」から退出しました',
     );
     if (left && mounted) Navigator.pop(context);
+  }
+
+  /// カレンダーの削除を確認する（Issue #169）。
+  ///
+  /// 「退出」との違い（自分が見なくなるだけか、全員から消えるか）が分かるよう、
+  /// 他メンバーが居る場合はその人数を明記する。
+  Future<void> _confirmDelete(Calendar calendar) async {
+    final others = calendar.memberIds.length - 1;
+    final confirmed = await _confirm(
+      title: 'カレンダーを削除',
+      message: others > 0
+          ? '「${calendar.name}」と、その予定をすべて削除します。'
+                'あなただけでなく、他のメンバー$others人のカレンダーからも消えます。'
+                '自分が見なくなるだけでよければ「退出」を使ってください。'
+                'この操作は取り消せません。'
+          : '「${calendar.name}」と、その予定をすべて削除します。この操作は取り消せません。',
+      action: '削除',
+    );
+    if (!confirmed) return;
+    final deleted = await _runMembership(
+      () => ref
+          .read(calendarMembershipRepositoryProvider)
+          .deleteCalendar(calendar.id),
+      success: '「${calendar.name}」を削除しました',
+    );
+    // 表示中のカレンダーが消えた場合は selectedCalendarIdProvider が一覧の先頭へ
+    // フォールバックするため、画面を閉じるだけでよい。
+    if (deleted && mounted) Navigator.pop(context);
   }
 
   /// メンバー操作（Callable）を実行し、結果をスナックバーで知らせる。
