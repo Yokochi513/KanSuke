@@ -15,14 +15,14 @@
 
 ## セットアップ
 
-### 1. DNS を用意する
+### 1. ドメイン
 
-ルートは `wrangler.toml` に設定済み（`api.dreamyard.cc/*`）。ドメインを変える場合は
-`wrangler.toml` の `routes` と `docs/api.md` のベース URL の 2 箇所を合わせる。
+公開ホスト名は `wrangler.toml` に設定済み（`api.dreamyard.cc`、`custom_domain = true`）。
+`dreamyard.cc` が Cloudflare に登録済みであれば、**DNS レコードと証明書は
+`wrangler deploy` が自動で用意する**ので手作業は不要。
 
-`dreamyard.cc` が Cloudflare に登録済みであること。`api` の DNS レコードは Worker の
-ルートが引き受けるため、**プロキシ済み（オレンジ雲）**のダミーレコードを 1 本置いておく
-（A `192.0.2.1` か AAAA `100::`）。DNS のみ（グレー雲）だと Worker が発火しない。
+ドメインを変える場合は `wrangler.toml` の `routes` と `docs/api.md` のベース URL の
+2 箇所を合わせる。
 
 ### 2. 共有シークレットを作る
 

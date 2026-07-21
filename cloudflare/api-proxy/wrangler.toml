@@ -3,10 +3,11 @@ main = "src/index.js"
 compatibility_date = "2026-07-01"
 
 # api.dreamyard.cc が、外部に公開する唯一の API URL。
-# `zone_name` は Cloudflare に登録済みのゾーン（ドメイン）名。
+# `custom_domain = true` にすると、デプロイ時に wrangler が DNS レコードと
+# 証明書まで用意する（自分でダミーの A レコードを置く必要がない）。
 # 変更する場合は docs/api.md のベース URL も同じ値に合わせること。
 routes = [
-  { pattern = "api.dreamyard.cc/*", zone_name = "dreamyard.cc" }
+  { pattern = "api.dreamyard.cc", custom_domain = true }
 ]
 
 # シークレットは wrangler.toml には書かない（コミットされるため）。
