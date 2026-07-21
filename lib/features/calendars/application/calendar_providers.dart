@@ -6,6 +6,7 @@ import '../../../models/models.dart';
 import '../../auth/application/auth_state.dart';
 import '../data/calendar_membership_repository.dart';
 import '../data/calendar_repository.dart';
+import 'calendar_order.dart';
 
 final calendarRepositoryProvider = Provider<CalendarRepository>((ref) {
   return CalendarRepository(firestore: ref.watch(firestoreProvider));
@@ -27,6 +28,47 @@ final myCalendarsProvider = StreamProvider<List<Calendar>>((ref) {
     return Stream.value(const []);
   }
   return ref.watch(calendarRepositoryProvider).watchMine(uid);
+});
+
+const _calendarOrderKey = 'calendars.order';
+
+/// ユーザーが手動で並べ替えたカレンダー ID の順序（未設定なら空、Issue #168）。
+///
+/// 並び順は個人の好みなので端末ローカル（[SharedPreferences]）に持ち、Firestore の
+/// クエリ（名前昇順）はそのまま残してクライアント側で並べ替える。家族の他メンバーや
+/// 他端末の表示には影響しない。
+///
+/// 表示用の並び替え済み一覧は [orderedCalendarsProvider] を使うこと。
+final calendarOrderProvider =
+    AsyncNotifierProvider<CalendarOrderController, List<String>>(
+      CalendarOrderController.new,
+    );
+
+class CalendarOrderController extends AsyncNotifier<List<String>> {
+  @override
+  Future<List<String>> build() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_calendarOrderKey) ?? const <String>[];
+  }
+
+  /// 並べ替えた結果を保存する。
+  Future<void> save(List<String> calendarIds) async {
+    // 保存の完了を待たずに画面へ反映し、ドラッグ結果を即座に見せる。
+    state = AsyncData(List.unmodifiable(calendarIds));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_calendarOrderKey, calendarIds);
+  }
+}
+
+/// 手動の並び順を反映した、自分が参加しているカレンダー一覧（FR-8 / Issue #168）。
+///
+/// カレンダー管理画面と切替 UI はこちらを使う。順序の読み込み中・失敗時は保存前と
+/// 同じ名前昇順（Firestore のクエリ順）になる。
+final orderedCalendarsProvider = Provider<List<Calendar>>((ref) {
+  final calendars =
+      ref.watch(myCalendarsProvider).asData?.value ?? const <Calendar>[];
+  final order = ref.watch(calendarOrderProvider).value ?? const <String>[];
+  return sortCalendarsByOrder(calendars, order);
 });
 
 const _selectedCalendarIdKey = 'calendars.selected_id';

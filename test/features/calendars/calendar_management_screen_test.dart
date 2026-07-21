@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/calendars/presentation/calendar_edit_args.dart';
 import 'package:kansuke/features/calendars/presentation/calendar_management_screen.dart';
 import 'package:kansuke/features/invites/application/invite_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
 const testCalendarId = 'test-calendar';
@@ -19,6 +21,13 @@ Future<FakeFirebaseFirestore> _seed() async {
   await firestore.collection('calendars').doc(testCalendarId).set({
     'name': 'わが家',
     'memberIds': ['me', 'other'],
+    'creatorId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  await firestore.collection('calendars').doc('second-calendar').set({
+    'name': 'わが家より後ろ',
+    'memberIds': ['me'],
     'creatorId': 'me',
     'createdAt': now,
     'updatedAt': now,
@@ -55,6 +64,48 @@ Widget _wrap(FakeFirebaseFirestore firestore, {List<Object?>? editArgsSink}) {
 }
 
 void main() {
+  // 並び順（Issue #168）は端末ローカルに保存する。
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('ドラッグで並べ替えると順序が端末ローカルに保存される（Issue #168）', (tester) async {
+    final firestore = await _seed();
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    // 2 件目を長押しして掴み（ReorderableListView の既定操作）、先頭へ移動する。
+    final drag = await tester.startGesture(
+      tester.getCenter(find.text('わが家より後ろ')),
+    );
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    for (var i = 0; i < 10; i++) {
+      await drag.moveBy(const Offset(0, -12));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await drag.up();
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('calendars.order'), [
+      'second-calendar',
+      testCalendarId,
+    ]);
+  });
+
+  testWidgets('保存済みの並び順で一覧を表示する（Issue #168）', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'calendars.order': ['second-calendar', testCalendarId],
+    });
+    final firestore = await _seed();
+    await tester.pumpWidget(_wrap(firestore));
+    await tester.pumpAndSettle();
+
+    final titles = tester
+        .widgetList<ListTile>(find.byType(ListTile))
+        .map((tile) => (tile.title! as Text).data)
+        .toList();
+    expect(titles, ['わが家より後ろ', 'わが家']);
+  });
+
   testWidgets('自分が参加しているカレンダーだけを一覧表示する', (tester) async {
     final firestore = await _seed();
     await tester.pumpWidget(_wrap(firestore));

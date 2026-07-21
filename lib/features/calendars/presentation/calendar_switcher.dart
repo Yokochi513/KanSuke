@@ -17,7 +17,8 @@ class CalendarSwitcherTitle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final calendars = ref.watch(myCalendarsProvider).asData?.value ?? const [];
+    // 管理画面で並べ替えた順を切替 UI にも反映する（Issue #168）。
+    final calendars = ref.watch(orderedCalendarsProvider);
     final selectedId = ref.watch(selectedCalendarIdProvider);
     final selectedName = calendars
         .cast<Calendar?>()

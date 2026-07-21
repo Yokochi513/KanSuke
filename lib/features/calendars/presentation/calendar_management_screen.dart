@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -44,17 +46,30 @@ class CalendarManagementScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, _) =>
             const Center(child: Text('カレンダーを読み込めませんでした。通信環境を確認してください。')),
-        data: (calendars) {
+        data: (_) {
+          // 表示順は端末ローカルの並び順を反映したもの（Issue #168）。
+          final calendars = ref.watch(orderedCalendarsProvider);
           if (calendars.isEmpty) {
             return const Center(child: Text('参加しているカレンダーがありません'));
           }
-          return ListView.separated(
+          return ReorderableListView.builder(
             padding: const EdgeInsets.only(bottom: 88),
             itemCount: calendars.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
+            onReorder: (oldIndex, newIndex) {
+              final ids = [for (final c in calendars) c.id];
+              // ReorderableListView の newIndex は移動元を抜く前の位置で渡る。
+              if (newIndex > oldIndex) {
+                newIndex -= 1;
+              }
+              ids.insert(newIndex, ids.removeAt(oldIndex));
+              unawaited(ref.read(calendarOrderProvider.notifier).save(ids));
+            },
             itemBuilder: (context, index) {
               final calendar = calendars[index];
-              return _CalendarTile(calendar: calendar);
+              return _CalendarTile(
+                key: ValueKey(calendar.id),
+                calendar: calendar,
+              );
             },
           );
         },
@@ -64,21 +79,27 @@ class CalendarManagementScreen extends ConsumerWidget {
 }
 
 class _CalendarTile extends StatelessWidget {
-  const _CalendarTile({required this.calendar});
+  const _CalendarTile({super.key, required this.calendar});
 
   final Calendar calendar;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.calendar_month_outlined),
-      title: Text(calendar.name),
-      subtitle: Text('参加者 ${calendar.memberIds.length}人'),
-      onTap: () => Navigator.pushNamed(
-        context,
-        AppRoutes.calendarEdit,
-        arguments: CalendarEditArgs.edit(calendar),
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.calendar_month_outlined),
+          title: Text(calendar.name),
+          subtitle: Text('参加者 ${calendar.memberIds.length}人'),
+          onTap: () => Navigator.pushNamed(
+            context,
+            AppRoutes.calendarEdit,
+            arguments: CalendarEditArgs.edit(calendar),
+          ),
+        ),
+        const Divider(height: 1),
+      ],
     );
   }
 }
