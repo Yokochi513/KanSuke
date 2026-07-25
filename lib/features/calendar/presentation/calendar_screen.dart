@@ -174,14 +174,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     // Issue #108: 取得はグリッドより広い範囲で行い、月をまたいで連なる予定の
     // マージ構成が月ビューごとに変わらないようにする。
     final fetchRange = _eventFetchRange;
-    final calendarId = ref.watch(selectedCalendarIdProvider);
-    final eventsAsync = ref.watch(
-      eventsInRangeProvider((
-        start: fetchRange.start,
-        end: fetchRange.end,
-        calendarId: calendarId,
-      )),
+    // Issue #170: 表示中カレンダーすべての予定を重ねて表示する。
+    final visibleCalendarIds = ref.watch(visibleCalendarIdsProvider);
+    final eventsAsync = watchEventsForCalendars(
+      ref,
+      start: fetchRange.start,
+      end: fetchRange.end,
+      calendarIds: visibleCalendarIds,
     );
+    // Issue #170: 2 つ以上重ねているとき、既定カレンダー（表示順の先頭）以外の
+    // 帯に目印を付けて「別カレンダーの予定」と分かるようにする。色は「誰の予定
+    // か」のままにするため、目印は色ではなく帯の左端の印で示す。
+    final markedCalendarIds = visibleCalendarIds.length > 1
+        ? visibleCalendarIds.skip(1).toSet()
+        : const <String>{};
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
     final mergeEnabled = ref.watch(resolvedEventMergeEnabledProvider);
@@ -198,7 +204,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
     if (eventsAsync.hasError) {
       AppLogger.error(
-        'eventsInRangeProvider errored for $fetchRange/$calendarId',
+        'eventsInRangeProvider errored for $fetchRange/$visibleCalendarIds',
         tag: 'CalendarScreen',
         error: eventsAsync.error,
         stackTrace: eventsAsync.stackTrace,
@@ -290,6 +296,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           membersById: membersById,
                           currentUid: currentUid,
                           multiMemberDisplay: multiMemberDisplay,
+                          markedCalendarIds: markedCalendarIds,
                           daysOfWeekHeight: _daysOfWeekHeight,
                           rowHeight: rowHeight,
                           colWidth: colWidth,
@@ -694,6 +701,7 @@ class _EventBarsOverlay extends StatelessWidget {
     required this.membersById,
     required this.currentUid,
     required this.multiMemberDisplay,
+    required this.markedCalendarIds,
     required this.daysOfWeekHeight,
     required this.rowHeight,
     required this.colWidth,
@@ -712,6 +720,10 @@ class _EventBarsOverlay extends StatelessWidget {
 
   /// 複数人予定の色の見せ方（丸マーク／色分け、Issue #112）。設定に従う。
   final MultiMemberEventDisplay multiMemberDisplay;
+
+  /// 目印を付けるカレンダー ID（Issue #170）。カレンダーを重ねて表示していると
+  /// き、既定カレンダー（表示順の先頭）以外の ID が入る。空なら目印は出さない。
+  final Set<String> markedCalendarIds;
   final double daysOfWeekHeight;
   final double rowHeight;
   final double colWidth;
@@ -770,8 +782,52 @@ class _EventBarsOverlay extends StatelessWidget {
     );
   }
 
+  /// 帯の左端に付ける「別カレンダーの予定」の目印の幅（Issue #170）。
+  static const double _calendarMarkWidth = 3;
+
+  /// 帯に「別カレンダーの予定」の目印を重ねる（Issue #170）。
+  ///
+  /// 目印は色ではなく形（左端の細い縦線）で示す。予定の色は「誰の予定か」を
+  /// 表す本アプリの中核コンセプト（FR-2）なので、カレンダーの違いで色の軸を
+  /// 二重にしない、という本 Issue の決定に従う。線には中立色
+  /// （`onSurfaceVariant`）を使い、メンバーの識別色と混同されないようにする。
+  ///
+  /// 帯の枠線は仮／確定の区別（FR-3）に既に使っているため、枠線ではなく帯の上に
+  /// 重ねた縦線にしている。週をまたいで続く帯（[_BarSegment.roundLeft] が false）
+  /// は予定の実開始ではないので、目印は開始側のスライスにだけ付ける。
+  Widget _withCalendarMark(
+    BuildContext context,
+    Widget bar, {
+    required bool marked,
+    required bool roundLeft,
+  }) {
+    if (!marked || !roundLeft) return bar;
+    return Stack(
+      children: [
+        Positioned.fill(child: bar),
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: _calendarMarkWidth,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(3),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBar(BuildContext context, _BarSegment bar) {
     final group = bar.group;
+    final marked = markedCalendarIds.contains(group.calendarId);
 
     // 束ねた予定（Issue #76）は代表 1 本＋人数バッジで描き、タップで内訳シートを
     // 開く。1 件だけの普通の予定はこれまでどおり [EventBar] で描き、タップは
@@ -798,13 +854,18 @@ class _EventBarsOverlay extends StatelessWidget {
         behavior: HitTestBehavior.translucent,
         onDoubleTap: kIsWeb ? openSheet : null,
         onLongPress: kIsWeb ? null : openSheet,
-        child: MergedEventBar(
-          title: group.title,
-          dayColors: dayColors,
-          type: group.type,
+        child: _withCalendarMark(
+          context,
+          MergedEventBar(
+            title: group.title,
+            dayColors: dayColors,
+            type: group.type,
+            roundLeft: bar.roundLeft,
+            roundRight: bar.roundRight,
+            selfColor: selfColor,
+          ),
+          marked: marked,
           roundLeft: bar.roundLeft,
-          roundRight: bar.roundRight,
-          selfColor: selfColor,
         ),
       );
     }
@@ -824,14 +885,19 @@ class _EventBarsOverlay extends StatelessWidget {
         ? colorFromHex(self.color)
         : null;
     return IgnorePointer(
-      child: EventBar(
-        title: group.title,
-        colors: colors,
-        type: group.type,
+      child: _withCalendarMark(
+        context,
+        EventBar(
+          title: group.title,
+          colors: colors,
+          type: group.type,
+          roundLeft: bar.roundLeft,
+          roundRight: bar.roundRight,
+          memberDots: memberDots,
+          selfColor: selfColor,
+        ),
+        marked: marked,
         roundLeft: bar.roundLeft,
-        roundRight: bar.roundRight,
-        memberDots: memberDots,
-        selfColor: selfColor,
       ),
     );
   }

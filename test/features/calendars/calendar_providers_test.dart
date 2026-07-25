@@ -185,4 +185,169 @@ void main() {
       expect(container.read(selectedCalendarIdProvider), 'shared');
     });
   });
+
+  group('複数カレンダーの同時表示（Issue #170）', () {
+    List<String> visibleIds(ProviderContainer container) =>
+        container.read(visibleCalendarIdsProvider);
+
+    test('複数のカレンダーを選ぶと重ねて表示する', () async {
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+
+      await container.read(calendarSelectionProvider.notifier).setVisible([
+        'personal',
+        'shared',
+      ]);
+
+      expect(visibleIds(container), ['personal', 'shared']);
+    });
+
+    test('表示中カレンダーは表示順（Issue #168）に整列して返す', () async {
+      SharedPreferences.setMockInitialValues({
+        'calendars.order': ['shared', 'personal'],
+      });
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+      await container.read(calendarOrderProvider.future);
+
+      // 選んだ順ではなく、管理画面で並べ替えた順に揃える。
+      await container.read(calendarSelectionProvider.notifier).setVisible([
+        'personal',
+        'shared',
+      ]);
+
+      expect(visibleIds(container), ['shared', 'personal']);
+    });
+
+    test('新規作成の既定カレンダーは表示中の先頭（表示順の先頭）になる', () async {
+      SharedPreferences.setMockInitialValues({
+        'calendars.order': ['shared', 'personal'],
+      });
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+      await container.read(calendarOrderProvider.future);
+
+      await container.read(calendarSelectionProvider.notifier).setVisible([
+        'personal',
+        'shared',
+      ]);
+
+      expect(container.read(selectedCalendarIdProvider), 'shared');
+    });
+
+    test('表示中カレンダー集合を端末ローカルに保存する', () async {
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+
+      await container.read(calendarSelectionProvider.notifier).setVisible([
+        'personal',
+        'shared',
+      ]);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('calendars.visible_ids'), [
+        'personal',
+        'shared',
+      ]);
+    });
+
+    test('再起動後も保存済みの表示中カレンダー集合を復元する', () async {
+      SharedPreferences.setMockInitialValues({
+        'calendars.visible_ids': ['personal', 'shared'],
+      });
+
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+
+      expect(visibleIds(container), ['personal', 'shared']);
+    });
+
+    test('単一 ID で保存していた頃（Issue #167）の値から移行する', () async {
+      SharedPreferences.setMockInitialValues({
+        'calendars.selected_id': 'shared',
+      });
+
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+
+      expect(visibleIds(container), ['shared']);
+    });
+
+    test('退出済みのカレンダーは表示中集合から落とす', () async {
+      SharedPreferences.setMockInitialValues({
+        'calendars.visible_ids': ['personal', 'gone'],
+      });
+
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+      ]);
+
+      expect(visibleIds(container), ['personal']);
+    });
+
+    test('上限を超えて表示しようとしても上限までで打ち切る', () async {
+      final calendars = [
+        for (var i = 0; i < kMaxVisibleCalendars + 2; i++)
+          _calendar('cal-$i', 'カレンダー$i'),
+      ];
+      final container = await _containerWith(calendars);
+
+      await container.read(calendarSelectionProvider.notifier).setVisible([
+        for (final calendar in calendars) calendar.id,
+      ]);
+
+      expect(visibleIds(container), hasLength(kMaxVisibleCalendars));
+    });
+
+    test('上限に達していたら追加を無視する', () {
+      final full = [for (var i = 0; i < kMaxVisibleCalendars; i++) 'cal-$i'];
+      expect(canAddVisibleCalendar(full), isFalse);
+
+      expect(toggledVisibleCalendarIds(full, 'cal-new'), full);
+    });
+
+    test('最後の 1 件は外せない（全非表示を作らせない）', () {
+      expect(toggledVisibleCalendarIds(['personal'], 'personal'), ['personal']);
+    });
+
+    test('表示 ON/OFF を切り替えられる', () {
+      expect(toggledVisibleCalendarIds(['personal'], 'shared'), [
+        'personal',
+        'shared',
+      ]);
+      expect(toggledVisibleCalendarIds(['personal', 'shared'], 'shared'), [
+        'personal',
+      ]);
+    });
+
+    test('フォールバックで表示中のカレンダーは追加操作で消えない', () async {
+      // 未選択（保存値が空）でも先頭 1 件が表示される。その状態で別カレンダーを
+      // 追加したとき、表示中だった先頭が黙って消えないこと。
+      final container = await _containerWith([
+        _calendar('personal', 'わたしのカレンダー'),
+        _calendar('shared', '共有カレンダー'),
+      ]);
+      expect(visibleIds(container), ['personal']);
+
+      await container
+          .read(calendarSelectionProvider.notifier)
+          .setVisible(
+            toggledVisibleCalendarIds(visibleIds(container), 'shared'),
+          );
+
+      expect(visibleIds(container), ['personal', 'shared']);
+    });
+  });
 }

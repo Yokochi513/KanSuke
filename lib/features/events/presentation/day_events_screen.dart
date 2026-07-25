@@ -123,10 +123,20 @@ class _DayPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final nextDay = day.add(const Duration(days: 1));
-    final calendarId = ref.watch(selectedCalendarIdProvider);
-    final eventsAsync = ref.watch(
-      eventsInRangeProvider((start: day, end: nextDay, calendarId: calendarId)),
+    // Issue #170: 表示中カレンダーすべての予定を重ねて表示する。
+    final visibleCalendars = ref.watch(visibleCalendarsProvider);
+    final eventsAsync = watchEventsForCalendars(
+      ref,
+      start: day,
+      end: nextDay,
+      calendarIds: [for (final c in visibleCalendars) c.id],
     );
+    // カレンダーを 2 つ以上重ねているときだけ、どのカレンダーの予定かを名前の
+    // ラベルで示す（Issue #170）。色は「誰の予定か」のままにして色の軸を二重に
+    // しない、という本 Issue の決定に従う。
+    final calendarNames = visibleCalendars.length > 1
+        ? {for (final c in visibleCalendars) c.id: c.name}
+        : const <String, String>{};
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
     final memberFilter = ref.watch(memberFilterProvider);
@@ -165,7 +175,11 @@ class _DayPage extends ConsumerWidget {
                 separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   final event = orderedEvents[index];
-                  return _EventTile(event: event, membersById: membersById);
+                  return _EventTile(
+                    event: event,
+                    membersById: membersById,
+                    calendarName: calendarNames[event.calendarId],
+                  );
                 },
               );
             },
@@ -220,10 +234,19 @@ class _DayNavigationHeader extends StatelessWidget {
 }
 
 class _EventTile extends StatelessWidget {
-  const _EventTile({required this.event, required this.membersById});
+  const _EventTile({
+    required this.event,
+    required this.membersById,
+    this.calendarName,
+  });
 
   final Event event;
   final Map<String, User> membersById;
+
+  /// この予定が属するカレンダー名（Issue #170）。カレンダーを重ねて表示している
+  /// ときだけ非 null で、どのカレンダーの予定かをラベルで示す。1 カレンダーだけを
+  /// 見ているときは自明なので出さない。
+  final String? calendarName;
 
   @override
   Widget build(BuildContext context) {
@@ -232,6 +255,7 @@ class _EventTile extends StatelessWidget {
         .toList();
     final participantsLabel = _participantsLabel(event);
     final memoPreview = event.memo.trim();
+    final calendarLabel = calendarName;
     return ListTile(
       leading: _MemberDots(colors: memberColors),
       title: _TitleLine(
@@ -240,6 +264,10 @@ class _EventTile extends StatelessWidget {
       ),
       subtitle: Row(
         children: [
+          if (calendarLabel != null) ...[
+            _CalendarChip(name: calendarLabel),
+            const SizedBox(width: 8),
+          ],
           Flexible(
             child: Text(
               _scheduleLabel(event),
@@ -343,6 +371,40 @@ class _TitleLine extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// 予定が属するカレンダー名の小さなラベル（Issue #170）。
+///
+/// カレンダーを重ねて表示しているときに、どのカレンダーの予定かを色以外
+/// （枠付きのラベル）で判別できるようにする。予定の色は従来どおり「誰の予定か」
+/// を表すため（FR-2）、カレンダーの区別に色は使わない。
+class _CalendarChip extends StatelessWidget {
+  const _CalendarChip({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 96),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          border: Border.all(color: scheme.outlineVariant),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+      ),
     );
   }
 }

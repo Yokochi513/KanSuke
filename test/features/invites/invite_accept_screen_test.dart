@@ -52,7 +52,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(invites.calls, ['previewInvite(token-1)', 'acceptInvite(token-1)']);
-    expect(container.read(calendarSelectionProvider).value, 'shared');
+    // Issue #170: 表示中カレンダーは集合で保存する。参加直後はそのカレンダーだけ。
+    expect(container.read(calendarSelectionProvider).value, ['shared']);
     // 受諾待ちは解除され、同じリンクで再び開かれない。
     expect(container.read(pendingInviteTokenProvider), isNull);
     expect(find.text('「わが家」に参加しました'), findsOneWidget);
