@@ -115,8 +115,9 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
       final calendarId = await ref
           .read(inviteRepositoryProvider)
           .acceptInvite(token);
-      // 参加したカレンダーを表示対象に切り替える（FR-8）。
-      ref.read(calendarSelectionProvider.notifier).state = calendarId;
+      // 参加したカレンダーを表示対象に切り替える（FR-8）。次回起動時もここが開く
+      // ように保存する（Issue #167）。
+      await ref.read(calendarSelectionProvider.notifier).select(calendarId);
       if (!mounted) return;
       _close();
       ScaffoldMessenger.of(context).showSnackBar(

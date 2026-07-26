@@ -6,11 +6,13 @@ const {FieldValue} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {beforeUserCreated} = require("firebase-functions/v2/identity");
-const {onCall} = require("firebase-functions/v2/https");
+const {onCall, onRequest} = require("firebase-functions/v2/https");
+const {defineSecret} = require("firebase-functions/params");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {setGlobalOptions} = require("firebase-functions/v2");
 
 const {handleBeforeCreate} = require("./handlers");
+const api = require("./api");
 const deleteaccount = require("./deleteaccount");
 const invites = require("./invites");
 const membership = require("./membership");
@@ -69,6 +71,15 @@ exports.transferownership = onCall(async (request) => {
     },
     serverTimestamp,
   );
+});
+
+// カレンダーの削除（Issue #169）。`firestore.rules` に `allow delete` は無く、
+// 配下の `events` のカスケード削除も必要なため、削除経路はこの Callable のみ。
+exports.deletecalendar = onCall(async (request) => {
+  await membership.deleteCalendar(admin.firestore(), {
+    uid: request.auth && request.auth.uid,
+    calendarId: request.data && request.data.calendarId,
+  });
 });
 
 // アカウント削除（退会導線、Issue #102）。Auth ユーザーの削除・他人のカレンダーの
@@ -133,6 +144,22 @@ exports.listinvites = onCall(async (request) => {
     calendarId: request.data && request.data.calendarId,
   });
 });
+
+// 外部向け読み取り専用 REST API（Issue #103）。GAS・Home Assistant・MCP など
+// 本人のスクリプトから予定を参照するための HTTP エンドポイント。認証は既存の
+// サインインで得られる Firebase ID トークン（`Authorization: Bearer ...`）。
+// CORS 設定はハンドラ側で自前に持つため onRequest の cors は無効にする。
+// 関数名は 2nd gen の制約に合わせて小文字。仕様は docs/api.md。
+//
+// 公開 URL は Cloudflare Worker（`cloudflare/api-proxy/`）に一本化し、この
+// `*.cloudfunctions.net` を直接叩く経路は共有シークレット `API_PROXY_KEY` で
+// 塞ぐ。鍵は Secret Manager に置き、Worker 側にも同じ値を設定する。
+const apiProxyKey = defineSecret("API_PROXY_KEY");
+
+exports.api = onRequest(
+  {cors: false, secrets: [apiProxyKey]},
+  api.createApiHandler({db: admin.firestore(), auth: admin.auth()}),
+);
 
 const reminderDeps = {now: () => new Date(), newId: randomUUID};
 

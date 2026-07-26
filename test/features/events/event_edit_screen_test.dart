@@ -9,6 +9,7 @@ import 'package:kansuke/features/auth/application/auth_state.dart';
 import 'package:kansuke/features/events/presentation/event_edit_args.dart';
 import 'package:kansuke/features/events/presentation/event_edit_screen.dart';
 import 'package:kansuke/models/models.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
 const testCalendarId = 'test-calendar';
@@ -123,6 +124,9 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  // 表示中カレンダーの復元（Issue #167）が端末ローカルを読むため、既定値を用意する。
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('新規作成: UUID採番で予定を保存する', (tester) async {
     final firestore = await _seedMember();
     await _openEditor(

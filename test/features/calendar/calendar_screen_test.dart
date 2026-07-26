@@ -14,6 +14,7 @@ import 'package:kansuke/features/events/presentation/event_type_badge.dart';
 import 'package:kansuke/features/settings/application/event_merge_provider.dart';
 import 'package:kansuke/features/settings/application/multi_member_display_provider.dart';
 import 'package:kansuke/models/models.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 /// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
@@ -388,7 +389,7 @@ Widget _wrap(
       ),
       // 月表示の描画に集中するため、表示中カレンダーは固定する（カレンダーの
       // 解決自体は calendar_providers_test で検証する）。
-      selectedCalendarIdProvider.overrideWithValue(testCalendarId),
+      visibleCalendarIdsProvider.overrideWithValue(const [testCalendarId]),
     ],
     child: MaterialApp(
       theme: buildKanSukeTheme(),
@@ -405,6 +406,8 @@ Widget _wrap(
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('月表示と凡例を描画する', (tester) async {
     final today = DateTime.now();
     final firestore = await _seed(today: today);
@@ -668,6 +671,32 @@ void main() {
       const Color(0xFFD84315),
       const Color(0xFF2E7D32),
     ]);
+  });
+
+  testWidgets('EventBarの塗り分け帯は区画ごとに読める文字色でタイトルを描く（Issue #133）', (tester) async {
+    // 濃紺（#1565C0）と薄い水色（#81D4FA）の 2 人帯。先頭色だけで文字色を
+    // 決めると、水色の区画にまたがった文字が白のままで埋もれる。
+    const navy = Color(0xFF1565C0);
+    const lightBlue = Color(0xFF81D4FA);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: EventBar(
+            title: '家族会議',
+            colors: [navy, lightBlue],
+            type: EventType.confirmed,
+          ),
+        ),
+      ),
+    );
+
+    final titleColors = tester
+        .widgetList<Text>(find.text('家族会議'))
+        .map((text) => text.style!.color)
+        .toList();
+
+    // 区画数ぶんのタイトルが、それぞれの地色に合う色で描かれる。
+    expect(titleColors, [Colors.white, Colors.black]);
   });
 
   testWidgets('EventBarの丸マーク表示は帯を塗り分けず参加者色の〇を描く（Issue #112）', (tester) async {
@@ -1233,7 +1262,7 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container.read(calendarSelectionProvider.notifier).state = 'cal-a';
+    await container.read(calendarSelectionProvider.notifier).select('cal-a');
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -1258,10 +1287,76 @@ void main() {
     expect(find.text('きっず'), findsNothing);
 
     // カレンダー B（me+kids）へ切り替えると凡例も即座に追従する。
-    container.read(calendarSelectionProvider.notifier).state = 'cal-b';
+    await container.read(calendarSelectionProvider.notifier).select('cal-b');
     await tester.pumpAndSettle();
 
     expect(find.text('きっず'), findsOneWidget);
     expect(find.text('まま'), findsNothing);
+  });
+
+  testWidgets('複数カレンダーを重ねると両方の予定と参加者が月表示に出る（Issue #170）', (tester) async {
+    final firestore = await _firestoreWithTwoCalendars();
+    for (final (title, calendarId, memberId, day) in const [
+      ('Aの予定', 'cal-a', 'mama', 6),
+      ('Bの予定', 'cal-b', 'kids', 7),
+    ]) {
+      final start = DateTime(2026, 7, day, 9);
+      final event = Event.create(
+        title: title,
+        creatorId: memberId,
+        participantIds: [memberId],
+        startAt: start,
+        endAt: start.add(const Duration(hours: 1)),
+        allDay: false,
+        type: EventType.confirmed,
+        memo: '',
+        reminderOffsets: const {},
+        updatedBy: memberId,
+        now: start,
+        calendarId: calendarId,
+      );
+      await firestore
+          .collection('events')
+          .doc(event.id)
+          .set(event.toFirestore(useServerTimestamp: false));
+    }
+
+    final container = ProviderContainer(
+      overrides: [
+        firestoreProvider.overrideWithValue(firestore),
+        currentUidProvider.overrideWithValue('me'),
+        resolvedEventMergeEnabledProvider.overrideWithValue(true),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(calendarSelectionProvider.notifier).setVisible([
+      'cal-a',
+      'cal-b',
+    ]);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildKanSukeTheme(),
+          home: CalendarScreen(initialFocusedDay: DateTime(2026, 7, 6)),
+          routes: {
+            AppRoutes.dayEvents: (_) =>
+                const Scaffold(body: Text('DAY_LIST_SCREEN')),
+            AppRoutes.settings: (_) => const Scaffold(body: Text('SETTINGS')),
+            AppRoutes.eventEdit: (_) =>
+                const Scaffold(body: Text('EVENT_EDIT_SCREEN')),
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 両カレンダーの予定が 1 つの月表示に重なる。
+    expect(find.text('Aの予定'), findsOneWidget);
+    expect(find.text('Bの予定'), findsOneWidget);
+    // 凡例（＝参加者フィルタの候補）は表示中カレンダーの参加者の和集合になる。
+    expect(find.text('まま'), findsOneWidget);
+    expect(find.text('きっず'), findsOneWidget);
   });
 }

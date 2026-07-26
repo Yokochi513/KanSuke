@@ -48,6 +48,11 @@ node_modules/
 firebase-debug.log
 firestore-debug.log
 
+# ---- Cloudflare（Worker / Pages）----
+cloudflare/**/.dev.vars
+cloudflare/**/.wrangler/
+docs-site/dist/
+
 # ---- ローカル運用メモ（リポジトリに含めない個人メモ）----
 *.local.md
 

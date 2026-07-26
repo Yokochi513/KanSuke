@@ -35,6 +35,10 @@ class _FakeMembershipRepository implements CalendarMembershipRepository {
     required String uid,
   }) => _record('transferOwnership($calendarId,$uid)');
 
+  @override
+  Future<void> deleteCalendar(String calendarId) =>
+      _record('deleteCalendar($calendarId)');
+
   Future<void> _record(String call) async {
     calls.add(call);
     final failure = error;
@@ -125,6 +129,30 @@ Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _calendars(
 ) async {
   final snap = await firestore.collection('calendars').get();
   return snap.docs;
+}
+
+/// フォームの末尾（退出・削除ボタン）まで送る。ListView は画面外の子を
+/// 組み立てないため、下端の導線を見るにはスクロールが要る。
+Future<void> _scrollToBottom(WidgetTester tester) async {
+  await tester.drag(find.byType(ListView), const Offset(0, -600));
+  await tester.pumpAndSettle();
+}
+
+/// me だけが参加する別のカレンダーを足す（削除の導線を出すため、Issue #169）。
+Future<void> _seedOtherCalendar(FakeFirebaseFirestore firestore) async {
+  final calendar = Calendar(
+    id: 'solo',
+    name: 'わたしのカレンダー',
+    memberIds: const ['me'],
+    creatorId: 'me',
+    ownerId: 'me',
+    createdAt: DateTime.utc(2026, 7, 1),
+    updatedAt: DateTime.utc(2026, 7, 1),
+  );
+  await firestore
+      .collection('calendars')
+      .doc(calendar.id)
+      .set(calendar.toFirestore(useServerTimestamp: false));
 }
 
 void main() {
@@ -268,5 +296,53 @@ void main() {
 
     expect(find.text('オーナーは退出できません。先に他のメンバーへオーナーを移譲してください。'), findsOneWidget);
     expect(find.text('カレンダーを編集'), findsOneWidget);
+  });
+
+  testWidgets('オーナーはカレンダーを削除でき、画面を閉じる（Issue #169）', (tester) async {
+    final firestore = await _seedMembers();
+    final calendar = await _seedCalendar(firestore, ownerId: 'me');
+    await _seedOtherCalendar(firestore);
+    final membership = _FakeMembershipRepository();
+
+    await _openEditor(
+      tester,
+      firestore,
+      CalendarEditArgs.edit(calendar),
+      membership: membership,
+    );
+
+    await _scrollToBottom(tester);
+    await tester.tap(find.text('このカレンダーを削除'));
+    await tester.pumpAndSettle();
+    // 「退出」との違いが分かるよう、全員から消えることを明示する。
+    expect(find.textContaining('他のメンバー1人のカレンダーからも消えます'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, '削除'));
+    await tester.pumpAndSettle();
+
+    expect(membership.calls, ['deleteCalendar(shared)']);
+    expect(find.text('カレンダーを編集'), findsNothing);
+  });
+
+  testWidgets('オーナー以外にはカレンダー削除の導線を出さない（Issue #169）', (tester) async {
+    final firestore = await _seedMembers();
+    final calendar = await _seedCalendar(firestore, ownerId: 'other');
+    await _seedOtherCalendar(firestore);
+
+    await _openEditor(tester, firestore, CalendarEditArgs.edit(calendar));
+    await _scrollToBottom(tester);
+
+    expect(find.text('このカレンダーを削除'), findsNothing);
+    expect(find.text('このカレンダーから退出'), findsOneWidget);
+  });
+
+  testWidgets('参加カレンダーが 1 つだけなら削除の導線を出さない（Issue #169）', (tester) async {
+    final firestore = await _seedMembers();
+    final calendar = await _seedCalendar(firestore, ownerId: 'me');
+
+    await _openEditor(tester, firestore, CalendarEditArgs.edit(calendar));
+    await _scrollToBottom(tester);
+
+    expect(find.text('このカレンダーから退出'), findsOneWidget);
+    expect(find.text('このカレンダーを削除'), findsNothing);
   });
 }
