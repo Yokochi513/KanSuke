@@ -389,7 +389,7 @@ Widget _wrap(
       ),
       // 月表示の描画に集中するため、表示中カレンダーは固定する（カレンダーの
       // 解決自体は calendar_providers_test で検証する）。
-      selectedCalendarIdProvider.overrideWithValue(testCalendarId),
+      visibleCalendarIdsProvider.overrideWithValue(const [testCalendarId]),
     ],
     child: MaterialApp(
       theme: buildKanSukeTheme(),
@@ -1292,5 +1292,71 @@ void main() {
 
     expect(find.text('きっず'), findsOneWidget);
     expect(find.text('まま'), findsNothing);
+  });
+
+  testWidgets('複数カレンダーを重ねると両方の予定と参加者が月表示に出る（Issue #170）', (tester) async {
+    final firestore = await _firestoreWithTwoCalendars();
+    for (final (title, calendarId, memberId, day) in const [
+      ('Aの予定', 'cal-a', 'mama', 6),
+      ('Bの予定', 'cal-b', 'kids', 7),
+    ]) {
+      final start = DateTime(2026, 7, day, 9);
+      final event = Event.create(
+        title: title,
+        creatorId: memberId,
+        participantIds: [memberId],
+        startAt: start,
+        endAt: start.add(const Duration(hours: 1)),
+        allDay: false,
+        type: EventType.confirmed,
+        memo: '',
+        reminderOffsets: const {},
+        updatedBy: memberId,
+        now: start,
+        calendarId: calendarId,
+      );
+      await firestore
+          .collection('events')
+          .doc(event.id)
+          .set(event.toFirestore(useServerTimestamp: false));
+    }
+
+    final container = ProviderContainer(
+      overrides: [
+        firestoreProvider.overrideWithValue(firestore),
+        currentUidProvider.overrideWithValue('me'),
+        resolvedEventMergeEnabledProvider.overrideWithValue(true),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(calendarSelectionProvider.notifier).setVisible([
+      'cal-a',
+      'cal-b',
+    ]);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildKanSukeTheme(),
+          home: CalendarScreen(initialFocusedDay: DateTime(2026, 7, 6)),
+          routes: {
+            AppRoutes.dayEvents: (_) =>
+                const Scaffold(body: Text('DAY_LIST_SCREEN')),
+            AppRoutes.settings: (_) => const Scaffold(body: Text('SETTINGS')),
+            AppRoutes.eventEdit: (_) =>
+                const Scaffold(body: Text('EVENT_EDIT_SCREEN')),
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 両カレンダーの予定が 1 つの月表示に重なる。
+    expect(find.text('Aの予定'), findsOneWidget);
+    expect(find.text('Bの予定'), findsOneWidget);
+    // 凡例（＝参加者フィルタの候補）は表示中カレンダーの参加者の和集合になる。
+    expect(find.text('まま'), findsOneWidget);
+    expect(find.text('きっず'), findsOneWidget);
   });
 }

@@ -14,6 +14,29 @@ import 'package:kansuke/models/models.dart';
 /// テスト用のカレンダー ID（本番の ID は UUID。特別扱いされる固定 ID は無い）。
 const testCalendarId = 'test-calendar';
 
+/// Issue #170: 重ね表示の検証に使う 2 つめのカレンダー ID。
+const _otherCalendarId = 'other-calendar';
+
+/// 表示中カレンダー（Issue #170）。日別一覧は集合として受け取るため、
+/// 表示している状態を固定で与える。
+final _testCalendar = Calendar(
+  id: testCalendarId,
+  name: 'わが家',
+  memberIds: const ['me', 'other'],
+  creatorId: 'me',
+  createdAt: DateTime.utc(2026, 1, 1),
+  updatedAt: DateTime.utc(2026, 1, 1),
+);
+
+final _otherCalendar = Calendar(
+  id: _otherCalendarId,
+  name: 'しごと',
+  memberIds: const ['me'],
+  creatorId: 'me',
+  createdAt: DateTime.utc(2026, 1, 1),
+  updatedAt: DateTime.utc(2026, 1, 1),
+);
+
 final _day = DateTime(2026, 7, 5);
 
 /// users は列挙禁止（Issue #89）。メンバーの色・名前は参加カレンダーの memberIds
@@ -129,6 +152,7 @@ Widget _wrap(
   FakeFirebaseFirestore firestore, {
   required List<Object?> editArgsSink,
   DateTime? selectedDay,
+  List<Calendar>? visibleCalendars,
 }) {
   final routeDay = selectedDay ?? _day;
   return ProviderScope(
@@ -137,7 +161,9 @@ Widget _wrap(
       currentUidProvider.overrideWithValue('me'),
       // 日別一覧の描画に集中するため、表示中カレンダーは固定する（カレンダーの
       // 解決自体は calendar_providers_test で検証する）。
-      selectedCalendarIdProvider.overrideWithValue(testCalendarId),
+      visibleCalendarsProvider.overrideWithValue(
+        visibleCalendars ?? [_testCalendar],
+      ),
     ],
     child: MaterialApp(
       onGenerateRoute: (settings) {
@@ -165,6 +191,57 @@ Widget _wrap(
     ),
   );
 }
+
+/// Issue #170: 2 つのカレンダーにそれぞれ 1 件ずつ予定がある状態を用意する。
+Future<FakeFirebaseFirestore> _seedTwoCalendars() async {
+  final firestore = await _firestoreWithCalendar();
+  final now = Timestamp.fromDate(DateTime.utc(2026, 1, 1));
+  await firestore.collection('calendars').doc(_otherCalendarId).set({
+    'name': 'しごと',
+    'memberIds': ['me'],
+    'creatorId': 'me',
+    'ownerId': 'me',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  await firestore.collection('users').doc('me').set({
+    'name': 'ぱぱ',
+    'email': 'me@example.com',
+    'color': '#1565C0',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  for (final (title, calendarId, hour) in [
+    ('わが家の予定', testCalendarId, 9),
+    ('しごとの予定', _otherCalendarId, 13),
+  ]) {
+    final start = DateTime(2026, 7, 5, hour);
+    final event = Event.create(
+      title: title,
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const {},
+      updatedBy: 'me',
+      now: start,
+      calendarId: calendarId,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+  }
+  return firestore;
+}
+
+/// 一覧の各行に出るカレンダー名ラベル（Issue #170）。AppBar のカレンダー名と
+/// 区別するため、[ListTile] の中に限定して探す。
+Finder _calendarLabel(String name) =>
+    find.descendant(of: find.byType(ListTile), matching: find.text(name));
 
 /// ListTile の leading にある、メンバー色の丸ドット数を数える。
 int _memberDotCount(WidgetTester tester) {
@@ -410,6 +487,50 @@ void main() {
 
     expect(find.text('ぱぱの予定'), findsOneWidget);
     expect(find.text('ままの予定'), findsOneWidget);
+  });
+
+  group('複数カレンダーの重ね表示（Issue #170）', () {
+    testWidgets('表示中カレンダーすべての予定を1つの一覧に重ねて表示する', (tester) async {
+      final firestore = await _seedTwoCalendars();
+      await tester.pumpWidget(
+        _wrap(
+          firestore,
+          editArgsSink: [],
+          visibleCalendars: [_testCalendar, _otherCalendar],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('わが家の予定'), findsOneWidget);
+      expect(find.text('しごとの予定'), findsOneWidget);
+    });
+
+    testWidgets('どのカレンダーの予定かを名前ラベルで判別できる', (tester) async {
+      final firestore = await _seedTwoCalendars();
+      await tester.pumpWidget(
+        _wrap(
+          firestore,
+          editArgsSink: [],
+          visibleCalendars: [_testCalendar, _otherCalendar],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 色は「誰の予定か」のままなので、カレンダーの違いは名前ラベルで示す。
+      expect(_calendarLabel('わが家'), findsOneWidget);
+      expect(_calendarLabel('しごと'), findsOneWidget);
+    });
+
+    testWidgets('1つだけ表示しているときはカレンダー名を出さない（自明なため）', (tester) async {
+      final firestore = await _seedTwoCalendars();
+      await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+      await tester.pumpAndSettle();
+
+      expect(find.text('わが家の予定'), findsOneWidget);
+      expect(find.text('しごとの予定'), findsNothing);
+      // AppBar のカレンダー名とは別に、一覧側にはラベルを出さない。
+      expect(_calendarLabel('わが家'), findsNothing);
+    });
   });
 
   testWidgets('新規作成ボタンで対象日を初期値に編集画面を開く', (tester) async {

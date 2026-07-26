@@ -76,6 +76,9 @@ void main() {
     // 別カレンダーへ切り替えると、絞り込みは自動で解除される（build 中の状態変更を
     // 避けるため、リセットはマイクロタスクで反映される）。
     await container.read(calendarSelectionProvider.notifier).select('second');
+    // Issue #170: 表示中カレンダーは集合になった。画面は毎ビルドでこれを読むので、
+    // テストでも読んで再計算を確定させてからリセットを待つ。
+    expect(container.read(visibleCalendarIdsProvider), ['second']);
     expect(container.read(selectedCalendarIdProvider), 'second');
     await Future<void>.delayed(Duration.zero);
     expect(container.read(memberFilterProvider), isEmpty);
@@ -88,6 +91,7 @@ void main() {
     container.read(memberFilterProvider.notifier).toggle('papa');
     // 表示中のカレンダー（先頭）を選び直しても値は変わらないのでリセットされない。
     await container.read(calendarSelectionProvider.notifier).select('first');
+    expect(container.read(visibleCalendarIdsProvider), ['first']);
     await Future<void>.delayed(Duration.zero);
     expect(container.read(memberFilterProvider), {'papa'});
   });

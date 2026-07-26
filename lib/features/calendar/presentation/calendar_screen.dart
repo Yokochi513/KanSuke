@@ -174,13 +174,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     // Issue #108: 取得はグリッドより広い範囲で行い、月をまたいで連なる予定の
     // マージ構成が月ビューごとに変わらないようにする。
     final fetchRange = _eventFetchRange;
-    final calendarId = ref.watch(selectedCalendarIdProvider);
-    final eventsAsync = ref.watch(
-      eventsInRangeProvider((
-        start: fetchRange.start,
-        end: fetchRange.end,
-        calendarId: calendarId,
-      )),
+    // Issue #170: 表示中カレンダーすべての予定を重ねて表示する。
+    final visibleCalendarIds = ref.watch(visibleCalendarIdsProvider);
+    final eventsAsync = watchEventsForCalendars(
+      ref,
+      start: fetchRange.start,
+      end: fetchRange.end,
+      calendarIds: visibleCalendarIds,
     );
     final membersById = ref.watch(membersByIdProvider);
     final currentUid = ref.watch(currentUidProvider);
@@ -198,7 +198,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
     if (eventsAsync.hasError) {
       AppLogger.error(
-        'eventsInRangeProvider errored for $fetchRange/$calendarId',
+        'eventsInRangeProvider errored for $fetchRange/$visibleCalendarIds',
         tag: 'CalendarScreen',
         error: eventsAsync.error,
         stackTrace: eventsAsync.stackTrace,
@@ -712,6 +712,7 @@ class _EventBarsOverlay extends StatelessWidget {
 
   /// 複数人予定の色の見せ方（丸マーク／色分け、Issue #112）。設定に従う。
   final MultiMemberEventDisplay multiMemberDisplay;
+
   final double daysOfWeekHeight;
   final double rowHeight;
   final double colWidth;
