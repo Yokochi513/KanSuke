@@ -35,6 +35,43 @@
                 <data android:scheme="kansuke" android:host="invite"/>
             </intent-filter>
         </activity>
+        <!-- Issue #127: ホーム画面ウィジェット（FR-4「開かずに予定が見える」）。
+             表示データは Flutter 側が home_widget 経由で書き込む。 -->
+        <receiver
+            android:name=".KanSukeWidgetProvider"
+            android:exported="false"
+            android:label="@string/kansuke_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/kansuke_widget_info" />
+        </receiver>
+        <!-- 一覧（ListView）の中身を供給する。RemoteViews から呼ばれるため
+             BIND_REMOTEVIEWS が必須。 -->
+        <service
+            android:name=".KanSukeWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <!-- Issue #127: 月表示のホーム画面ウィジェット（既定 4x5）。 -->
+        <receiver
+            android:name=".KanSukeMonthWidgetProvider"
+            android:exported="false"
+            android:label="@string/kansuke_month_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/kansuke_month_widget_info" />
+        </receiver>
+        <service
+            android:name=".KanSukeMonthWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -2,4 +2,83 @@
 <resources>
     <!-- 生成り（和紙の地）。Flutter 側 WashiColors.kinari と揃える。 -->
     <color name="washi_base">#F7F3E8</color>
+
+    <!--
+      Issue #127: ホーム画面ウィジェットの配色。Flutter 側 WashiColors と揃える。
+
+      ライト/ダークの実体は「夜間修飾子の付かない名前（_light / _dark）」で持つ。
+      RemoteViews のレイアウトとドローアブルはランチャー側のプロセスで解決される
+      ため、設定「ウィジェットの外観」でライト/ダークを固定するには、端末の
+      ダークモードに左右されない名前から引く必要がある。
+      修飾子なしの名前（widget_background など）は端末設定に従う別名で、
+      「システム追従」「透過」のときに使う。
+    -->
+
+    <!-- ライト（和紙）。 -->
+    <!-- 生成り -->
+    <color name="widget_background_light">#F7F3E8</color>
+    <!-- 墨 -->
+    <color name="widget_text_light">#23211E</color>
+    <!-- 薄墨 -->
+    <color name="widget_text_subtle_light">#6E6960</color>
+    <!-- 紺 -->
+    <color name="widget_accent_light">#1B2B4B</color>
+    <!-- 今日のマスの地。紺をごく薄く敷く。 -->
+    <color name="widget_today_light">#141B2B4B</color>
+    <!-- マスの罫線 -->
+    <color name="widget_grid_line_light">#33231E1B</color>
+    <!-- 表示中の月の外（前後月）の日付 -->
+    <color name="widget_outside_light">#5923211E</color>
+    <!-- 朱（日曜・祝日） / 縹（土曜）。Flutter 側 KanSukeColors.light と揃える。 -->
+    <color name="widget_sunday_light">#B7412E</color>
+    <color name="widget_saturday_light">#2B5A7E</color>
+    <!-- まとめ帯（複数人の予定）の地色の既定。Flutter 側 KanSukeColors.light.mergedBar。 -->
+    <color name="widget_merged_bar_light">#F1E2BD</color>
+
+    <!-- ダーク（墨）。 -->
+    <!-- 墨 -->
+    <color name="widget_background_dark">#23211E</color>
+    <!-- 生成り -->
+    <color name="widget_text_dark">#F7F3E8</color>
+    <!-- 薄鼠 -->
+    <color name="widget_text_subtle_dark">#BDB9AE</color>
+    <!-- 藍白 -->
+    <color name="widget_accent_dark">#9FB2D2</color>
+    <!-- 今日のマスの地 -->
+    <color name="widget_today_dark">#1F9FB2D2</color>
+    <!-- マスの罫線 -->
+    <color name="widget_grid_line_dark">#33F7F3E8</color>
+    <!-- 表示中の月の外（前後月）の日付 -->
+    <color name="widget_outside_dark">#59F7F3E8</color>
+    <!-- 洗朱（日曜・祝日） / 空（土曜）。Flutter 側 KanSukeColors.dark と揃える。 -->
+    <color name="widget_sunday_dark">#DD7B65</color>
+    <color name="widget_saturday_dark">#7FA6C4</color>
+    <!-- まとめ帯の地色の既定。Flutter 側 KanSukeColors.dark.mergedBar。 -->
+    <color name="widget_merged_bar_dark">#5C5342</color>
+
+    <!--
+      ウィジェット一覧のプレビュー（previewLayout）に出すサンプルの識別色。
+      Flutter 側 MemberColors.palette から採る。実データではなく見本なので、
+      ライト/ダークで変えない。
+    -->
+    <!-- 藍 -->
+    <color name="widget_preview_member_1">#1B4B72</color>
+    <!-- 朱 -->
+    <color name="widget_preview_member_2">#B7412E</color>
+    <!-- 松葉 -->
+    <color name="widget_preview_member_3">#3F6B3A</color>
+    <!-- 山吹 -->
+    <color name="widget_preview_member_4">#D9A62E</color>
+
+    <!-- 端末のダークモード設定に従う名前（values-night でダーク側へ差し替わる）。 -->
+    <color name="widget_background">@color/widget_background_light</color>
+    <color name="widget_text">@color/widget_text_light</color>
+    <color name="widget_text_subtle">@color/widget_text_subtle_light</color>
+    <color name="widget_accent">@color/widget_accent_light</color>
+    <color name="widget_today">@color/widget_today_light</color>
+    <color name="widget_grid_line">@color/widget_grid_line_light</color>
+    <color name="widget_outside">@color/widget_outside_light</color>
+    <color name="widget_sunday">@color/widget_sunday_light</color>
+    <color name="widget_saturday">@color/widget_saturday_light</color>
+    <color name="widget_merged_bar">@color/widget_merged_bar_light</color>
 </resources>

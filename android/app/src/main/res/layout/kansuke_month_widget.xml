@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Issue #127: 月表示ウィジェット（4x5）の外枠（FR-4）。
+  マスの中身は KanSukeMonthWidgetService が供給する。曜日の見出しは中身に
+  よらず固定なので、GridView の外に静的に置く（アダプタの行数を減らす）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/month_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/kansuke_widget_background"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <!-- タップでアプリ（月表示）を開く。 -->
+    <LinearLayout
+        android:id="@+id/month_widget_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/month_widget_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/widget_text"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:contentDescription="@null"
+            android:src="@mipmap/ic_launcher" />
+    </LinearLayout>
+
+    <!-- 曜日見出し。日曜=朱・土曜=縹で、アプリの月表示と揃える。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingBottom="2dp">
+
+        <!--
+          id は「外観」をライト/ダークに固定したときに色を差し替えるために要る
+          （KanSukeMonthWidgetProvider）。日〜土の並び順で参照する。
+        -->
+        <TextView
+            android:id="@+id/month_widget_dow_0"
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_sunday"
+            android:textColor="@color/widget_sunday" />
+
+        <TextView
+            android:id="@+id/month_widget_dow_1"
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_monday" />
+
+        <TextView
+            android:id="@+id/month_widget_dow_2"
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_tuesday" />
+
+        <TextView
+            android:id="@+id/month_widget_dow_3"
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_wednesday" />
+
+        <TextView
+            android:id="@+id/month_widget_dow_4"
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_thursday" />
+
+        <TextView
+            android:id="@+id/month_widget_dow_5"
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_friday" />
+
+        <TextView
+            android:id="@+id/month_widget_dow_6"
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_saturday"
+            android:textColor="@color/widget_saturday" />
+    </LinearLayout>
+
+    <GridView
+        android:id="@+id/month_widget_grid"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:columnWidth="1dp"
+        android:horizontalSpacing="0dp"
+        android:numColumns="7"
+        android:stretchMode="columnWidth"
+        android:verticalSpacing="0dp" />
+
+    <!-- グリッドを組めないとき（書き込み前など）の代わりの表示。 -->
+    <TextView
+        android:id="@+id/month_widget_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/kansuke_widget_open_app"
+        android:textColor="@color/widget_text_subtle"
+        android:textSize="12sp" />
+</LinearLayout>

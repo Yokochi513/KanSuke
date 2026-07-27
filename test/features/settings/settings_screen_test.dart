@@ -49,7 +49,7 @@ void main() {
   });
 
   testWidgets('更新履歴の導線に現在のバージョンが表示され、タップで更新履歴画面へ遷移する', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1800));
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     await tester.pumpWidget(
@@ -94,7 +94,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(ThemeMode.dark.label));
+    // 「墨」はウィジェットの外観のセクションにも同じラベルで並ぶため、表示テーマの
+    // 選択肢に絞って押す。
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SegmentedButton<ThemeMode>),
+        matching: find.text(ThemeMode.dark.label),
+      ),
+    );
     await tester.pumpAndSettle();
 
     final prefs = await SharedPreferences.getInstance();
@@ -108,6 +115,8 @@ void main() {
   });
 
   testWidgets('まとめ表示トグルを切り替えると保存される（Issue #76）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     await tester.pumpWidget(
       ProviderScope(
@@ -126,6 +135,7 @@ void main() {
       120,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.byType(SwitchListTile));
     await tester.tap(find.byType(SwitchListTile));
     await tester.pumpAndSettle();
 
@@ -134,6 +144,8 @@ void main() {
   });
 
   testWidgets('複数人の予定の表示を切り替えると保存される（Issue #112）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     await tester.pumpWidget(
       ProviderScope(
@@ -152,6 +164,7 @@ void main() {
       120,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('丸マーク'));
     await tester.tap(find.text('丸マーク'));
     await tester.pumpAndSettle();
 
@@ -163,7 +176,7 @@ void main() {
   });
 
   testWidgets('まとめ帯の色を選ぶと保存され、「標準」でテーマ既定へ戻せる（Issue #112）', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1800));
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     await tester.pumpWidget(
@@ -197,7 +210,7 @@ void main() {
   });
 
   testWidgets('まとめ帯の色は自由選択（RGB）でも保存される（Issue #112）', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1800));
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     await tester.pumpWidget(
@@ -318,6 +331,8 @@ void main() {
   });
 
   testWidgets('通知許可の状態表示と要求導線が動く', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     await tester.pumpWidget(
       ProviderScope(
@@ -338,6 +353,12 @@ void main() {
 
     expect(find.text('状態: 未設定'), findsOneWidget);
 
+    await tester.scrollUntilVisible(
+      find.text('許可をリクエスト'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.text('許可をリクエスト'));
     await tester.tap(find.text('許可をリクエスト'));
     await tester.pumpAndSettle();
 
@@ -348,7 +369,7 @@ void main() {
     // FR-8: セクション追加で一覧が伸びたため、既定のテスト表示領域では
     // 末尾の要素がリストの描画範囲外になる。ensureVisible が要素を見つけられる
     // よう表示領域を広げる。
-    await tester.binding.setSurfaceSize(const Size(400, 1700));
+    await tester.binding.setSurfaceSize(const Size(400, 1900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository();
@@ -373,7 +394,7 @@ void main() {
   });
 
   testWidgets('アカウント削除は二段確認と再認証を経て、削除後サインアウトする（Issue #102）', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1800));
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository();
@@ -419,7 +440,7 @@ void main() {
   });
 
   testWidgets('再認証をキャンセルするとアカウントを削除しない（Issue #102）', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1800));
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository(
@@ -458,7 +479,7 @@ void main() {
   });
 
   testWidgets('削除に失敗するとメッセージを表示し、サインアウトしない（Issue #102）', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 1800));
+    await tester.binding.setSurfaceSize(const Size(400, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final firestore = await _seedUser();
     final auth = _FakeAuthRepository();
