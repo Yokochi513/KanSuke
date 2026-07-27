@@ -1,15 +1,18 @@
-/// 月表示の帯を週内のレーン（縦位置）へ割り当てる（Issue #72 / #76 / #177）。
+/// 月表示の帯を週内のレーン（縦位置）へ割り当てる（Issue #72 / #76 / #177 / #176）。
 ///
 /// 週は日曜〜土曜の 7 列。1 本の帯は連続した列範囲を占め、列が重ならない帯同士は
 /// 同じレーンを使い回す。マスに収まらないレーンは呼び出し側で「+N」に集約する。
 library;
 
-/// 週内 1 本ぶんのレーン割り当て入力（Issue #177）。
+import '../../../models/models.dart';
+
+/// 週内 1 本ぶんのレーン割り当て入力（Issue #177 / #176）。
 class WeekLaneItem {
   WeekLaneItem({
     required this.startCol,
     required this.endCol,
     required this.isMine,
+    this.priority = defaultEventPriority,
   }) : assert(startCol >= 0 && startCol < columnsPerWeek),
        assert(endCol >= startCol && endCol < columnsPerWeek);
 
@@ -21,6 +24,11 @@ class WeekLaneItem {
 
   /// 自分が参加している予定かどうか（FR-1 / FR-2）。
   final bool isMine;
+
+  /// 表示上の優先度。**1 が最重要**（Issue #176）。
+  ///
+  /// 束ねたグループでは最も重要な 1 件の値（`EventGroup.priority`）を渡す。
+  final int priority;
 }
 
 /// 週の列数（日曜〜土曜）。
@@ -32,9 +40,13 @@ const int columnsPerWeek = 7;
 /// 長期予定は週頭から始まるため、開始日順にだけ詰めると常に上のレーンを取り、自分の
 /// 予定が押し下げられてマスの「+N」に隠れてしまうため。
 ///
-/// 同順位（どちらも自分の予定／どちらも他の予定）は開始列の早い順、さらに同着なら
-/// **[items] の並び順**を保つ。呼び出し側が表示優先度順に渡す前提で、結果として
-/// 「自分の予定 → 開始列 → 表示優先度」の順にレーンが埋まる。
+/// FR-4 / Issue #176: 次に**優先度（1 が最重要）の高い順**に配置する。#177 の
+/// 「自分の予定優先」は閲覧者に依存する軸なので、他の人の予定でも家族にとって重要な
+/// もの（単発のイベント等）は、誰の端末でも長期予定より上に出せるようにする。
+///
+/// 同順位は開始列の早い順、さらに同着なら **[items] の並び順**を保つ。呼び出し側が
+/// 表示優先度順に渡す前提で、結果として「自分の予定 → 優先度 → 開始列 → 表示優先度」
+/// の順にレーンが埋まる。
 ///
 /// 自分の予定を先に置く都合上、処理順は開始列順にならない。そのためレーンの空きは
 /// 「最後に置いた帯の終了列」ではなく **レーンごとの列占有** で判定する。終了列を 1 つ
@@ -51,6 +63,9 @@ List<int> assignWeekLanes(List<WeekLaneItem> items) {
       if (first.isMine != second.isMine) {
         return first.isMine ? -1 : 1;
       }
+      // Issue #176: 優先度は 1 が最重要なので昇順。
+      final byPriority = first.priority.compareTo(second.priority);
+      if (byPriority != 0) return byPriority;
       final byStart = first.startCol.compareTo(second.startCol);
       if (byStart != 0) return byStart;
       // List.sort は安定ソートではないため、入力順を保つには添字での比較が要る。

@@ -22,6 +22,7 @@ void main() {
       updatedAt: DateTime.utc(2026, 7, 2),
       deleted: false,
       calendarId: 'calendar-1',
+      priority: 2,
       recurrenceFrequency: EventRecurrenceFrequency.weekly,
       recurrenceCount: 5,
       recurrenceExceptions: [DateTime.utc(2026, 7, 17, 1)],
@@ -50,6 +51,7 @@ void main() {
     expect(restored.updatedAt, event.updatedAt);
     expect(restored.deleted, event.deleted);
     expect(restored.calendarId, event.calendarId);
+    expect(restored.priority, event.priority);
     expect(restored.recurrenceFrequency, event.recurrenceFrequency);
     expect(restored.recurrenceCount, event.recurrenceCount);
     expect(restored.recurrenceExceptions, event.recurrenceExceptions);
@@ -229,5 +231,71 @@ void main() {
     expect(first.id, matches(uuidPattern));
     expect(second.id, isNot(first.id));
     expect(first.deleted, isFalse);
+  });
+
+  // Issue #176: 優先度（1 が最重要、既定 5）。
+  group('priority', () {
+    test('キーが無いドキュメントは既定値として読む（移行不要）', () {
+      final map = buildEvent().toFirestore(useServerTimestamp: false)
+        ..remove('priority');
+
+      expect(Event.fromMap('event-1', map).priority, defaultEventPriority);
+    });
+
+    test('範囲外・非数値の値は 1〜10 に丸めて読む', () {
+      Event read(Object? value) {
+        final map = buildEvent().toFirestore(useServerTimestamp: false)
+          ..['priority'] = value;
+        return Event.fromMap('event-1', map);
+      }
+
+      expect(read(0).priority, highestEventPriority);
+      expect(read(99).priority, lowestEventPriority);
+      expect(read('高').priority, defaultEventPriority);
+      // Firestore の number は int 以外の num 実装で届き得る。
+      expect(read(3.0).priority, 3);
+    });
+
+    test('新規作成の既定値は 5', () {
+      final event = Event.create(
+        title: '通院',
+        creatorId: 'user-1',
+        startAt: DateTime.utc(2026, 7, 10, 1),
+        endAt: DateTime.utc(2026, 7, 10, 2),
+        allDay: false,
+        type: EventType.confirmed,
+        memo: '',
+        reminderOffsets: const {},
+        updatedBy: 'user-1',
+        now: DateTime.utc(2026, 7, 1),
+        calendarId: 'calendar-1',
+      );
+
+      expect(event.priority, defaultEventPriority);
+    });
+
+    test('差分更新には変更したときだけ載る（フィールド単位 LWW）', () {
+      final previous = buildEvent();
+
+      final unchanged = previous
+          .copyWith(memo: '別のメモ')
+          .toFirestoreUpdate(previous, useServerTimestamp: false);
+      expect(unchanged.containsKey('priority'), isFalse);
+
+      final changed = previous
+          .copyWith(priority: 1)
+          .toFirestoreUpdate(previous, useServerTimestamp: false);
+      expect(changed['priority'], 1);
+    });
+
+    test('繰り返しの展開インスタンスにも引き継ぐ', () {
+      final occurrence = buildEvent().occurrenceAt(
+        startAt: DateTime.utc(2026, 7, 17, 1),
+        endAt: DateTime.utc(2026, 7, 17, 2),
+      );
+
+      expect(occurrence.priority, 2);
+      expect(occurrence.masterEventForEditing.priority, 2);
+    });
   });
 }

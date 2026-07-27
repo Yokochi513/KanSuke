@@ -14,6 +14,7 @@ import '../application/event_filter.dart';
 import '../application/event_ordering.dart';
 import '../application/event_providers.dart';
 import 'event_edit_args.dart';
+import 'event_priority_badge.dart';
 import 'event_type_badge.dart';
 import 'member_filter_button.dart';
 
@@ -264,6 +265,11 @@ class _EventTile extends StatelessWidget {
       ),
       subtitle: Row(
         children: [
+          // Issue #176: 既定から動かした優先度だけバッジで示す（既定なら非表示）。
+          if (event.priority != defaultEventPriority) ...[
+            EventPriorityBadge(event.priority),
+            const SizedBox(width: 8),
+          ],
           if (calendarLabel != null) ...[
             _CalendarChip(name: calendarLabel),
             const SizedBox(width: 8),

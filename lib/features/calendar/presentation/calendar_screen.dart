@@ -20,6 +20,7 @@ import '../../events/application/event_grouping.dart';
 import '../../events/application/event_ordering.dart';
 import '../../events/application/event_providers.dart';
 import '../../events/presentation/event_edit_args.dart';
+import '../../events/presentation/event_priority_badge.dart';
 import '../../events/presentation/event_type_badge.dart';
 import '../../events/presentation/member_filter_button.dart';
 import '../../settings/application/event_merge_provider.dart';
@@ -507,8 +508,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       final weekIndex = week.difference(firstVisibleDay).inDays ~/ 7;
 
       // 週内の表示優先度を決める。開始日が早い順、次いで表示優先度順に並べる
-      // ことで、同日に複数の予定がある場合の見た目の順序を保つ。ここでの表示
-      // 優先度は代表（先頭）予定で判定する。
+      // ことで、同日に複数の予定がある場合の見た目の順序を保つ。ここでの順序は
+      // レーン割り当て（assignWeekLanes）での同着タイブレークに使われる。
       final weekGroups = weekEntry.value.toList()
         ..sort((a, b) {
           final aStart = clippedRanges[a]!.start.isBefore(week)
@@ -519,6 +520,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               : clippedRanges[b]!.start;
           final byStart = aStart.compareTo(bStart);
           if (byStart != 0) return byStart;
+          // Issue #176: 束ねたグループの優先度は代表 1 件では判定できない
+          // （events は開始日順で、先頭が重要度を上げていない予定になり得る）。
+          // #177 の includesParticipant と同じ理由でグループ単位の値を使う。
+          final byPriority = a.priority.compareTo(b.priority);
+          if (byPriority != 0) return byPriority;
           return compareEventsForDisplay(
             a.events.first,
             b.events.first,
@@ -538,15 +544,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         ));
       }
 
-      // Issue #177: レーン割り当ては「自分が参加する予定 → 上の表示優先度」順。
-      // 夏休みのような長期予定に押し下げられて「+N」に隠れるのを防ぐ
-      // （FR-1 / FR-2）。束ねたグループは 1 件でも自分の予定を含めば優先する。
+      // Issue #177 / #176: レーン割り当ては「自分が参加する予定 → 優先度 →
+      // 上の表示優先度」順。夏休みのような長期予定に押し下げられて「+N」に隠れる
+      // のを防ぐ（FR-1 / FR-2 / FR-4）。束ねたグループは 1 件でも自分の予定を
+      // 含めば優先し、優先度も最も重要な 1 件の値を採る。
       final lanes = assignWeekLanes([
         for (final segment in weekSegments)
           WeekLaneItem(
             startCol: segment.start.weekday % 7,
             endCol: segment.end.weekday % 7,
             isMine: segment.group.includesParticipant(currentUid),
+            priority: segment.group.priority,
           ),
       ]);
 
@@ -814,7 +822,8 @@ class _EventBarsOverlay extends StatelessWidget {
         onDoubleTap: kIsWeb ? openSheet : null,
         onLongPress: kIsWeb ? null : openSheet,
         child: MergedEventBar(
-          title: group.title,
+          // Issue #176: 既定から動かした優先度だけタイトル先頭に示す。
+          title: eventBarTitleWithPriority(group.title, group.priority),
           dayColors: dayColors,
           type: group.type,
           roundLeft: bar.roundLeft,
@@ -840,7 +849,8 @@ class _EventBarsOverlay extends StatelessWidget {
         : null;
     return IgnorePointer(
       child: EventBar(
-        title: group.title,
+        // Issue #176: 既定から動かした優先度だけタイトル先頭に示す。
+        title: eventBarTitleWithPriority(group.title, group.priority),
         colors: colors,
         type: group.type,
         roundLeft: bar.roundLeft,

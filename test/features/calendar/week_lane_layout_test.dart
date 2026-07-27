@@ -1,8 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kansuke/features/calendar/application/week_lane_layout.dart';
+import 'package:kansuke/models/models.dart';
 
-WeekLaneItem _item(int startCol, int endCol, {bool isMine = false}) {
-  return WeekLaneItem(startCol: startCol, endCol: endCol, isMine: isMine);
+WeekLaneItem _item(
+  int startCol,
+  int endCol, {
+  bool isMine = false,
+  int priority = defaultEventPriority,
+}) {
+  return WeekLaneItem(
+    startCol: startCol,
+    endCol: endCol,
+    isMine: isMine,
+    priority: priority,
+  );
 }
 
 void main() {
@@ -92,6 +103,54 @@ void main() {
 
     test('空の入力では空を返す', () {
       expect(assignWeekLanes(const []), isEmpty);
+    });
+
+    // Issue #176: 優先度（1 が最重要）。
+    test('優先度を上げた予定は、自分が参加していなくても長期予定より上に置かれる', () {
+      // 報告されたケース: 夏休み（週全体・既定 5）と、子のオープンスクール
+      // （水曜単日・優先度 1）。親の端末では両方 isMine == false になる。
+      final lanes = assignWeekLanes([_item(0, 6), _item(3, 3, priority: 1)]);
+
+      expect(lanes[1], 0, reason: 'オープンスクールが最上段');
+      expect(lanes[0], 1, reason: '夏休みは 1 段下がる');
+    });
+
+    test('優先度は「自分の予定」より下の軸なので自分の予定を押し下げない', () {
+      final lanes = assignWeekLanes([
+        _item(0, 6, priority: 1),
+        _item(2, 3, isMine: true),
+      ]);
+
+      expect(lanes[1], 0, reason: '自分の予定が最優先（#177 の保証を保つ）');
+      expect(lanes[0], 1);
+    });
+
+    test('自分の予定どうしは優先度の高い順に並ぶ', () {
+      final lanes = assignWeekLanes([
+        _item(1, 5, isMine: true),
+        _item(1, 5, isMine: true, priority: 2),
+      ]);
+
+      expect(lanes[1], 0, reason: '優先度 2 が上');
+      expect(lanes[0], 1);
+    });
+
+    test('優先度を下げた予定は既定の予定より下に置かれる', () {
+      final lanes = assignWeekLanes([_item(1, 5, priority: 9), _item(1, 5)]);
+
+      expect(lanes[1], 0, reason: '既定（5）が上');
+      expect(lanes[0], 1);
+    });
+
+    test('優先度が同じなら従来どおり開始列順に詰める', () {
+      final lanes = assignWeekLanes([
+        _item(0, 1, priority: 3),
+        _item(0, 3, priority: 3),
+        _item(2, 4, priority: 3),
+        _item(5, 6, priority: 3),
+      ]);
+
+      expect(lanes, [0, 1, 0, 0]);
     });
   });
 }
