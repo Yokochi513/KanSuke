@@ -15,4 +15,33 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">@color/washi_base</item>
     </style>
+
+    <!-- Issue #127: 月表示ウィジェットの曜日見出し（7 列を等幅に割る）。 -->
+    <style name="KanSukeWidgetDayOfWeek">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/widget_text_subtle</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!--
+      Issue #127: 月表示のマスに積む予定の帯。
+
+      地色は参加者ごとに変わるため実行時に setBackgroundColor で塗る。角丸の
+      ドローアブルを実行時に着色する手段（RemoteViews.setColorStateList）は
+      API 31 以降にしか無いため、帯は角のない矩形にしている。
+    -->
+    <style name="KanSukeWidgetChip">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">1dp</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:paddingStart">2dp</item>
+        <item name="android:paddingEnd">2dp</item>
+        <item name="android:textSize">8sp</item>
+    </style>
 </resources>

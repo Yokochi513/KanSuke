@@ -2,21 +2,18 @@ package com.kansuke.kansuke
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
-import es.antonborri.home_widget.HomeWidgetPlugin
 import java.time.LocalDate
 import org.json.JSONArray
-import org.json.JSONObject
 
 /**
- * ホーム画面ウィジェットの一覧を供給するサービス（Issue #127）。
+ * 今日・明日ウィジェットの一覧を供給するサービス（Issue #127）。
  *
  * Flutter 側（HomeWidgetSync）が書き込んだ JSON を読み、**描画時の日付**で今日と
  * 明日の行を組み立てる。日付をここで決めるので、アプリを何日か開かなくても
- * 見出しと中身が繰り上がる（JSON には数日分が入っている）。
+ * 見出しと中身が繰り上がる（JSON には 1 か月以上ぶんが入っている）。
  */
 class KanSukeWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory =
@@ -86,7 +83,7 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
 
     private fun entryViews(row: WidgetRow.Entry): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.kansuke_widget_item)
-        // FR-2: 参加者ごとの識別色。層は固定 3 つで、余った枠は畳む。
+        // FR-2: 参加者ごとの識別色。枠は固定 3 つで、余った枠は畳む。
         DOT_IDS.forEachIndexed { index, viewId ->
             val color = row.colors.getOrNull(index)
             if (color == null) {
@@ -109,17 +106,12 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
     }
 
     private fun buildRows(): List<WidgetRow> {
-        val raw = HomeWidgetPlugin.getData(context).getString(PAYLOAD_KEY, null)
-            ?: return listOf(note(R.string.kansuke_widget_open_app))
         val payload =
-            try {
-                JSONObject(raw)
-            } catch (error: RuntimeException) {
-                return listOf(note(R.string.kansuke_widget_open_app))
-            }
+            KanSukeWidget.readPayload(context)
+                ?: return listOf(note(R.string.kansuke_widget_open_app))
         // アプリだけ先に更新されて、ウィジェットのプロセスが古いまま動くことがある。
         // 解釈できない版は崩れた表示を出さず、再起動を促す。
-        if (payload.optInt("version") != PAYLOAD_VERSION) {
+        if (payload.optInt("version") != KanSukeWidget.PAYLOAD_VERSION) {
             return listOf(note(R.string.kansuke_widget_update_app))
         }
         if (!payload.optBoolean("signedIn", false)) {
@@ -138,15 +130,15 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
         val today = LocalDate.now()
         val rows = mutableListOf<WidgetRow>()
         listOf(
-            today to R.string.kansuke_widget_today,
-            today.plusDays(1) to R.string.kansuke_widget_tomorrow,
-        )
+                today to R.string.kansuke_widget_today,
+                today.plusDays(1) to R.string.kansuke_widget_tomorrow,
+            )
             .forEach { (date, labelRes) ->
                 rows += WidgetRow.DayHeader(context.getString(labelRes, formatDate(date)))
                 // LocalDate.toString() は ISO（yyyy-MM-dd）で、Flutter 側のキーと一致する。
                 val entries = entriesByDate[date.toString()]
                 when {
-                    // 数日分を渡しているので、ここに来るのは書き込み前だけ。
+                    // 1 か月以上ぶんを渡しているので、ここに来るのは書き込み前だけ。
                     entries == null -> rows += note(R.string.kansuke_widget_open_app)
                     entries.length() == 0 -> rows += note(R.string.kansuke_widget_empty)
                     else -> rows += parseEntries(entries)
@@ -174,14 +166,7 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
         if (colors == null) return emptyList()
         val parsed = mutableListOf<Int>()
         for (index in 0 until minOf(colors.length(), DOT_IDS.size)) {
-            parsed +=
-                try {
-                    Color.parseColor(colors.optString(index))
-                } catch (error: RuntimeException) {
-                    // 識別色を引けない参加者（退会済みなど）は Flutter 側でグレーに
-                    // 寄せているが、想定外の文字列でも表示を止めない。
-                    FALLBACK_COLOR
-                }
+            parsed += KanSukeWidget.parseColor(colors.optString(index))
         }
         return parsed
     }
@@ -190,20 +175,12 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
 
     /** 「7/28(火)」。曜日は DayOfWeek（月=1〜日=7）を日曜始まりの配列へ写す。 */
     private fun formatDate(date: LocalDate): String {
-        val weekday = WEEKDAYS[date.dayOfWeek.value % WEEKDAYS.size]
+        val weekday = KanSukeWidget.WEEKDAYS[date.dayOfWeek.value % KanSukeWidget.WEEKDAYS.size]
         return "${date.monthValue}/${date.dayOfMonth}($weekday)"
     }
 
     private companion object {
-        /** Flutter 側 `homeWidgetPayloadKey` と揃える。 */
-        const val PAYLOAD_KEY = "kansuke.widget.payload"
-
-        /** Flutter 側 `homeWidgetPayloadVersion` と揃える。 */
-        const val PAYLOAD_VERSION = 1
-
         const val VIEW_TYPE_COUNT = 3
-
-        const val FALLBACK_COLOR = 0xFF9E9E9E.toInt()
 
         val DOT_IDS =
             intArrayOf(
@@ -211,7 +188,5 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
                 R.id.widget_item_dot_2,
                 R.id.widget_item_dot_3,
             )
-
-        val WEEKDAYS = arrayOf("日", "月", "火", "水", "木", "金", "土")
     }
 }

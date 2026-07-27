@@ -1,29 +1,33 @@
 import 'dart:convert';
 
+import '../../../core/japanese_holidays.dart';
 import '../../../models/models.dart';
 import '../../events/application/event_ordering.dart';
 
-/// ペイロードのスキーマ版。Android 側（`KanSukeWidgetFactory`）と揃えること。
+/// ペイロードのスキーマ版。Android 側（`KanSukeWidgetFactory` /
+/// `KanSukeMonthWidgetFactory`）と揃えること。
 ///
 /// 互換性のない形に変えるときは値を上げる。アプリだけ更新されてウィジェットの
 /// プロセスが古い解釈のまま動く瞬間があるため、Android 側は版が違うペイロードを
 /// 「まだ読めない」として扱い、崩れた表示を出さないようにする。
-const int homeWidgetPayloadVersion = 1;
+const int homeWidgetPayloadVersion = 2;
 
-/// ペイロードに載せる日数（今日を含む）。
+/// 月グリッドの列数（日曜〜土曜）。
+const int homeWidgetColumnsPerWeek = 7;
+
+/// 月グリッドの最大週数。
 ///
-/// ウィジェットが表示するのは今日と明日の 2 日分だが、**どの日を今日とみなすかは
-/// 描画時の Android 側**が決める。アプリを何日か開かなくても日付の繰り上がりに
-/// ついていけるよう、1 週間分を先に渡しておく。
-const int homeWidgetDayCount = 8;
+/// 1 日が土曜で 31 日ある月は 6 週にまたがる。ペイロードの範囲はこの最大で採り、
+/// 実際に何週描くかは Android 側が描画時の月から決める。
+const int homeWidgetMaxWeeksPerMonth = 6;
 
 /// 1 日あたりにペイロードへ載せる最大件数。
 ///
-/// ウィジェットの高さでどのみち見切れるため、際限なく渡さない
-/// （SharedPreferences に載せる文字列なので小さく保つ）。
+/// リスト側もマス側も、これ以上は高さで見切れる。全件数は `total` で渡すので、
+/// 月表示のマスは「+N」を正しく出せる。
 const int homeWidgetMaxEntriesPerDay = 12;
 
-/// 1 件の予定に載せる識別色（FR-2）の最大数。ウィジェットのドット数と揃える。
+/// 1 件の予定に載せる識別色（FR-2）の最大数。リストのドット数と揃える。
 const int homeWidgetMaxColors = 3;
 
 /// 識別色を引けない参加者（退会済みなど）の色。
@@ -47,11 +51,49 @@ Map<String, Object?> buildSignedOutHomeWidgetPayload() {
   };
 }
 
+/// [firstOfMonth] の月グリッドの開始日（1 日を含む週の日曜）。
+///
+/// アプリの月表示（table_calendar）と同じ日曜始まり。
+DateTime homeWidgetGridStart(DateTime firstOfMonth) {
+  // DateTime.weekday は月曜=1・日曜=7。日曜始まりの並びに合わせる。
+  final leadingDays = firstOfMonth.weekday % homeWidgetColumnsPerWeek;
+  return DateTime(
+    firstOfMonth.year,
+    firstOfMonth.month,
+    firstOfMonth.day - leadingDays,
+  );
+}
+
+/// ペイロードが覆う日の範囲（[start] 以上 [end] 未満）。
+///
+/// **今月のグリッド開始から翌月のグリッド終了まで**を渡す。どの月を描くかは
+/// 描画時の Android 側が決めるため、月をまたいだ直後にアプリを開いていなくても
+/// グリッドが空にならないよう、翌月ぶんまで含める。今日から 1 週間先まで
+/// （リスト側のウィジェットが見る範囲）も必ずこの中に入る。
+({DateTime start, DateTime end}) homeWidgetDayRange(DateTime now) {
+  final today = _dateOnly(now.toLocal());
+  final start = homeWidgetGridStart(DateTime(today.year, today.month, 1));
+  final nextMonthGridStart = homeWidgetGridStart(
+    DateTime(today.year, today.month + 1, 1),
+  );
+  final end = DateTime(
+    nextMonthGridStart.year,
+    nextMonthGridStart.month,
+    nextMonthGridStart.day +
+        homeWidgetMaxWeeksPerMonth * homeWidgetColumnsPerWeek,
+  );
+  return (start: start, end: end);
+}
+
 /// ホーム画面ウィジェットへ渡す予定データを組み立てる（Issue #127）。
 ///
-/// [now] の暦日（端末ローカル）から [dayCount] 日分を日ごとに切り出し、各日に
-/// 重なる予定を日別一覧と同じ並び（[orderEventsForDisplay]）で並べる。
-/// [events] は表示中カレンダー（FR-8）の予定を渡す前提で、絞り込みはしない。
+/// [homeWidgetDayRange] の各日について、その日に重なる予定を日別一覧と同じ並び
+/// （[orderEventsForDisplay]）で並べる。[events] は表示中カレンダー（FR-8）の
+/// 予定を渡す前提で、絞り込みはしない。
+///
+/// [mergedBarColor] は複数人の予定に使うまとめ帯の地色（`#RRGGBB`、Issue #112 の
+/// 設定値）。null ならウィジェット側のテーマ既定色を使う（ライト/ダークのどちらで
+/// 描かれるかは描画時に決まるため、既定色は Android 側の色リソースに持たせる）。
 ///
 /// 予定の日時は Firestore から UTC で届くため、日の切り出しと時刻表記は
 /// すべて `toLocal()` してから行う（日別一覧の `_scheduleLabel` と同じ扱い）。
@@ -60,26 +102,32 @@ Map<String, Object?> buildHomeWidgetPayload({
   required Map<String, User> membersById,
   required DateTime now,
   String? currentUid,
-  int dayCount = homeWidgetDayCount,
+  String? mergedBarColor,
 }) {
-  final today = _dateOnly(now.toLocal());
+  final range = homeWidgetDayRange(now);
   final days = <Map<String, Object?>>[];
-  for (var offset = 0; offset < dayCount; offset += 1) {
-    // 日付の加算は DateTime(y, m, d + n) で行う。Duration の加算は夏時間のある
+  for (
+    var day = range.start;
+    day.isBefore(range.end);
+    // 日付の加算は DateTime(y, m, d + 1) で行う。Duration の加算は夏時間のある
     // 地域で 1 日ぶんずれるため（日本では起きないが、暦日の計算として素直）。
-    final day = DateTime(today.year, today.month, today.day + offset);
-    final nextDay = DateTime(today.year, today.month, today.day + offset + 1);
+    day = DateTime(day.year, day.month, day.day + 1)
+  ) {
+    final nextDay = DateTime(day.year, day.month, day.day + 1);
     final onDay = [
       for (final event in events)
         if (_overlapsDay(event, day, nextDay)) event,
     ];
+    final ordered = orderEventsForDisplay(onDay, currentUid);
+    // FR-4: 祝日は月表示で見落としにくいよう、名称ごと渡す。
+    final holiday = japaneseHolidayName(day);
     days.add(<String, Object?>{
       'date': formatHomeWidgetDate(day),
+      'holiday': ?holiday,
+      // 「+N」を正しく出せるよう、載せた件数ではなく全件数を渡す。
+      'total': ordered.length,
       'entries': [
-        for (final event in orderEventsForDisplay(
-          onDay,
-          currentUid,
-        ).take(homeWidgetMaxEntriesPerDay))
+        for (final event in ordered.take(homeWidgetMaxEntriesPerDay))
           _entryOf(event, day, membersById),
       ],
     });
@@ -88,11 +136,12 @@ Map<String, Object?> buildHomeWidgetPayload({
   return <String, Object?>{
     'version': homeWidgetPayloadVersion,
     'signedIn': true,
+    'mergedBarColor': ?mergedBarColor,
     'days': days,
   };
 }
 
-/// ペイロードの日付キー（`yyyy-MM-dd`）。Android 側が今日／明日を引く鍵。
+/// ペイロードの日付キー（`yyyy-MM-dd`）。Android 側が日を引く鍵。
 String formatHomeWidgetDate(DateTime day) =>
     '${day.year.toString().padLeft(4, '0')}-'
     '${_two(day.month)}-${_two(day.day)}';
@@ -115,7 +164,8 @@ Map<String, Object?> _entryOf(
   return <String, Object?>{
     'title': event.title,
     'time': homeWidgetTimeLabel(event, day),
-    // FR-2: 「誰の予定か」を色で示す。ドットの数だけ渡す。
+    // FR-2: 「誰の予定か」を色で示す。リストはドット、月表示のマスは帯の地色に使う
+    // （1 人なら本人の色、複数人ならまとめ帯の地色。アプリの月表示と同じ扱い）。
     'colors': [
       for (final id in event.memberIds.take(homeWidgetMaxColors))
         _colorOf(membersById[id]),

@@ -11,4 +11,15 @@
     <color name="widget_text_subtle">#6E6960</color>
     <!-- 紺 -->
     <color name="widget_accent">#1B2B4B</color>
+    <!-- 今日のマスの地。紺をごく薄く敷く。 -->
+    <color name="widget_today">#141B2B4B</color>
+    <!-- マスの罫線 -->
+    <color name="widget_grid_line">#33231E1B</color>
+    <!-- 表示中の月の外（前後月）の日付 -->
+    <color name="widget_outside">#5923211E</color>
+    <!-- 朱（日曜・祝日） / 縹（土曜）。Flutter 側 KanSukeColors と揃える。 -->
+    <color name="widget_sunday">#B7412E</color>
+    <color name="widget_saturday">#2B5A7E</color>
+    <!-- まとめ帯（複数人の予定）の地色の既定。Flutter 側 KanSukeColors.light.mergedBar。 -->
+    <color name="widget_merged_bar">#F1E2BD</color>
 </resources>

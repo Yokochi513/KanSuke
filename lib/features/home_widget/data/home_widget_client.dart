@@ -8,8 +8,13 @@ import '../../../core/logger.dart';
 const String homeWidgetPayloadKey = 'kansuke.widget.payload';
 
 /// ウィジェットプロバイダの完全修飾クラス名。`updateWidget` の宛先。
-const String homeWidgetAndroidProvider =
+///
+/// 今日・明日のリスト（[homeWidgetListProvider]）と月表示
+/// （[homeWidgetMonthProvider]）の 2 種類を提供しており、同じペイロードを両方が読む。
+const String homeWidgetListProvider =
     'com.kansuke.kansuke.KanSukeWidgetProvider';
+const String homeWidgetMonthProvider =
+    'com.kansuke.kansuke.KanSukeMonthWidgetProvider';
 
 /// ホーム画面ウィジェットへの書き込み口（Issue #127）。
 ///
@@ -26,8 +31,11 @@ class PluginHomeWidgetClient implements HomeWidgetClient {
   @override
   Future<void> push(String payload) async {
     await HomeWidget.saveWidgetData<String>(homeWidgetPayloadKey, payload);
+    // 置かれていないウィジェットへの更新要求は、対象が 0 個の broadcast になる
+    // だけで害はない。どちらが置かれているかは調べずに両方へ流す。
+    await HomeWidget.updateWidget(qualifiedAndroidName: homeWidgetListProvider);
     await HomeWidget.updateWidget(
-      qualifiedAndroidName: homeWidgetAndroidProvider,
+      qualifiedAndroidName: homeWidgetMonthProvider,
     );
   }
 }

@@ -12,4 +12,19 @@
     <string name="kansuke_widget_signed_out">アプリでサインインしてください</string>
     <string name="kansuke_widget_update_app">アプリを再起動してください</string>
     <string name="kansuke_widget_tentative">仮</string>
+
+    <!-- Issue #127: 月表示ウィジェット（4x5）。 -->
+    <string name="kansuke_month_widget_label">KanSuke カレンダー</string>
+    <string name="kansuke_month_widget_description">月のカレンダーをホーム画面に表示します。</string>
+    <string name="kansuke_month_widget_title">%1$d年%2$d月</string>
+    <!-- マスに収まらなかった件数。 -->
+    <string name="kansuke_month_widget_more">+%1$d</string>
+
+    <string name="kansuke_widget_sunday">日</string>
+    <string name="kansuke_widget_monday">月</string>
+    <string name="kansuke_widget_tuesday">火</string>
+    <string name="kansuke_widget_wednesday">水</string>
+    <string name="kansuke_widget_thursday">木</string>
+    <string name="kansuke_widget_friday">金</string>
+    <string name="kansuke_widget_saturday">土</string>
 </resources>

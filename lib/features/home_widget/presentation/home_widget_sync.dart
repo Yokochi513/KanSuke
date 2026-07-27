@@ -4,16 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/application/auth_state.dart';
 import '../../calendars/application/calendar_providers.dart';
 import '../../events/application/event_providers.dart';
+import '../../settings/application/merged_bar_color_provider.dart';
 import '../../users/application/user_providers.dart';
 import '../application/home_widget_payload.dart';
 import '../data/home_widget_client.dart';
 
 /// ホーム画面ウィジェットへ予定を書き出し続ける中継（Issue #127）。
 ///
-/// アプリ本体を包んで常時マウントし、表示中カレンダー（FR-8）の今日から
-/// [homeWidgetDayCount] 日分の予定を購読して、内容が変わるたびにウィジェットへ
-/// 渡す。ウィジェット側は渡された数日分から「今日・明日」を描画時に選ぶため、
-/// アプリを開かない日が続いても日付の繰り上がりに追従する。
+/// アプリ本体を包んで常時マウントし、表示中カレンダー（FR-8）の
+/// [homeWidgetDayRange]（今月〜翌月のグリッド）ぶんの予定を購読して、内容が
+/// 変わるたびにウィジェットへ渡す。ウィジェット側は渡された範囲から「今日・明日」
+/// （リスト）や「今月のグリッド」（月表示）を**描画時に**選ぶため、アプリを開かない
+/// 日が続いても日付・月の繰り上がりに追従する。
 ///
 /// 購読を widget 側に置いているのは、既存の購読グラフの形（widget → プロバイダ
 /// → 元データ）に合わせるため。プロバイダ同士を連ねると、リストを返すプロバイダ
@@ -62,17 +64,12 @@ class _HomeWidgetSyncState extends ConsumerState<HomeWidgetSync> {
     }
 
     final now = DateTime.now();
-    final today = DateUtils.dateOnly(now);
-    final end = DateTime(
-      today.year,
-      today.month,
-      today.day + homeWidgetDayCount,
-    );
+    final range = homeWidgetDayRange(now);
     final visibleCalendars = ref.watch(visibleCalendarsProvider);
     final events = watchEventsForCalendars(
       ref,
-      start: today,
-      end: end,
+      start: range.start,
+      end: range.end,
       calendarIds: [for (final calendar in visibleCalendars) calendar.id],
     );
     final loaded = events.asData?.value;
@@ -84,6 +81,9 @@ class _HomeWidgetSyncState extends ConsumerState<HomeWidgetSync> {
         membersById: ref.watch(membersByIdProvider),
         now: now,
         currentUid: currentUid,
+        // Issue #112: まとめ帯の地色は端末ローカルの設定。未設定ならウィジェット側の
+        // テーマ既定色（ライト/ダーク）に任せる。
+        mergedBarColor: ref.watch(mergedBarColorProvider).value,
       ),
     );
   }

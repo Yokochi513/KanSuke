@@ -65,30 +65,103 @@ void main() {
     required List<Event> events,
     Map<String, User> membersById = const {},
     String? currentUid,
+    String? mergedBarColor,
   }) {
     return buildHomeWidgetPayload(
       events: events,
       membersById: membersById,
       now: now,
       currentUid: currentUid,
+      mergedBarColor: mergedBarColor,
     );
   }
 
+  List<Object?> datesOf(Map<String, Object?> payload) => [
+    for (final day in (payload['days']! as List).cast<Map<String, Object?>>())
+      day['date'],
+  ];
+
+  group('homeWidgetDayRange', () {
+    test('今月のグリッド開始から翌月のグリッド終了までを覆う', () {
+      // 2026-07-01 は水曜。その週の日曜は 6/28。
+      // 2026-08-01 は土曜。その週の日曜は 7/26。そこから 6 週で 9/6 まで。
+      final range = homeWidgetDayRange(now);
+
+      expect(range.start, DateTime(2026, 6, 28));
+      expect(range.end, DateTime(2026, 9, 6));
+    });
+
+    test('1日が日曜の月は、その日がグリッドの先頭になる', () {
+      // 2026-11-01 は日曜。
+      expect(homeWidgetGridStart(DateTime(2026, 11, 1)), DateTime(2026, 11, 1));
+    });
+
+    test('今日から1週間先までは必ず範囲に入る（リスト側ウィジェットの前提）', () {
+      // 月末（グリッド範囲の下限が効きにくい日）でも成り立つこと。
+      for (final day in [
+        DateTime(2026, 7, 31, 23),
+        DateTime(2026, 12, 31, 23),
+        DateTime(2026, 2, 28),
+      ]) {
+        final range = homeWidgetDayRange(day);
+        expect(range.start.isAfter(day), isFalse, reason: '$day');
+        expect(
+          range.end.isAfter(DateTime(day.year, day.month, day.day + 7)),
+          isTrue,
+          reason: '$day',
+        );
+      }
+    });
+  });
+
   group('buildHomeWidgetPayload', () {
-    test('今日から homeWidgetDayCount 日分の枠を、日付昇順で作る', () {
+    test('グリッド範囲の各日を、日付昇順で 1 つずつ作る', () {
       final payload = build(events: const []);
 
-      final dates = [
-        for (final day
-            in (payload['days']! as List).cast<Map<String, Object?>>())
-          day['date'],
-      ];
-      expect(dates.length, homeWidgetDayCount);
-      expect(dates.first, today);
-      expect(dates[1], tomorrow);
-      expect(dates.last, '2026-08-04');
+      final dates = datesOf(payload);
+      expect(dates.first, '2026-06-28');
+      expect(dates.last, '2026-09-05');
+      expect(dates.length, dates.toSet().length, reason: '日付の重複なし');
+      expect(dates, contains(today));
+      expect(dates, contains(tomorrow));
       expect(payload['version'], homeWidgetPayloadVersion);
       expect(payload['signedIn'], isTrue);
+    });
+
+    test('FR-4: 祝日は名称を載せ、祝日でない日はキーごと省く', () {
+      final payload = build(events: const []);
+
+      // 2026-07-20 は海の日。
+      expect(_day(payload, '2026-07-20')['holiday'], '海の日');
+      expect(_day(payload, today).containsKey('holiday'), isFalse);
+    });
+
+    test('件数はマスの「+N」用に total で渡す（載せる件数とは別）', () {
+      final payload = build(
+        events: [
+          for (
+            var index = 0;
+            index < homeWidgetMaxEntriesPerDay + 3;
+            index += 1
+          )
+            _event(
+              id: 'event-$index',
+              start: DateTime(2026, 7, 28, 8).add(Duration(minutes: index)),
+            ),
+        ],
+      );
+
+      expect(_day(payload, today)['total'], homeWidgetMaxEntriesPerDay + 3);
+      expect(_entries(payload, today).length, homeWidgetMaxEntriesPerDay);
+      expect(_day(payload, tomorrow)['total'], 0);
+    });
+
+    test('Issue #112: まとめ帯の地色は、設定されているときだけ載せる', () {
+      expect(
+        build(events: const [], mergedBarColor: '#F1E2BD')['mergedBarColor'],
+        '#F1E2BD',
+      );
+      expect(build(events: const []).containsKey('mergedBarColor'), isFalse);
     });
 
     test('予定はその日の枠にだけ入る', () {

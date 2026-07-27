@@ -1,22 +1,22 @@
 package com.kansuke.kansuke
 
-import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
-import android.os.Build
 import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetProvider
 
 /**
- * ホーム画面ウィジェット（Issue #127、FR-4）。
+ * 今日・明日の予定を並べるホーム画面ウィジェット（Issue #127、FR-4）。
  *
  * 表示する予定は Flutter 側（HomeWidgetSync）が `home_widget` の SharedPreferences
  * へ JSON で書き込み、行の組み立てと描画は [KanSukeWidgetService] が行う。ここは
  * 外枠と、一覧をサービスへ繋ぐアダプタ、タップでアプリを開く導線だけを持つ。
+ *
+ * 月のカレンダーとして見たい場合は [KanSukeMonthWidgetProvider]（4x5）を使う。
  */
 class KanSukeWidgetProvider : HomeWidgetProvider() {
 
@@ -46,34 +46,11 @@ class KanSukeWidgetProvider : HomeWidgetProvider() {
             )
             // 一覧の各行のタップもアプリ起動にする。コレクションの子は
             // PendingIntent を直接持てず、テンプレート＋fill-in intent で扱う。
-            views.setPendingIntentTemplate(R.id.widget_list, launchTemplate(context))
+            views.setPendingIntentTemplate(R.id.widget_list, KanSukeWidget.launchTemplate(context))
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
             // 保存済みの JSON が差し替わっているので、一覧の読み直しを促す。
             appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.widget_list)
         }
-    }
-
-    /**
-     * 一覧の行タップ用テンプレート。
-     *
-     * コレクションのテンプレートは fill-in intent を合成するため mutable が要る
-     * （[HomeWidgetLaunchIntent.getActivity] は immutable を返すのでヘッダー専用）。
-     * ヘッダー側と requestCode を分け、同じ PendingIntent を上書きしないようにする。
-     */
-    private fun launchTemplate(context: Context): PendingIntent {
-        val intent =
-            Intent(context, MainActivity::class.java).apply {
-                action = HomeWidgetLaunchIntent.HOME_WIDGET_LAUNCH_ACTION
-            }
-        var flags = PendingIntent.FLAG_UPDATE_CURRENT
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            flags = flags or PendingIntent.FLAG_MUTABLE
-        }
-        return PendingIntent.getActivity(context, LAUNCH_TEMPLATE_REQUEST_CODE, intent, flags)
-    }
-
-    private companion object {
-        const val LAUNCH_TEMPLATE_REQUEST_CODE = 1
     }
 }

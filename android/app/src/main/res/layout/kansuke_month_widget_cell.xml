@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Issue #127: 月表示ウィジェットの 1 マス。
+
+  アプリの月表示は複数日の予定を「マスをまたぐ 1 本の帯」で描くが、RemoteViews の
+  コレクションは各マスを独立に描くため、マスをまたぐ描画はできない。そこで
+  「その日に重なる予定を、そのマスの中に積む」形にしている（日をまたぐ予定は
+  各日に現れる）。並びと「+N」の考え方はアプリと同じ。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/month_cell_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/kansuke_widget_cell"
+    android:minHeight="46dp"
+    android:orientation="vertical"
+    android:paddingStart="1dp"
+    android:paddingTop="1dp"
+    android:paddingEnd="1dp"
+    android:paddingBottom="2dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/month_cell_day"
+            android:layout_width="16dp"
+            android:layout_height="14dp"
+            android:gravity="center"
+            android:textSize="10sp" />
+
+        <!-- FR-4: 祝日は名称ごと出して、何の祝日か一目で分かるようにする。 -->
+        <TextView
+            android:id="@+id/month_cell_holiday"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="1dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/widget_sunday"
+            android:textSize="7sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/month_cell_chip_1"
+        style="@style/KanSukeWidgetChip" />
+
+    <TextView
+        android:id="@+id/month_cell_chip_2"
+        style="@style/KanSukeWidgetChip" />
+
+    <TextView
+        android:id="@+id/month_cell_chip_3"
+        style="@style/KanSukeWidgetChip" />
+
+    <!--
+      マスに収まらなかった件数（アプリの月表示の「+N」と同じ）。
+      帯の最後の 1 枠と入れ替わりで出るため、マスの高さは帯 3 本ぶんで頭打ちになる。
+    -->
+    <TextView
+        android:id="@+id/month_cell_more"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
+        android:gravity="end"
+        android:maxLines="1"
+        android:paddingEnd="2dp"
+        android:paddingStart="2dp"
+        android:textColor="@color/widget_text_subtle"
+        android:textSize="8sp" />
+</LinearLayout>

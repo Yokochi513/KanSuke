@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Issue #127: 月表示ウィジェットの定義（既定 4x5 マス）。
+
+  minWidth / minHeight はランチャーのマス目換算（70dp * n - 30dp）で 4 列 5 行ぶん。
+  updatePeriodMillis は Android が受け付ける最短の 30 分で、月・今日の繰り上がりを
+  拾うためのもの（グリッドは KanSukeMonthWidgetFactory が描画時の日付で組む）。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/kansuke_month_widget_description"
+    android:initialLayout="@layout/kansuke_month_widget"
+    android:minHeight="320dp"
+    android:minWidth="250dp"
+    android:previewImage="@mipmap/ic_launcher"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="5"
+    android:targetCellWidth="4"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

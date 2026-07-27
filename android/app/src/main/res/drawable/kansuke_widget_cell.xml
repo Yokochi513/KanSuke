@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Issue #127: 月表示の 1 マス。罫線でグリッドを作る。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <stroke
+        android:width="0.5dp"
+        android:color="@color/widget_grid_line" />
+</shape>
