@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Issue #127: 予定 1 件の行。
+  FR-2 の識別色はドット（最大 3 つ。余りは KanSukeWidgetFactory が落とす）、
+  FR-3 の仮予定は「仮」バッジで示す。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_item_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingTop="3dp"
+    android:paddingBottom="3dp">
+
+    <ImageView
+        android:id="@+id/widget_item_dot_1"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:contentDescription="@null"
+        android:src="@drawable/kansuke_widget_dot" />
+
+    <ImageView
+        android:id="@+id/widget_item_dot_2"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:layout_marginStart="2dp"
+        android:contentDescription="@null"
+        android:src="@drawable/kansuke_widget_dot" />
+
+    <ImageView
+        android:id="@+id/widget_item_dot_3"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:layout_marginStart="2dp"
+        android:contentDescription="@null"
+        android:src="@drawable/kansuke_widget_dot" />
+
+    <TextView
+        android:id="@+id/widget_item_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:minWidth="42dp"
+        android:maxLines="1"
+        android:textColor="@color/widget_text_subtle"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/widget_item_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/widget_text"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/widget_item_tentative"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/kansuke_widget_tentative"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:text="@string/kansuke_widget_tentative"
+        android:textColor="@color/widget_text_subtle"
+        android:textSize="10sp" />
+</LinearLayout>

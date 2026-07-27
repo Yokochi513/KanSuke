@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Issue #127: ホーム画面ウィジェットの定義。
+
+  updatePeriodMillis は Android が受け付ける最短の 30 分。データ自体はアプリが
+  変更のたびに書き込むので、この定期更新は「日付が変わったら今日／明日の見出しを
+  繰り上げる」ためのもの（KanSukeWidgetFactory は描画時の日付で行を組む）。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/kansuke_widget_description"
+    android:initialLayout="@layout/kansuke_widget"
+    android:minHeight="110dp"
+    android:minWidth="250dp"
+    android:previewImage="@mipmap/ic_launcher"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="2"
+    android:targetCellWidth="4"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

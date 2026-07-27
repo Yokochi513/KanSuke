@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Issue #127: 「今日 7/28(火)」の日付見出し。 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_day_header"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:ellipsize="end"
+    android:maxLines="1"
+    android:paddingTop="6dp"
+    android:paddingBottom="2dp"
+    android:textColor="@color/widget_accent"
+    android:textSize="12sp"
+    android:textStyle="bold" />

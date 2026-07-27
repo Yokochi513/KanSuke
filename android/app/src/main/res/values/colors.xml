@@ -2,4 +2,13 @@
 <resources>
     <!-- 生成り（和紙の地）。Flutter 側 WashiColors.kinari と揃える。 -->
     <color name="washi_base">#F7F3E8</color>
+
+    <!-- Issue #127: ホーム画面ウィジェットの配色。Flutter 側 WashiColors と揃える。 -->
+    <color name="widget_background">#F7F3E8</color>
+    <!-- 墨 -->
+    <color name="widget_text">#23211E</color>
+    <!-- 薄墨 -->
+    <color name="widget_text_subtle">#6E6960</color>
+    <!-- 紺 -->
+    <color name="widget_accent">#1B2B4B</color>
 </resources>

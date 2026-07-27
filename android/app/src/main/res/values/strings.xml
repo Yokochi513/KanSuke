@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Issue #127: ホーム画面ウィジェット。ウィジェット一覧に出る名前と説明。 -->
+    <string name="kansuke_widget_label">KanSuke の予定</string>
+    <string name="kansuke_widget_description">今日と明日の予定をホーム画面に表示します。</string>
+
+    <string name="kansuke_widget_today">今日 %1$s</string>
+    <string name="kansuke_widget_tomorrow">明日 %1$s</string>
+
+    <string name="kansuke_widget_empty">予定はありません</string>
+    <string name="kansuke_widget_open_app">アプリを開くと予定が表示されます</string>
+    <string name="kansuke_widget_signed_out">アプリでサインインしてください</string>
+    <string name="kansuke_widget_update_app">アプリを再起動してください</string>
+    <string name="kansuke_widget_tentative">仮</string>
+</resources>

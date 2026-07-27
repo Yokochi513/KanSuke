@@ -2,4 +2,13 @@
 <resources>
     <!-- 墨。Flutter 側 WashiColors.sumi と揃える。 -->
     <color name="washi_base">#23211E</color>
+
+    <!-- Issue #127: ホーム画面ウィジェットの配色（ダークテーマ）。 -->
+    <color name="widget_background">#23211E</color>
+    <!-- 生成り -->
+    <color name="widget_text">#F7F3E8</color>
+    <!-- 薄鼠 -->
+    <color name="widget_text_subtle">#BDB9AE</color>
+    <!-- 藍白 -->
+    <color name="widget_accent">#9FB2D2</color>
 </resources>

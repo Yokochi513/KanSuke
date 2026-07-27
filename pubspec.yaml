@@ -62,6 +62,7 @@ dependencies:
   # FR-5: Android はフォアグラウンド時に FCM 通知が自動表示されないため、
   # onMessage 受信時にローカル通知として表示する（Issue #147）。
   flutter_local_notifications: ^22.1.0
+  home_widget: ^0.9.3
 
 dev_dependencies:
   flutter_test:

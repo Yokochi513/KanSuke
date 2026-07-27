@@ -10,6 +10,7 @@ import '../features/calendars/presentation/calendar_edit_screen.dart';
 import '../features/calendars/presentation/calendar_management_screen.dart';
 import '../features/events/presentation/day_events_screen.dart';
 import '../features/events/presentation/event_edit_screen.dart';
+import '../features/home_widget/presentation/home_widget_sync.dart';
 import '../features/notifications/application/notification_providers.dart';
 import '../features/invites/presentation/invite_accept_screen.dart';
 import '../features/invites/presentation/invite_link_gate.dart';
@@ -52,8 +53,12 @@ class KanSukeApp extends ConsumerWidget {
       // 画面が縮み、その外周のわずかな隙間に背後が覗くため、そこも和紙で埋める。
       // 招待リンク（FR-9）の受け口も Navigator の外側に置き、どの画面を開いていても
       // リンクを受けられるようにする。
+      // Issue #127: ホーム画面ウィジェットへの書き出しも Navigator の外側に置き、
+      // どの画面を開いていても（サインアウト後も）最新の予定を渡し続ける。
       builder: (context, child) => WashiBackground(
-        child: InviteLinkGate(child: child ?? const SizedBox.shrink()),
+        child: HomeWidgetSync(
+          child: InviteLinkGate(child: child ?? const SizedBox.shrink()),
+        ),
       ),
       // NFR-1: 日付ピッカー等の標準UIが英語表記になる不具合を解消する（Issue #58）。
       localizationsDelegates: const [
