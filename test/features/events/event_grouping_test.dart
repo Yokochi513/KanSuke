@@ -236,4 +236,59 @@ void main() {
 
     expect(groups, hasLength(2));
   });
+
+  group('includesParticipant（Issue #177）', () {
+    test('先頭が他の人の予定でも、自分が参加していれば真', () {
+      // 夏休みを家族で束ねたケース。events は開始日順なので先頭は papa。
+      final group = EventGroup([
+        _event(
+          id: 'a',
+          title: '夏休み',
+          participants: const ['papa'],
+          start: DateTime(2026, 8, 1),
+          end: DateTime(2026, 8, 20),
+        ),
+        _event(
+          id: 'b',
+          title: '夏休み',
+          participants: const ['me'],
+          start: DateTime(2026, 8, 10),
+          end: DateTime(2026, 8, 15),
+        ),
+      ]);
+
+      expect(group.includesParticipant('me'), isTrue);
+      expect(group.includesParticipant('papa'), isTrue);
+      expect(group.includesParticipant('mama'), isFalse);
+    });
+
+    test('uid が null なら偽', () {
+      final group = EventGroup([
+        _event(
+          id: 'a',
+          title: '夏休み',
+          participants: const ['me'],
+          start: DateTime(2026, 8, 1),
+          end: DateTime(2026, 8, 2),
+        ),
+      ]);
+
+      expect(group.includesParticipant(null), isFalse);
+    });
+
+    test('participantIds が空なら creator にフォールバックしない', () {
+      final group = EventGroup([
+        _event(
+          id: 'a',
+          title: '夏休み',
+          creator: 'me',
+          participants: const [],
+          start: DateTime(2026, 8, 1),
+          end: DateTime(2026, 8, 2),
+        ),
+      ]);
+
+      expect(group.includesParticipant('me'), isFalse);
+    });
+  });
 }
