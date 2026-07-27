@@ -25,6 +25,7 @@ import '../../events/presentation/member_filter_button.dart';
 import '../../settings/application/event_merge_provider.dart';
 import '../../settings/application/multi_member_display_provider.dart';
 import '../../users/application/user_providers.dart';
+import '../application/week_lane_layout.dart';
 
 /// カレンダー月表示（FR-4）。
 ///
@@ -505,10 +506,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       final weekEnd = week.add(const Duration(days: 6));
       final weekIndex = week.difference(firstVisibleDay).inDays ~/ 7;
 
-      // 週内で区間グラフの貪欲彩色を行い、重ならないグループ同士でレーンを
-      // 使い回す。開始日が早い順、次いで表示優先度順に詰めることで、
-      // 同日に複数の予定がある場合の見た目の順序も既存挙動を保つ。
-      // グループの表示優先度は代表（先頭）予定で判定する。
+      // 週内の表示優先度を決める。開始日が早い順、次いで表示優先度順に並べる
+      // ことで、同日に複数の予定がある場合の見た目の順序を保つ。ここでの表示
+      // 優先度は代表（先頭）予定で判定する。
       final weekGroups = weekEntry.value.toList()
         ..sort((a, b) {
           final aStart = clippedRanges[a]!.start.isBefore(week)
@@ -526,19 +526,32 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           );
         });
 
-      final laneEndDay = <int, DateTime>{};
-      final laneByGroup = <EventGroup, int>{};
-      var laneCount = 0;
+      // 各グループのこの週での区間（週境界でクリップした日と列）を求める。
+      final weekSegments =
+          <({EventGroup group, DateTime start, DateTime end})>[];
       for (final group in weekGroups) {
         final r = clippedRanges[group]!;
-        final start = r.start.isBefore(week) ? week : r.start;
-        final end = r.end.isAfter(weekEnd) ? weekEnd : r.end;
-        var lane = 0;
-        while (laneEndDay[lane] != null && !laneEndDay[lane]!.isBefore(start)) {
-          lane++;
-        }
-        laneEndDay[lane] = end;
-        laneByGroup[group] = lane;
+        weekSegments.add((
+          group: group,
+          start: r.start.isBefore(week) ? week : r.start,
+          end: r.end.isAfter(weekEnd) ? weekEnd : r.end,
+        ));
+      }
+
+      // Issue #177: レーン割り当ては「自分が参加する予定 → 上の表示優先度」順。
+      // 夏休みのような長期予定に押し下げられて「+N」に隠れるのを防ぐ
+      // （FR-1 / FR-2）。束ねたグループは 1 件でも自分の予定を含めば優先する。
+      final lanes = assignWeekLanes([
+        for (final segment in weekSegments)
+          WeekLaneItem(
+            startCol: segment.start.weekday % 7,
+            endCol: segment.end.weekday % 7,
+            isMine: segment.group.includesParticipant(currentUid),
+          ),
+      ]);
+
+      var laneCount = 0;
+      for (final lane in lanes) {
         if (lane + 1 > laneCount) laneCount = lane + 1;
       }
 
@@ -558,13 +571,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       final showOverflowMarkers = maxVisibleLanes < capacity;
 
       final hiddenPerCol = List<int>.filled(7, 0);
-      for (final group in weekGroups) {
+      for (var i = 0; i < weekSegments.length; i++) {
+        final group = weekSegments[i].group;
         final r = clippedRanges[group]!;
-        final segStart = r.start.isBefore(week) ? week : r.start;
-        final segEnd = r.end.isAfter(weekEnd) ? weekEnd : r.end;
+        final segStart = weekSegments[i].start;
+        final segEnd = weekSegments[i].end;
         final startCol = segStart.weekday % 7;
         final endCol = segEnd.weekday % 7;
-        final lane = laneByGroup[group]!;
+        final lane = lanes[i];
 
         if (lane < maxVisibleLanes) {
           bars.add(
