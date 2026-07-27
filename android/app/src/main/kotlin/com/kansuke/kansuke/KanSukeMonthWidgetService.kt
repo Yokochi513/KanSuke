@@ -1,11 +1,11 @@
 package com.kansuke.kansuke
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
-import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -22,7 +22,14 @@ import org.json.JSONObject
  */
 class KanSukeMonthWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory =
-        KanSukeMonthWidgetFactory(applicationContext)
+        KanSukeMonthWidgetFactory(
+            applicationContext,
+            // マスの高さを実サイズから決めるため、どのウィジェットぶんかを覚えておく。
+            intent.getIntExtra(
+                AppWidgetManager.EXTRA_APPWIDGET_ID,
+                AppWidgetManager.INVALID_APPWIDGET_ID,
+            ),
+        )
 }
 
 /** マスに積む予定 1 件。 */
@@ -40,15 +47,34 @@ private data class MonthCell(
     val total: Int,
 )
 
-class KanSukeMonthWidgetFactory(private val context: Context) :
-    RemoteViewsService.RemoteViewsFactory {
+class KanSukeMonthWidgetFactory(
+    private val context: Context,
+    private val appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID,
+) : RemoteViewsService.RemoteViewsFactory {
 
     private var cells: List<MonthCell> = emptyList()
+
+    /**
+     * マス 1 つの高さ（px）。
+     *
+     * GridView は行の高さを引き伸ばさないので、何もしないとマスはレイアウトの
+     * minHeight のまま上に詰まり、ウィジェットの下半分が余る。ウィジェットの
+     * 実サイズを週数で割った高さを各マスに与えて、グリッドで埋める。
+     */
+    private var cellHeightPx: Int = 0
+
+    /** 1 マスに置ける帯の本数。マスが高いほど増やして余白を使い切る。 */
+    private var chipSlots: Int = DEFAULT_CHIP_SLOTS
+
+    /** 設定「ウィジェットの外観」。マスの罫線・日付の色に効く。 */
+    private var theme: WidgetTheme = WidgetTheme(context, WidgetAppearance.SYSTEM)
 
     override fun onCreate() = Unit
 
     override fun onDataSetChanged() {
+        theme = KanSukeWidget.readAppearance(context)
         cells = buildCells()
+        measureCells()
     }
 
     override fun onDestroy() {
@@ -60,24 +86,22 @@ class KanSukeMonthWidgetFactory(private val context: Context) :
     override fun getViewAt(position: Int): RemoteViews {
         val cell = cells.getOrNull(position)
         val views = RemoteViews(context.packageName, R.layout.kansuke_month_widget_cell)
+        // マスは使い回されるので、リサイズ後に前の高さが残らないよう毎回入れ直す。
+        views.setInt(R.id.month_cell_root, "setMinimumHeight", cellHeightPx)
         if (cell == null) return views
 
         views.setInt(
             R.id.month_cell_root,
             "setBackgroundResource",
-            if (cell.isToday) R.drawable.kansuke_widget_cell_today else R.drawable.kansuke_widget_cell,
+            if (cell.isToday) theme.cellTodayRes else theme.cellRes,
         )
 
         views.setTextViewText(R.id.month_cell_day, cell.date.dayOfMonth.toString())
         views.setTextColor(R.id.month_cell_day, dayNumberColor(cell))
         // FR-4: 今日は日付を丸で囲む（アプリの月表示と同じ目印）。
         if (cell.isToday) {
-            views.setInt(
-                R.id.month_cell_day,
-                "setBackgroundResource",
-                R.drawable.kansuke_widget_day_today,
-            )
-            views.setTextColor(R.id.month_cell_day, color(R.color.widget_background))
+            views.setInt(R.id.month_cell_day, "setBackgroundResource", theme.dayTodayRes)
+            views.setTextColor(R.id.month_cell_day, theme.background)
         } else {
             views.setInt(R.id.month_cell_day, "setBackgroundResource", 0)
         }
@@ -87,6 +111,7 @@ class KanSukeMonthWidgetFactory(private val context: Context) :
         } else {
             views.setViewVisibility(R.id.month_cell_holiday, View.VISIBLE)
             views.setTextViewText(R.id.month_cell_holiday, cell.holiday)
+            views.setTextColor(R.id.month_cell_holiday, theme.sunday)
         }
 
         bindChips(views, cell)
@@ -104,19 +129,74 @@ class KanSukeMonthWidgetFactory(private val context: Context) :
     override fun hasStableIds(): Boolean = true
 
     /**
+     * ウィジェットの実サイズからマスの高さ（[cellHeightPx]）と帯の本数
+     * （[chipSlots]）を決める。
+     *
+     * 高さはランチャーが AppWidgetOptions で教えてくれる（縦向きの高さは
+     * MAX_HEIGHT 側。MIN_HEIGHT は横向きぶん）。取れないときはレイアウトの
+     * minHeight に任せる＝この対応を入れる前と同じ見た目になる。
+     */
+    private fun measureCells() {
+        val density = context.resources.displayMetrics.density
+        cellHeightPx = (MIN_CELL_DP * density).toInt()
+        chipSlots = DEFAULT_CHIP_SLOTS
+
+        val weeks = cells.size / COLUMNS
+        if (weeks == 0 || appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
+        val options =
+            runCatching { AppWidgetManager.getInstance(context).getAppWidgetOptions(appWidgetId) }
+                .getOrNull() ?: return
+        val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+        if (heightDp <= 0) return
+
+        val gridPx = heightDp * density - chromeHeightPx()
+        val heightPx = (gridPx / weeks).toInt()
+        if (heightPx <= cellHeightPx) return
+        cellHeightPx = heightPx
+        chipSlots = chipSlotsFor(heightPx)
+    }
+
+    /** グリッドの外側（外枠の余白・見出しの月・曜日見出し）が使う高さ（px）。 */
+    private fun chromeHeightPx(): Float {
+        val density = context.resources.displayMetrics.density
+        val title = textHeightPx(TITLE_TEXT_SP)
+        // 見出しの行はアイコン（16dp）と月の文字の高い方で決まる。
+        val header = maxOf(title, HEADER_ICON_DP * density)
+        return CHROME_PADDING_DP * density + header + textHeightPx(DAY_OF_WEEK_TEXT_SP)
+    }
+
+    /** マスの高さに収まる帯の本数。日付の行を除いた残りを帯の高さで割る。 */
+    private fun chipSlotsFor(heightPx: Int): Int {
+        val density = context.resources.displayMetrics.density
+        val chipPx = textHeightPx(CHIP_TEXT_SP) + CHIP_MARGIN_DP * density
+        if (chipPx <= 0f) return DEFAULT_CHIP_SLOTS
+        val dayRowPx = (CELL_PADDING_DP + CELL_DAY_DP) * density
+        return ((heightPx - dayRowPx) / chipPx).toInt().coerceIn(1, CHIP_IDS.size)
+    }
+
+    /** sp 指定の 1 行が占める高さ（px）。端末の文字サイズ設定（fontScale）も見る。 */
+    private fun textHeightPx(sizeSp: Float): Float {
+        val resources = context.resources
+        return sizeSp *
+            resources.displayMetrics.density *
+            resources.configuration.fontScale *
+            LINE_HEIGHT_RATIO
+    }
+
+    /**
      * マスへ予定の帯を積む。
      *
-     * 帯は固定 [CHIP_IDS] 本ぶんしか置けない。収まらない件数がある場合は、
+     * 帯は [chipSlots] 本ぶんしか置けない。収まらない件数がある場合は、
      * **最後の 1 枠を「+N」に明け渡す**（アプリの月表示と同じで、「+N」もレーンを
-     * 1 本使う）。こうするとマスの高さが帯 [CHIP_IDS] 本ぶんで頭打ちになり、
-     * 4x5 のウィジェットに 6 週の月でも収まる。
+     * 1 本使う）。こうするとマスの中身が [chipSlots] 本ぶんで頭打ちになり、
+     * マスの高さ（[cellHeightPx]）からはみ出してグリッドがずれることがない。
      *
      * 並びは Flutter 側で日別一覧と同じ順に整列済みなので、上から順に置くだけでよい。
      */
     private fun bindChips(views: RemoteViews, cell: MonthCell) {
-        val overflows = cell.total > CHIP_IDS.size
+        val overflows = cell.total > chipSlots
         val shown =
-            if (overflows) CHIP_IDS.size - 1 else minOf(cell.chips.size, CHIP_IDS.size)
+            if (overflows) chipSlots - 1 else minOf(cell.chips.size, chipSlots)
         CHIP_IDS.forEachIndexed { index, viewId ->
             val chip = cell.chips.getOrNull(index)
             if (chip == null || index >= shown) {
@@ -130,7 +210,7 @@ class KanSukeMonthWidgetFactory(private val context: Context) :
             // 実行時に着色する手段が API 31 未満に無いため、濃淡で置き換えている）。
             if (chip.tentative) {
                 views.setInt(viewId, "setBackgroundColor", tentativeFill(chip.color))
-                views.setTextColor(viewId, color(R.color.widget_text))
+                views.setTextColor(viewId, theme.text)
             } else {
                 views.setInt(viewId, "setBackgroundColor", chip.color)
                 views.setTextColor(viewId, KanSukeWidget.readableTextColor(chip.color))
@@ -144,6 +224,7 @@ class KanSukeMonthWidgetFactory(private val context: Context) :
                 R.id.month_cell_more,
                 context.getString(R.string.kansuke_month_widget_more, hidden),
             )
+            theme.applyTextColor(views, R.id.month_cell_more, theme.textSubtle)
         } else {
             views.setViewVisibility(R.id.month_cell_more, View.GONE)
         }
@@ -153,17 +234,14 @@ class KanSukeMonthWidgetFactory(private val context: Context) :
     private fun tentativeFill(color: Int): Int = ColorUtils.setAlphaComponent(color, TENTATIVE_ALPHA)
 
     private fun dayNumberColor(cell: MonthCell): Int {
-        if (!cell.inMonth) return color(R.color.widget_outside)
+        if (!cell.inMonth) return theme.outside
         // FR-4: 祝日と日曜は朱、土曜は縹。アプリの月表示と同じ配色。
         return when {
-            cell.holiday != null || cell.date.dayOfWeek == DayOfWeek.SUNDAY ->
-                color(R.color.widget_sunday)
-            cell.date.dayOfWeek == DayOfWeek.SATURDAY -> color(R.color.widget_saturday)
-            else -> color(R.color.widget_text)
+            cell.holiday != null || cell.date.dayOfWeek == DayOfWeek.SUNDAY -> theme.sunday
+            cell.date.dayOfWeek == DayOfWeek.SATURDAY -> theme.saturday
+            else -> theme.text
         }
     }
-
-    private fun color(resId: Int): Int = ContextCompat.getColor(context, resId)
 
     private fun buildCells(): List<MonthCell> {
         val payload = KanSukeWidget.readPayload(context) ?: return emptyList()
@@ -179,12 +257,12 @@ class KanSukeMonthWidgetFactory(private val context: Context) :
             daysByDate[date] = day
         }
 
-        // 複数人の予定の地色。未設定ならテーマ既定（ライト/ダークの色リソース）。
+        // 複数人の予定の地色。未設定なら外観に合わせた既定（ライト/ダーク）。
         val mergedBarColor =
             if (payload.has("mergedBarColor")) {
                 KanSukeWidget.parseColor(payload.optString("mergedBarColor"))
             } else {
-                color(R.color.widget_merged_bar)
+                theme.mergedBar
             }
 
         val today = LocalDate.now()
@@ -239,12 +317,34 @@ class KanSukeMonthWidgetFactory(private val context: Context) :
         /** 仮の予定の地色の不透明度（0〜255）。地紋の上でも「薄い塗り」と分かる濃さ。 */
         const val TENTATIVE_ALPHA = 0x59
 
-        /** 1 マスに置ける帯の本数。あふれたぶんは「+N」になる。 */
+        /** 帯の枠（上限）。実際に使う本数はマスの高さで決まる。あふれたら「+N」。 */
         val CHIP_IDS =
             intArrayOf(
                 R.id.month_cell_chip_1,
                 R.id.month_cell_chip_2,
                 R.id.month_cell_chip_3,
+                R.id.month_cell_chip_4,
+                R.id.month_cell_chip_5,
+                R.id.month_cell_chip_6,
             )
+
+        /** ウィジェットの高さが分からないときの本数（レイアウトの minHeight に収まる数）。 */
+        const val DEFAULT_CHIP_SLOTS = 3
+
+        /** レイアウト（kansuke_month_widget_cell）の minHeight と揃える。 */
+        const val MIN_CELL_DP = 46f
+
+        // 高さの見積もりに使う寸法。レイアウト・スタイル側の値と対応させる。
+        const val CHROME_PADDING_DP = 22f // 外枠 8dp*2 + 見出し 4dp + 曜日 2dp
+        const val HEADER_ICON_DP = 16f
+        const val TITLE_TEXT_SP = 14f
+        const val DAY_OF_WEEK_TEXT_SP = 10f
+        const val CELL_PADDING_DP = 3f // マスの上 1dp + 下 2dp
+        const val CELL_DAY_DP = 14f // 日付の TextView の高さ
+        const val CHIP_TEXT_SP = 8f
+        const val CHIP_MARGIN_DP = 1f
+
+        /** 1 行の TextView が文字サイズの何倍の高さを取るか（行間ぶんの余裕）。 */
+        const val LINE_HEIGHT_RATIO = 1.4f
     }
 }

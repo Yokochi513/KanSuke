@@ -5,13 +5,24 @@
   minWidth / minHeight はランチャーのマス目換算（70dp * n - 30dp）で 4 列 5 行ぶん。
   updatePeriodMillis は Android が受け付ける最短の 30 分で、月・今日の繰り上がりを
   拾うためのもの（グリッドは KanSukeMonthWidgetFactory が描画時の日付で組む）。
+
+  minResizeWidth / minResizeHeight（3 列 3 行ぶん）は必須。これが無いとランチャーは
+  minWidth / minHeight を「縮められない下限」とみなし、ホーム画面のグリッドに 5 行が
+  収まらない端末ではウィジェット一覧からこのウィジェットを丸ごと除外してしまう。
+
+  previewLayout（API 31 以上）はウィジェット一覧に出す見本。本体を出すと一覧では
+  グリッドが空のまま描かれるため、見た目を写した静的なレイアウトを別に持つ。
+  previewImage は API 31 未満向けの控え。
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/kansuke_month_widget_description"
     android:initialLayout="@layout/kansuke_month_widget"
     android:minHeight="320dp"
+    android:minResizeHeight="180dp"
+    android:minResizeWidth="180dp"
     android:minWidth="250dp"
     android:previewImage="@mipmap/ic_launcher"
+    android:previewLayout="@layout/kansuke_month_widget_preview"
     android:resizeMode="horizontal|vertical"
     android:targetCellHeight="5"
     android:targetCellWidth="4"

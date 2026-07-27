@@ -5,6 +5,7 @@ import '../../auth/application/auth_state.dart';
 import '../../calendars/application/calendar_providers.dart';
 import '../../events/application/event_providers.dart';
 import '../../settings/application/merged_bar_color_provider.dart';
+import '../../settings/application/widget_appearance_provider.dart';
 import '../../users/application/user_providers.dart';
 import '../application/home_widget_payload.dart';
 import '../data/home_widget_client.dart';
@@ -57,10 +58,16 @@ class _HomeWidgetSyncState extends ConsumerState<HomeWidgetSync> {
   /// 予定をまだ 1 件も読めていない間は null を返し、前回の内容を残す
   /// （起動直後に一瞬「予定なし」になるのを避ける。オフラインファースト、NFR-1）。
   String? _buildPayload() {
+    // ウィジェットの外観（システム追従／和紙／墨／透過）。サインアウト中の案内文
+    // にも効くので、予定より先に読む。
+    final appearance = ref.watch(resolvedWidgetAppearanceProvider).name;
+
     final currentUid = ref.watch(currentUidProvider);
     if (currentUid == null) {
       // NFR-4: サインアウトしたら、ホーム画面に家族の予定を残さない。
-      return encodeHomeWidgetPayload(buildSignedOutHomeWidgetPayload());
+      return encodeHomeWidgetPayload(
+        buildSignedOutHomeWidgetPayload(appearance: appearance),
+      );
     }
 
     final now = DateTime.now();
@@ -84,6 +91,7 @@ class _HomeWidgetSyncState extends ConsumerState<HomeWidgetSync> {
         // Issue #112: まとめ帯の地色は端末ローカルの設定。未設定ならウィジェット側の
         // テーマ既定色（ライト/ダーク）に任せる。
         mergedBarColor: ref.watch(mergedBarColorProvider).value,
+        appearance: appearance,
       ),
     );
   }

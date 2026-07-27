@@ -43,10 +43,13 @@ String encodeHomeWidgetPayload(Map<String, Object?> payload) =>
 ///
 /// 家族の予定がホーム画面に残り続けないよう、サインアウト時はこれを書き込んで
 /// 内容を消す（NFR-4）。
-Map<String, Object?> buildSignedOutHomeWidgetPayload() {
+/// [appearance] はウィジェットの外観の設定名（Android 側 `WidgetAppearance`）。
+/// サインアウト中も案内文だけは出るので、外観はここでも渡す。
+Map<String, Object?> buildSignedOutHomeWidgetPayload({String? appearance}) {
   return <String, Object?>{
     'version': homeWidgetPayloadVersion,
     'signedIn': false,
+    'appearance': ?appearance,
     'days': <Object?>[],
   };
 }
@@ -95,6 +98,9 @@ DateTime homeWidgetGridStart(DateTime firstOfMonth) {
 /// 設定値）。null ならウィジェット側のテーマ既定色を使う（ライト/ダークのどちらで
 /// 描かれるかは描画時に決まるため、既定色は Android 側の色リソースに持たせる）。
 ///
+/// [appearance] はウィジェットの外観の設定名（`system` / `light` / `dark` /
+/// `transparent`）。null なら Android 側が端末のダークモード設定に従う。
+///
 /// 予定の日時は Firestore から UTC で届くため、日の切り出しと時刻表記は
 /// すべて `toLocal()` してから行う（日別一覧の `_scheduleLabel` と同じ扱い）。
 Map<String, Object?> buildHomeWidgetPayload({
@@ -103,6 +109,7 @@ Map<String, Object?> buildHomeWidgetPayload({
   required DateTime now,
   String? currentUid,
   String? mergedBarColor,
+  String? appearance,
 }) {
   final range = homeWidgetDayRange(now);
   final days = <Map<String, Object?>>[];
@@ -137,6 +144,7 @@ Map<String, Object?> buildHomeWidgetPayload({
     'version': homeWidgetPayloadVersion,
     'signedIn': true,
     'mergedBarColor': ?mergedBarColor,
+    'appearance': ?appearance,
     'days': days,
   };
 }

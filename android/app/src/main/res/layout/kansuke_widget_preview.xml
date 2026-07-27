@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Issue #127: 今日・明日ウィジェットのプレビュー（ウィジェット一覧に出す見本）。
+
+  一覧のプレビューは RemoteViewsService に繋がらないため、本体
+  （kansuke_widget）をそのまま出すと ListView が空のまま描かれる。そこで見た目
+  だけを写した静的なレイアウトを別に用意する（`previewLayout`、API 31 以上）。
+  本体のレイアウト・スタイルを変えたら、こちらも合わせること。
+
+  日付は出さない。プレビューは実データに繋がらないため、日付を書くと必ず嘘になる。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/kansuke_widget_background"
+    android:orientation="vertical"
+    android:padding="12dp"
+    tools:ignore="HardcodedText">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="6dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:contentDescription="@null"
+            android:src="@mipmap/ic_launcher" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/kansuke_widget_label"
+            android:textColor="@color/widget_text_subtle"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <TextView
+        style="@style/KanSukeWidgetPreviewDayHeader"
+        android:text="今日" />
+
+    <LinearLayout style="@style/KanSukeWidgetPreviewItem">
+
+        <ImageView
+            style="@style/KanSukeWidgetPreviewDot"
+            android:tint="@color/widget_preview_member_1" />
+
+        <TextView
+            style="@style/KanSukeWidgetPreviewTime"
+            android:text="09:00" />
+
+        <TextView
+            style="@style/KanSukeWidgetPreviewTitle"
+            android:text="打ち合わせ" />
+    </LinearLayout>
+
+    <LinearLayout style="@style/KanSukeWidgetPreviewItem">
+
+        <ImageView
+            style="@style/KanSukeWidgetPreviewDot"
+            android:tint="@color/widget_preview_member_2" />
+
+        <TextView
+            style="@style/KanSukeWidgetPreviewTime"
+            android:text="終日" />
+
+        <TextView
+            style="@style/KanSukeWidgetPreviewTitle"
+            android:text="遠足" />
+
+        <!-- FR-3: 仮の予定は「仮」バッジで区別する。 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/kansuke_widget_tentative"
+            android:paddingStart="3dp"
+            android:paddingEnd="3dp"
+            android:text="@string/kansuke_widget_tentative"
+            android:textColor="@color/widget_text_subtle"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <TextView
+        style="@style/KanSukeWidgetPreviewDayHeader"
+        android:text="明日" />
+
+    <LinearLayout style="@style/KanSukeWidgetPreviewItem">
+
+        <ImageView
+            style="@style/KanSukeWidgetPreviewDot"
+            android:tint="@color/widget_preview_member_3" />
+
+        <TextView
+            style="@style/KanSukeWidgetPreviewTime"
+            android:text="10:30" />
+
+        <TextView
+            style="@style/KanSukeWidgetPreviewTitle"
+            android:text="通院" />
+    </LinearLayout>
+</LinearLayout>

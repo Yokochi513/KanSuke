@@ -66,6 +66,7 @@ void main() {
     Map<String, User> membersById = const {},
     String? currentUid,
     String? mergedBarColor,
+    String? appearance,
   }) {
     return buildHomeWidgetPayload(
       events: events,
@@ -73,6 +74,7 @@ void main() {
       now: now,
       currentUid: currentUid,
       mergedBarColor: mergedBarColor,
+      appearance: appearance,
     );
   }
 
@@ -162,6 +164,14 @@ void main() {
         '#F1E2BD',
       );
       expect(build(events: const []).containsKey('mergedBarColor'), isFalse);
+    });
+
+    test('ウィジェットの外観は、設定されているときだけ載せる', () {
+      expect(
+        build(events: const [], appearance: 'transparent')['appearance'],
+        'transparent',
+      );
+      expect(build(events: const []).containsKey('appearance'), isFalse);
     });
 
     test('予定はその日の枠にだけ入る', () {
@@ -336,6 +346,17 @@ void main() {
       expect(payload['signedIn'], isFalse);
       expect(payload['days'], isEmpty);
       expect(payload['version'], homeWidgetPayloadVersion);
+    });
+
+    test('サインアウト中の案内文にも外観を効かせる', () {
+      expect(
+        buildSignedOutHomeWidgetPayload(appearance: 'dark')['appearance'],
+        'dark',
+      );
+      expect(
+        buildSignedOutHomeWidgetPayload().containsKey('appearance'),
+        isFalse,
+      );
     });
   });
 

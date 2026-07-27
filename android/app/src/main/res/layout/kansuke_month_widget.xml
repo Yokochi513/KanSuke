@@ -5,6 +5,7 @@
   よらず固定なので、GridView の外に静的に置く（アダプタの行数を減らす）。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/month_widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/kansuke_widget_background"
@@ -45,32 +46,43 @@
         android:orientation="horizontal"
         android:paddingBottom="2dp">
 
+        <!--
+          id は「外観」をライト/ダークに固定したときに色を差し替えるために要る
+          （KanSukeMonthWidgetProvider）。日〜土の並び順で参照する。
+        -->
         <TextView
+            android:id="@+id/month_widget_dow_0"
             style="@style/KanSukeWidgetDayOfWeek"
             android:text="@string/kansuke_widget_sunday"
             android:textColor="@color/widget_sunday" />
 
         <TextView
+            android:id="@+id/month_widget_dow_1"
             style="@style/KanSukeWidgetDayOfWeek"
             android:text="@string/kansuke_widget_monday" />
 
         <TextView
+            android:id="@+id/month_widget_dow_2"
             style="@style/KanSukeWidgetDayOfWeek"
             android:text="@string/kansuke_widget_tuesday" />
 
         <TextView
+            android:id="@+id/month_widget_dow_3"
             style="@style/KanSukeWidgetDayOfWeek"
             android:text="@string/kansuke_widget_wednesday" />
 
         <TextView
+            android:id="@+id/month_widget_dow_4"
             style="@style/KanSukeWidgetDayOfWeek"
             android:text="@string/kansuke_widget_thursday" />
 
         <TextView
+            android:id="@+id/month_widget_dow_5"
             style="@style/KanSukeWidgetDayOfWeek"
             android:text="@string/kansuke_widget_friday" />
 
         <TextView
+            android:id="@+id/month_widget_dow_6"
             style="@style/KanSukeWidgetDayOfWeek"
             android:text="@string/kansuke_widget_saturday"
             android:textColor="@color/widget_saturday" />

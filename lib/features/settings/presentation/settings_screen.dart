@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,9 +17,14 @@ import '../application/merged_bar_color_provider.dart';
 import '../application/multi_member_display_provider.dart';
 import '../application/notification_permission.dart';
 import '../application/theme_mode_provider.dart';
+import '../application/widget_appearance_provider.dart';
 
 /// フィードバック用 Google フォームの URL（tools/feedback-to-issue 参照）。
 const _feedbackFormUrl = 'https://forms.gle/4h35EcT2Deqq8FsM6';
+
+/// ホーム画面ウィジェットを置ける環境か（`homeWidgetClientProvider` と同じ判定）。
+bool get _supportsHomeWidget =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
 /// 設定画面（FR-2 / FR-5 / NFR-4、基本設計 §6.1・§2.2）。
 ///
@@ -41,6 +47,12 @@ class SettingsScreen extends ConsumerWidget {
           const _SectionHeader('表示テーマ'),
           const _ThemeModeSection(),
           const Divider(),
+          // ホーム画面ウィジェットは Android のみ（Issue #127。iOS は別 Issue）。
+          if (_supportsHomeWidget) ...[
+            const _SectionHeader('ウィジェットの外観'),
+            const _WidgetAppearanceSection(),
+            const Divider(),
+          ],
           const _SectionHeader('通知'),
           const _NotificationSection(),
           const Divider(),
@@ -491,6 +503,57 @@ class _ThemeModeSection extends ConsumerWidget {
           const SizedBox(height: 8),
           Text(
             '「自動」は端末のダークモード設定に従います。',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ホーム画面ウィジェットの地の色を「自動（端末設定に従う）／和紙／墨／透過」から
+/// 選ぶ（Issue #127 フォローアップ）。
+///
+/// アプリ本体の表示テーマ（[_ThemeModeSection]）とは別に持つ。ウィジェットは壁紙の
+/// 上に置かれるため、アプリ内の見た目と合わせたいとは限らないため。
+/// 端末ローカルの設定のため、家族の他のメンバーの表示には影響しない。
+class _WidgetAppearanceSection extends ConsumerWidget {
+  const _WidgetAppearanceSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(resolvedWidgetAppearanceProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<WidgetAppearance>(
+              segments: [
+                for (final appearance in WidgetAppearance.values)
+                  ButtonSegment(
+                    value: appearance,
+                    icon: Icon(appearance.icon),
+                    label: Text(appearance.label),
+                    tooltip: appearance.label,
+                  ),
+              ],
+              selected: {selected},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) => ref
+                  .read(widgetAppearanceProvider.notifier)
+                  .select(selection.single),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'ホーム画面のウィジェットの地の色です。「自動」と「透過」は端末の'
+            'ダークモード設定に従います（「透過」は地を敷かず壁紙を透かします）。',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),

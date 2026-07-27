@@ -5,6 +5,10 @@
   updatePeriodMillis は Android が受け付ける最短の 30 分。データ自体はアプリが
   変更のたびに書き込むので、この定期更新は「日付が変わったら今日／明日の見出しを
   繰り上げる」ためのもの（KanSukeWidgetFactory は描画時の日付で行を組む）。
+
+  previewLayout（API 31 以上）はウィジェット一覧に出す見本。本体を出すと一覧では
+  ListView が空のまま描かれるため、見た目を写した静的なレイアウトを別に持つ。
+  previewImage は API 31 未満向けの控え。
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/kansuke_widget_description"
@@ -12,6 +16,7 @@
     android:minHeight="110dp"
     android:minWidth="250dp"
     android:previewImage="@mipmap/ic_launcher"
+    android:previewLayout="@layout/kansuke_widget_preview"
     android:resizeMode="horizontal|vertical"
     android:targetCellHeight="2"
     android:targetCellWidth="4"

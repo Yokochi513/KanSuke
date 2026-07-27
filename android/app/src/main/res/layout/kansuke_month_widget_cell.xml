@@ -58,8 +58,24 @@
         style="@style/KanSukeWidgetChip" />
 
     <!--
+      4 本目以降はマスが高いときだけ使う枠。実際に何本出すかは
+      KanSukeMonthWidgetFactory がウィジェットの高さから決める。
+    -->
+    <TextView
+        android:id="@+id/month_cell_chip_4"
+        style="@style/KanSukeWidgetChip" />
+
+    <TextView
+        android:id="@+id/month_cell_chip_5"
+        style="@style/KanSukeWidgetChip" />
+
+    <TextView
+        android:id="@+id/month_cell_chip_6"
+        style="@style/KanSukeWidgetChip" />
+
+    <!--
       マスに収まらなかった件数（アプリの月表示の「+N」と同じ）。
-      帯の最後の 1 枠と入れ替わりで出るため、マスの高さは帯 3 本ぶんで頭打ちになる。
+      帯の最後の 1 枠と入れ替わりで出るため、マスの高さは使う枠数ぶんで頭打ちになる。
     -->
     <TextView
         android:id="@+id/month_cell_more"

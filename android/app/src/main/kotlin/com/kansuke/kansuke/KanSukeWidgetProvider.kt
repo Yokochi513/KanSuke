@@ -26,8 +26,14 @@ class KanSukeWidgetProvider : HomeWidgetProvider() {
         appWidgetIds: IntArray,
         widgetData: SharedPreferences,
     ) {
+        // 設定「ウィジェットの外観」（システム追従／ライト／ダーク／透過）。
+        val theme = KanSukeWidget.readAppearance(context)
+
         appWidgetIds.forEach { appWidgetId ->
             val views = RemoteViews(context.packageName, R.layout.kansuke_widget)
+            theme.applyBackground(views, R.id.widget_root)
+            theme.applyTextColor(views, R.id.widget_title, theme.textSubtle)
+            theme.applyTextColor(views, R.id.widget_empty, theme.textSubtle)
 
             val serviceIntent =
                 Intent(context, KanSukeWidgetService::class.java).apply {

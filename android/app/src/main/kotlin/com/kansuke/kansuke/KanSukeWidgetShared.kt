@@ -3,8 +3,11 @@ package com.kansuke.kansuke
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
+import android.widget.RemoteViews
+import androidx.core.content.ContextCompat
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetPlugin
 import org.json.JSONObject
@@ -43,6 +46,15 @@ internal object KanSukeWidget {
             null
         }
     }
+
+    /**
+     * 設定「ウィジェットの外観」。
+     *
+     * 版の確認より前に読む。版が食い違って「アプリを再起動してください」を出す
+     * ときも、選んだ外観で描けるようにするため。
+     */
+    fun readAppearance(context: Context): WidgetTheme =
+        WidgetTheme(context, WidgetAppearance.of(readPayload(context)?.optString("appearance")))
 
     /**
      * コレクション（ListView / GridView）の行タップ用テンプレート。
@@ -94,4 +106,145 @@ internal object KanSukeWidget {
             0.7152 * channel(Color.green(color)) +
             0.0722 * channel(Color.blue(color))
     }
+}
+
+/** 設定「ウィジェットの外観」。Flutter 側 `WidgetAppearance` と名前を揃える。 */
+internal enum class WidgetAppearance(val key: String) {
+    /** 端末のダークモード設定に従う（既定）。 */
+    SYSTEM("system"),
+
+    /** 和紙（ライト）で固定する。 */
+    LIGHT("light"),
+
+    /** 墨（ダーク）で固定する。 */
+    DARK("dark"),
+
+    /** 地を敷かず壁紙を透かす。文字色は端末のダークモード設定に従う。 */
+    TRANSPARENT("transparent");
+
+    companion object {
+        /** 保存済みの文字列を戻す。未保存・未知の値は [SYSTEM]。 */
+        fun of(key: String?): WidgetAppearance = entries.firstOrNull { it.key == key } ?: SYSTEM
+    }
+}
+
+/**
+ * 外観の設定に応じた配色（Issue #127 フォローアップ）。
+ *
+ * RemoteViews のレイアウトとドローアブルはランチャー側のプロセスで解決されるため、
+ * XML に書いた `@color/widget_*`（values-night つき）は**端末のダークモード設定**で
+ * 決まり、アプリの設定では動かせない。そこでライト/ダークに固定するときだけ、色を
+ * この場で決めて RemoteViews へ明示的に流し込み、ドローアブルも固定版へ差し替える。
+ *
+ * 「システム追従」「透過」のときは文字色を触らない（[overrides] が false）。XML の
+ * 既定に任せておけば、端末のダークモードが切り替わった瞬間にランチャー側で追従して
+ * くれるため（明示した色は次の更新まで古いままになる）。
+ */
+internal class WidgetTheme(
+    private val context: Context,
+    val appearance: WidgetAppearance,
+) {
+
+    /** レイアウトに書かれた色を上書きするか。ライト/ダーク固定のときだけ true。 */
+    val overrides: Boolean =
+        appearance == WidgetAppearance.LIGHT || appearance == WidgetAppearance.DARK
+
+    /** ダークの配色で描くか。追従・透過のときは端末のダークモード設定を見る。 */
+    private val dark: Boolean =
+        when (appearance) {
+            WidgetAppearance.LIGHT -> false
+            WidgetAppearance.DARK -> true
+            WidgetAppearance.SYSTEM,
+            WidgetAppearance.TRANSPARENT ->
+                (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                    Configuration.UI_MODE_NIGHT_YES
+        }
+
+    val background: Int
+        get() = color(R.color.widget_background_light, R.color.widget_background_dark)
+
+    val text: Int
+        get() = color(R.color.widget_text_light, R.color.widget_text_dark)
+
+    val textSubtle: Int
+        get() = color(R.color.widget_text_subtle_light, R.color.widget_text_subtle_dark)
+
+    val accent: Int
+        get() = color(R.color.widget_accent_light, R.color.widget_accent_dark)
+
+    val outside: Int
+        get() = color(R.color.widget_outside_light, R.color.widget_outside_dark)
+
+    val sunday: Int
+        get() = color(R.color.widget_sunday_light, R.color.widget_sunday_dark)
+
+    val saturday: Int
+        get() = color(R.color.widget_saturday_light, R.color.widget_saturday_dark)
+
+    val mergedBar: Int
+        get() = color(R.color.widget_merged_bar_light, R.color.widget_merged_bar_dark)
+
+    /** 月表示の 1 マス（罫線）。 */
+    val cellRes: Int
+        get() =
+            pickDrawable(
+                R.drawable.kansuke_widget_cell,
+                R.drawable.kansuke_widget_cell_light,
+                R.drawable.kansuke_widget_cell_dark,
+            )
+
+    /** 今日のマス（罫線＋薄い地）。 */
+    val cellTodayRes: Int
+        get() =
+            pickDrawable(
+                R.drawable.kansuke_widget_cell_today,
+                R.drawable.kansuke_widget_cell_today_light,
+                R.drawable.kansuke_widget_cell_today_dark,
+            )
+
+    /** 今日の日付を囲む丸。 */
+    val dayTodayRes: Int
+        get() =
+            pickDrawable(
+                R.drawable.kansuke_widget_day_today,
+                R.drawable.kansuke_widget_day_today_light,
+                R.drawable.kansuke_widget_day_today_dark,
+            )
+
+    /** 「仮」バッジの枠。 */
+    val tentativeRes: Int
+        get() =
+            pickDrawable(
+                R.drawable.kansuke_widget_tentative,
+                R.drawable.kansuke_widget_tentative_light,
+                R.drawable.kansuke_widget_tentative_dark,
+            )
+
+    /**
+     * 外枠の地を敷く。透過はドローアブルを外して壁紙を見せる。
+     *
+     * 外観を切り替えたときに前の地が残らないよう、どの外観でも必ず設定する。
+     */
+    fun applyBackground(views: RemoteViews, viewId: Int) {
+        val backgroundRes =
+            when (appearance) {
+                WidgetAppearance.TRANSPARENT -> 0
+                WidgetAppearance.LIGHT -> R.drawable.kansuke_widget_background_light
+                WidgetAppearance.DARK -> R.drawable.kansuke_widget_background_dark
+                WidgetAppearance.SYSTEM -> R.drawable.kansuke_widget_background
+            }
+        views.setInt(viewId, "setBackgroundResource", backgroundRes)
+    }
+
+    /** [overrides] のときだけ文字色を差し替える。 */
+    fun applyTextColor(views: RemoteViews, viewId: Int, color: Int) {
+        if (overrides) views.setTextColor(viewId, color)
+    }
+
+    private fun color(lightRes: Int, darkRes: Int): Int =
+        ContextCompat.getColor(context, if (dark) darkRes else lightRes)
+
+    /** 追従・透過は values-night 任せの素のドローアブル、固定なら専用版。 */
+    private fun pickDrawable(systemRes: Int, lightRes: Int, darkRes: Int): Int =
+        if (!overrides) systemRes else if (dark) darkRes else lightRes
 }

@@ -41,10 +41,14 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
 
     private var rows: List<WidgetRow> = emptyList()
 
+    /** 設定「ウィジェットの外観」。行の文字色と「仮」バッジの枠に効く。 */
+    private var theme: WidgetTheme = WidgetTheme(context, WidgetAppearance.SYSTEM)
+
     override fun onCreate() = Unit
 
     override fun onDataSetChanged() {
         rows = buildRows()
+        theme = KanSukeWidget.readAppearance(context)
     }
 
     override fun onDestroy() {
@@ -74,11 +78,13 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
     private fun dayHeaderViews(row: WidgetRow.DayHeader): RemoteViews =
         RemoteViews(context.packageName, R.layout.kansuke_widget_day_header).apply {
             setTextViewText(R.id.widget_day_header, row.label)
+            theme.applyTextColor(this, R.id.widget_day_header, theme.accent)
         }
 
     private fun noteViews(text: String): RemoteViews =
         RemoteViews(context.packageName, R.layout.kansuke_widget_note).apply {
             setTextViewText(R.id.widget_note, text)
+            theme.applyTextColor(this, R.id.widget_note, theme.textSubtle)
         }
 
     private fun entryViews(row: WidgetRow.Entry): RemoteViews {
@@ -95,6 +101,10 @@ class KanSukeWidgetFactory(private val context: Context) : RemoteViewsService.Re
         }
         views.setTextViewText(R.id.widget_item_time, row.time)
         views.setTextViewText(R.id.widget_item_title, row.title)
+        theme.applyTextColor(views, R.id.widget_item_time, theme.textSubtle)
+        theme.applyTextColor(views, R.id.widget_item_title, theme.text)
+        theme.applyTextColor(views, R.id.widget_item_tentative, theme.textSubtle)
+        views.setInt(R.id.widget_item_tentative, "setBackgroundResource", theme.tentativeRes)
         // FR-3: 仮の予定だけ「仮」バッジを出す。
         views.setViewVisibility(
             R.id.widget_item_tentative,

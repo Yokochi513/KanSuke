@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Bundle
 import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetProvider
@@ -35,9 +36,25 @@ class KanSukeMonthWidgetProvider : HomeWidgetProvider() {
                 today.monthValue,
             )
 
+        // 設定「ウィジェットの外観」（システム追従／ライト／ダーク／透過）。
+        val theme = KanSukeWidget.readAppearance(context)
+
         appWidgetIds.forEach { appWidgetId ->
             val views = RemoteViews(context.packageName, R.layout.kansuke_month_widget)
             views.setTextViewText(R.id.month_widget_title, title)
+            theme.applyBackground(views, R.id.month_widget_root)
+            theme.applyTextColor(views, R.id.month_widget_title, theme.text)
+            theme.applyTextColor(views, R.id.month_widget_empty, theme.textSubtle)
+            // 曜日見出しは日曜=朱・土曜=縹、平日は薄墨（レイアウトと同じ配色）。
+            DAY_OF_WEEK_IDS.forEachIndexed { index, viewId ->
+                val color =
+                    when (index) {
+                        0 -> theme.sunday
+                        DAY_OF_WEEK_IDS.lastIndex -> theme.saturday
+                        else -> theme.textSubtle
+                    }
+                theme.applyTextColor(views, viewId, color)
+            }
 
             val serviceIntent =
                 Intent(context, KanSukeMonthWidgetService::class.java).apply {
@@ -60,5 +77,35 @@ class KanSukeMonthWidgetProvider : HomeWidgetProvider() {
             // 保存済みの JSON が差し替わっているので、グリッドの読み直しを促す。
             appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.month_widget_grid)
         }
+    }
+
+    /**
+     * リサイズされたらグリッドを組み直す。
+     *
+     * マスの高さはウィジェットの実サイズから決めている（KanSukeMonthWidgetFactory）ので、
+     * 大きさが変わったら読み直させないと前の高さのまま残る。
+     */
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle,
+    ) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.month_widget_grid)
+    }
+
+    private companion object {
+        /** 曜日見出し（日〜土）。並び順で色を決めるので順序を変えないこと。 */
+        val DAY_OF_WEEK_IDS =
+            intArrayOf(
+                R.id.month_widget_dow_0,
+                R.id.month_widget_dow_1,
+                R.id.month_widget_dow_2,
+                R.id.month_widget_dow_3,
+                R.id.month_widget_dow_4,
+                R.id.month_widget_dow_5,
+                R.id.month_widget_dow_6,
+            )
     }
 }
