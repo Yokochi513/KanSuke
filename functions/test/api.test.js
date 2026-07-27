@@ -158,8 +158,9 @@ function seed() {
       creatorId: "stranger",
       ownerId: "stranger",
     },
+    // e1 は priority キーを持たない（#176 導入前のドキュメント）。
     ...event("e1", {startAt: at("2026-07-14T09:00:00Z")}),
-    ...event("e2", {startAt: at("2026-07-15T09:00:00Z")}),
+    ...event("e2", {startAt: at("2026-07-15T09:00:00Z"), priority: 1}),
     ...event("e3", {startAt: at("2026-07-16T09:00:00Z")}),
     // 期間外（7月）。
     ...event("e-out", {startAt: at("2026-08-01T09:00:00Z")}),
@@ -288,6 +289,15 @@ describe("外部向け読み取り専用 REST API（Issue #103）", function() {
         assert.ok(!("deleted" in event));
         assert.ok(!("updatedBy" in event));
         assert.deepStrictEqual(event.reminderOffsets, {papa: [60]});
+      });
+
+    it("priority は導入前のドキュメントなら既定値 5 を返す（#176）",
+      async function() {
+        const res = await call(seed(), {path: "/v1/events", query: july});
+
+        const [e1, e2] = res.body.events;
+        assert.strictEqual(e1.priority, 5, "キーが無ければ既定値");
+        assert.strictEqual(e2.priority, 1, "設定済みならその値");
       });
 
     it("メンバーでないカレンダーを指定すると 404", async function() {

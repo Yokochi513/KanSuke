@@ -48,6 +48,7 @@ function validEvent(overrides = {}) {
     updatedAt: serverTimestamp(),
     deleted: false,
     calendarId: familyCalendarId,
+    priority: 5,
     recurrenceFrequency: null,
     recurrenceCount: null,
     recurrenceExceptions: [],
@@ -173,6 +174,33 @@ describe("Firestore Security Rules (NFR-4)", () => {
     })));
     await assertFails(setDoc(doc(familyDb, "events/bad-recur"), validEvent({
       recurrenceFrequency: "daily", // 未対応の頻度
+    })));
+  });
+
+  it("優先度は 1〜10 の整数に限る（#176）", async () => {
+    const familyDb = dbFor("family-user");
+
+    await assertSucceeds(setDoc(doc(familyDb, "events/prio-high"), validEvent({
+      priority: 1,
+    })));
+    await assertSucceeds(setDoc(doc(familyDb, "events/prio-low"), validEvent({
+      priority: 10,
+    })));
+    // 導入前のドキュメントを拒否しないよう、キー自体は任意。
+    const withoutPriority = validEvent();
+    delete withoutPriority.priority;
+    await assertSucceeds(
+      setDoc(doc(familyDb, "events/prio-absent"), withoutPriority),
+    );
+
+    await assertFails(setDoc(doc(familyDb, "events/prio-zero"), validEvent({
+      priority: 0,
+    })));
+    await assertFails(setDoc(doc(familyDb, "events/prio-over"), validEvent({
+      priority: 11,
+    })));
+    await assertFails(setDoc(doc(familyDb, "events/prio-string"), validEvent({
+      priority: "1",
     })));
   });
 

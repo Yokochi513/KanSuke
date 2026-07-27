@@ -92,6 +92,9 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
   late TimeOfDay _endTime;
   bool _allDay = false;
   EventType _type = EventType.tentative;
+
+  /// 表示上の優先度（1 が最重要、Issue #176）。
+  int _priority = defaultEventPriority;
   late String _calendarId;
   final Set<String> _participantIds = {};
 
@@ -164,6 +167,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
     _memoController.text = event.memo;
     _allDay = event.allDay;
     _type = event.type;
+    _priority = event.priority;
     _calendarId = event.calendarId;
     _participantIds.addAll(event.participantIds);
     final start = event.startAt.toLocal();
@@ -239,6 +243,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
                   const SizedBox(height: 16),
                   _buildRecurrenceFields(),
                   const SizedBox(height: 16),
+                  _buildPriorityField(),
+                  const SizedBox(height: 16),
                   TextFormField(
                     controller: _memoController,
                     decoration: const InputDecoration(
@@ -279,6 +285,56 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 優先度スライダー（Issue #176、FR-1 / FR-4）。
+  ///
+  /// **左（1）が最重要**。数値が小さいほど重要というのは直感と逆になり得るので、
+  /// つまみの左右に「高」「低」を出して向きを示す。既定は中央の
+  /// [defaultEventPriority] で、そのままなら月表示・日別一覧に目印は出ない。
+  Widget _buildPriorityField() {
+    final theme = Theme.of(context);
+    final isDefault = _priority == defaultEventPriority;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('優先度', style: theme.textTheme.titleSmall),
+            const Spacer(),
+            Text(
+              isDefault ? '$_priority（標準）' : '$_priority',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: isDefault ? FontWeight.normal : FontWeight.bold,
+                color: isDefault ? theme.colorScheme.outline : null,
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Text('高', style: theme.textTheme.bodySmall),
+            Expanded(
+              child: Slider(
+                value: _priority.toDouble(),
+                min: highestEventPriority.toDouble(),
+                max: lowestEventPriority.toDouble(),
+                divisions: lowestEventPriority - highestEventPriority,
+                label: '$_priority',
+                onChanged: (value) => setState(() => _priority = value.round()),
+              ),
+            ),
+            Text('低', style: theme.textTheme.bodySmall),
+          ],
+        ),
+        Text(
+          '数字が小さいほど月表示で上に出ます。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+      ],
     );
   }
 
@@ -812,6 +868,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           updatedBy: uid,
           now: DateTime.now(),
           calendarId: _calendarId,
+          priority: _priority,
           recurrenceFrequency: _recurrenceFrequencyForSave(),
           recurrenceCount: _recurrenceCountForSave(),
         );
@@ -825,6 +882,7 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           allDay: _allDay,
           type: _type,
           calendarId: _calendarId,
+          priority: _priority,
           memo: _memoController.text.trim(),
           reminderOffsets: offsets,
           recurrenceFrequency: _recurrenceFrequencyForSave(),
@@ -956,6 +1014,8 @@ class _EventEditScreenState extends ConsumerState<EventEditScreen> {
           updatedBy: uid,
           now: DateTime.now(),
           calendarId: source.calendarId,
+          // FR-1: コピーは元予定の属性を引き継ぐ（Issue #176 の優先度も含む）。
+          priority: source.priority,
         );
         await repository.create(copy, updatedBy: uid);
       }

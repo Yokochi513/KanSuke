@@ -444,6 +444,78 @@ void main() {
     expect(data['id'], event.id); // 同一ドキュメント
   });
 
+  // Issue #176: 優先度（1 が最重要、既定 5）。
+  testWidgets('新規作成: 優先度は既定 5 で保存する', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    expect(find.text('5（標準）'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, '打ち合わせ');
+    await _tapVisible(tester, find.text('作成'));
+
+    expect((await _events(firestore)).single.data()['priority'], 5);
+  });
+
+  testWidgets('スライダーで優先度を変更して保存する', (tester) async {
+    final firestore = await _seedMember();
+    await _openEditor(
+      tester,
+      firestore,
+      EventEditArgs.create(DateTime(2026, 7, 5)),
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, 'オープンスクール');
+    final slider = find.byType(Slider);
+    await tester.ensureVisible(slider);
+    await tester.pumpAndSettle();
+    // つまみを左端（最重要の 1）へ動かす。
+    await tester.drag(slider, const Offset(-500, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1'), findsOneWidget);
+    await _tapVisible(tester, find.text('作成'));
+
+    expect((await _events(firestore)).single.data()['priority'], 1);
+  });
+
+  testWidgets('既存予定の優先度を初期値に読み込み、変えなければ差分に載せない', (tester) async {
+    final firestore = await _seedMember();
+    final start = DateTime(2026, 7, 5, 9);
+    final event = Event.create(
+      title: 'オープンスクール',
+      creatorId: 'me',
+      participantIds: const ['me'],
+      startAt: start,
+      endAt: start.add(const Duration(hours: 1)),
+      allDay: false,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const {},
+      updatedBy: 'me',
+      now: start,
+      calendarId: testCalendarId,
+      priority: 2,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+
+    await _openEditor(tester, firestore, EventEditArgs.edit(event));
+
+    expect(find.text('2'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, '新タイトル');
+    await _tapVisible(tester, find.text('保存'));
+
+    final data = (await _events(firestore)).single.data();
+    expect(data['title'], '新タイトル');
+    expect(data['priority'], 2, reason: '触っていない優先度は保たれる');
+  });
+
   testWidgets('編集画面は作成者を表示し保存しても変更しない', (tester) async {
     final firestore = await _seedMembers();
     final start = DateTime(2026, 7, 5, 9);
