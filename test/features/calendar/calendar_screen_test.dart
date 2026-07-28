@@ -257,6 +257,117 @@ Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
   return firestore;
 }
 
+/// 週いっぱいの長期予定（他の人）と、その週の 1 日だけの自分の予定を投入する。
+/// Issue #177: 長期予定にレーンを奪われて自分の予定が沈まないことの検証用。
+Future<FakeFirebaseFirestore> _seedLongEventAndOwnEvent() async {
+  final firestore = await _firestoreWithCalendar();
+  for (final (id, name, color) in const [
+    ('me', 'ぱぱ', '#1565C0'),
+    ('mama', 'まま', '#D84315'),
+  ]) {
+    await firestore.collection('users').doc(id).set({
+      'name': name,
+      'email': '$id@example.com',
+      'color': color,
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
+  // 2026/7/5 は日曜、7/11 は土曜。夏休みは週の全列を占める終日予定。
+  final events = [
+    (
+      '夏休み',
+      'mama',
+      DateTime(2026, 7, 5),
+      DateTime(2026, 7, 11),
+      true, // allDay。開始日も allDay も夏休みが勝つ条件をあえて作る。
+    ),
+    ('歯医者', 'me', DateTime(2026, 7, 8, 10), DateTime(2026, 7, 8, 11), false),
+  ];
+  for (final (title, participantId, start, end, allDay) in events) {
+    final event = Event.create(
+      title: title,
+      creatorId: participantId,
+      participantIds: [participantId],
+      startAt: start,
+      endAt: end,
+      allDay: allDay,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const {},
+      updatedBy: participantId,
+      now: start,
+      calendarId: testCalendarId,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+  }
+  return firestore;
+}
+
+/// Issue #176: 自分が参加しない予定でも、優先度を上げれば長期予定より上に
+/// 置かれることの検証用。報告されたケース（親の端末から見た子のオープンスクール）
+/// を再現するため、どちらの予定も 'me' は参加者に含めない。
+Future<FakeFirebaseFirestore> _seedLongEventAndPrioritizedEvent() async {
+  final firestore = await _firestoreWithCalendar();
+  for (final (id, name, color) in const [
+    ('me', 'ぱぱ', '#1565C0'),
+    ('mama', 'まま', '#D84315'),
+    ('kid', 'こども', '#2E7D32'),
+  ]) {
+    await firestore.collection('users').doc(id).set({
+      'name': name,
+      'email': '$id@example.com',
+      'color': color,
+      'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+      'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
+    });
+  }
+  // 2026/7/5 は日曜、7/11 は土曜。夏休みは週の全列を占める終日予定。
+  final events = [
+    (
+      '夏休み',
+      'mama',
+      DateTime(2026, 7, 5),
+      DateTime(2026, 7, 11),
+      true,
+      defaultEventPriority,
+    ),
+    (
+      'オープンスクール',
+      'kid',
+      DateTime(2026, 7, 8, 10),
+      DateTime(2026, 7, 8, 12),
+      false,
+      1,
+    ),
+  ];
+  for (final (title, participantId, start, end, allDay, priority) in events) {
+    final event = Event.create(
+      title: title,
+      creatorId: participantId,
+      participantIds: [participantId],
+      startAt: start,
+      endAt: end,
+      allDay: allDay,
+      type: EventType.confirmed,
+      memo: '',
+      reminderOffsets: const {},
+      updatedBy: participantId,
+      now: start,
+      calendarId: testCalendarId,
+      priority: priority,
+    );
+    await firestore
+        .collection('events')
+        .doc(event.id)
+        .set(event.toFirestore(useServerTimestamp: false));
+  }
+  return firestore;
+}
+
 /// 週（土→日）を跨ぐ期間予定を投入する（Issue #72 の連結表示検証用）。
 Future<FakeFirebaseFirestore> _seedCrossWeekEvent() async {
   final firestore = await _firestoreWithCalendar();
@@ -512,6 +623,43 @@ void main() {
         .toList();
 
     expect(titles.take(2), ['自分の夜予定', '他人の朝予定']);
+  });
+
+  testWidgets('自分の予定は週いっぱいの長期予定より上のレーンに置く（Issue #177）', (tester) async {
+    final firestore = await _seedLongEventAndOwnEvent();
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final titles = tester
+        .widgetList<EventBar>(find.byType(EventBar))
+        .map((bar) => bar.title)
+        .toList();
+
+    // 帯は (週, レーン, 開始列) 順に並ぶ。夏休みは開始列 0（日曜）・歯医者は
+    // 開始列 3（水曜）なので、歯医者が先に来るのは歯医者のレーンが上のときだけ。
+    expect(titles, ['歯医者', '夏休み']);
+  });
+
+  testWidgets('優先度を上げた予定は自分が不参加でも長期予定より上に置く（Issue #176）', (tester) async {
+    final firestore = await _seedLongEventAndPrioritizedEvent();
+
+    await tester.pumpWidget(
+      _wrap(firestore, initialFocusedDay: DateTime(2026, 7, 1)),
+    );
+    await tester.pumpAndSettle();
+
+    final titles = tester
+        .widgetList<EventBar>(find.byType(EventBar))
+        .map((bar) => bar.title)
+        .toList();
+
+    // 帯は (週, レーン, 開始列) 順。夏休みは開始列 0（日曜）なので、オープン
+    // スクール（開始列 3）が先に来るのはレーンが上のときだけ。既定から動かした
+    // 優先度はタイトル先頭に示す（夏休みは既定のままなので目印なし）。
+    expect(titles, ['[1] オープンスクール', '夏休み']);
   });
 
   testWidgets('期間予定は週内で1本の連続バーとして描き、題名を全幅で表示する（Issue #72）', (tester) async {

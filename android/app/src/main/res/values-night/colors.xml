@@ -2,4 +2,20 @@
 <resources>
     <!-- 墨。Flutter 側 WashiColors.sumi と揃える。 -->
     <color name="washi_base">#23211E</color>
+
+    <!--
+      Issue #127: 端末がダークモードのとき、修飾子なしの名前をダークの配色へ
+      差し替える。色の実体は values/colors.xml の *_dark に持たせている
+      （設定でライト/ダークを固定する場合はそちらを直接引く）。
+    -->
+    <color name="widget_background">@color/widget_background_dark</color>
+    <color name="widget_text">@color/widget_text_dark</color>
+    <color name="widget_text_subtle">@color/widget_text_subtle_dark</color>
+    <color name="widget_accent">@color/widget_accent_dark</color>
+    <color name="widget_today">@color/widget_today_dark</color>
+    <color name="widget_grid_line">@color/widget_grid_line_dark</color>
+    <color name="widget_outside">@color/widget_outside_dark</color>
+    <color name="widget_sunday">@color/widget_sunday_dark</color>
+    <color name="widget_saturday">@color/widget_saturday_dark</color>
+    <color name="widget_merged_bar">@color/widget_merged_bar_dark</color>
 </resources>

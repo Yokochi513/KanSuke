@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Issue #127: 今日のマス。罫線は他と同じで、地だけ薄く敷いて位置を示す。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_today" />
+    <stroke
+        android:width="0.5dp"
+        android:color="@color/widget_grid_line" />
+</shape>

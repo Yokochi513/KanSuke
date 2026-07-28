@@ -173,6 +173,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
       "endAt": "2026-07-14T10:00:00Z",
       "allDay": false,
       "type": "confirmed",
+      "priority": 5,
       "memo": "",
       "reminderOffsets": {"AbC123...": [60]},
       "recurrenceFrequency": null,
@@ -187,6 +188,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 - 削除済み（`deleted == true`）の予定は返さない。内部の監査フィールド `deleted` / `updatedBy` も
   レスポンスに含めない。
+- `priority` は表示上の優先度で **1（最重要）〜10**、既定は 5。この項目を導入する前に作られた
+  予定にはフィールドが無いため、その場合は `5` を返す。
 - **繰り返し予定は展開しない**。マスタのドキュメントを 1 件として返し、繰り返しの規則は
   `recurrenceFrequency`（`weekly` / `monthly` / `yearly`）と `recurrenceCount` で表す。
   発生日単位の列挙や ICS 配信は後続 Issue（v1 のスコープ外）。

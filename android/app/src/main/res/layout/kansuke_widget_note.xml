@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Issue #127: 「予定はありません」等の案内行。 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_note"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:ellipsize="end"
+    android:maxLines="1"
+    android:paddingTop="3dp"
+    android:paddingBottom="3dp"
+    android:textColor="@color/widget_text_subtle"
+    android:textSize="12sp" />

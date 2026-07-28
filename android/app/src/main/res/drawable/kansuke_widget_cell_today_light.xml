@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Issue #127: 今日のマス（外観を「light」に固定したとき用）。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_today_light" />
+    <stroke
+        android:width="0.5dp"
+        android:color="@color/widget_grid_line_light" />
+</shape>

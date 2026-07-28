@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Issue #127 / FR-2: 「誰の予定か」を示す識別色のドット。
+  色は参加者ごとに変わるため、白で描いて実行時に setColorFilter で着色する。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FFFFFFFF" />
+</shape>

@@ -34,6 +34,19 @@ enum EventRecurrenceFrequency {
 
 const _unset = Object();
 
+/// 予定の優先度の最も重要な値（Issue #176）。
+const int highestEventPriority = 1;
+
+/// 予定の優先度の最も重要でない値（Issue #176）。
+const int lowestEventPriority = 10;
+
+/// 予定の優先度の既定値（Issue #176）。
+///
+/// 10 段階の中央。既定のままの予定には目印を出さないため、「わざわざ動かした予定
+/// だけが目立つ」状態になる。`priority` キーを持たない導入前のドキュメントも
+/// この値として読むので、既存予定の移行は不要。
+const int defaultEventPriority = 5;
+
 /// 予定データ。FR-1〜FR-3 / FR-5 の永続化単位。
 final class Event {
   Event({
@@ -52,6 +65,7 @@ final class Event {
     required this.updatedAt,
     required this.deleted,
     required this.calendarId,
+    this.priority = defaultEventPriority,
     this.recurrenceFrequency,
     this.recurrenceCount,
     List<DateTime> recurrenceExceptions = const [],
@@ -78,6 +92,7 @@ final class Event {
     required String updatedBy,
     required DateTime now,
     required String calendarId,
+    int priority = defaultEventPriority,
     EventRecurrenceFrequency? recurrenceFrequency,
     int? recurrenceCount,
     Uuid uuid = const Uuid(),
@@ -98,6 +113,7 @@ final class Event {
       updatedAt: now,
       deleted: false,
       calendarId: calendarId,
+      priority: priority,
       recurrenceFrequency: recurrenceFrequency,
       recurrenceCount: recurrenceCount,
     );
@@ -145,6 +161,8 @@ final class Event {
       // フォールバックは、移行スクリプトで全予定に calendarId が実在するように
       // なったため廃止した。
       calendarId: data['calendarId'] as String,
+      // #176: 優先度は導入前のドキュメントには無いため既定値へフォールバックする。
+      priority: _priorityFromFirestore(data['priority']),
       recurrenceFrequency: EventRecurrenceFrequency.fromFirestore(
         data['recurrenceFrequency'] as String?,
       ),
@@ -182,6 +200,14 @@ final class Event {
   final DateTime updatedAt;
   final bool deleted;
   final String calendarId;
+
+  /// 表示上の優先度（[highestEventPriority]〜[lowestEventPriority]、Issue #176）。
+  ///
+  /// **1 が最も重要**で、既定は [defaultEventPriority]。月表示のレーン配置と
+  /// 日別一覧の並びで、値が小さい予定を先に置く（FR-1 / FR-4）。長期予定に
+  /// 単発の重要な予定が押し下げられ「+N」に隠れるのを、閲覧者が誰であっても
+  /// 防ぐための軸（#177 の「自分の予定優先」は閲覧者に依存するため別軸で持つ）。
+  final int priority;
   final EventRecurrenceFrequency? recurrenceFrequency;
   final int? recurrenceCount;
 
@@ -247,6 +273,7 @@ final class Event {
       ),
       'deleted': deleted,
       'calendarId': calendarId,
+      'priority': priority,
       'recurrenceFrequency': recurrenceFrequency?.name,
       'recurrenceCount': recurrenceCount,
       // #86: 例外日・打ち切り日は繰り返しの元ドキュメント側に持つ。
@@ -305,6 +332,7 @@ final class Event {
       };
     }
     if (calendarId != previous.calendarId) data['calendarId'] = calendarId;
+    if (priority != previous.priority) data['priority'] = priority;
     if (recurrenceFrequency != previous.recurrenceFrequency) {
       data['recurrenceFrequency'] = recurrenceFrequency?.name;
     }
@@ -337,6 +365,7 @@ final class Event {
       updatedAt: updatedAt,
       deleted: deleted,
       calendarId: calendarId,
+      priority: priority,
       recurrenceFrequency: recurrenceFrequency,
       recurrenceCount: recurrenceCount,
       recurrenceExceptions: recurrenceExceptions.toList(),
@@ -364,6 +393,7 @@ final class Event {
       updatedAt: updatedAt,
       deleted: deleted,
       calendarId: calendarId,
+      priority: priority,
       recurrenceFrequency: recurrenceFrequency,
       recurrenceCount: recurrenceCount,
       recurrenceExceptions: recurrenceExceptions.toList(),
@@ -387,6 +417,7 @@ final class Event {
     DateTime? updatedAt,
     bool? deleted,
     String? calendarId,
+    int? priority,
     Object? recurrenceFrequency = _unset,
     Object? recurrenceCount = _unset,
     List<DateTime>? recurrenceExceptions,
@@ -408,6 +439,7 @@ final class Event {
       updatedAt: updatedAt ?? this.updatedAt,
       deleted: deleted ?? this.deleted,
       calendarId: calendarId ?? this.calendarId,
+      priority: priority ?? this.priority,
       recurrenceFrequency: identical(recurrenceFrequency, _unset)
           ? this.recurrenceFrequency
           : recurrenceFrequency as EventRecurrenceFrequency?,
@@ -427,6 +459,18 @@ final class Event {
   /// [uid] が自分に設定しているリマインド（開始 n 分前）。
   List<int> reminderOffsetsFor(String uid) =>
       reminderOffsets[uid] ?? const <int>[];
+}
+
+/// Firestore の `priority` を 1〜10 の優先度として読む（Issue #176）。
+///
+/// キー欠落・非数値は [defaultEventPriority] として扱う（導入前のドキュメントを
+/// 読めるようにするためで、移行スクリプトは不要）。Security Rules で範囲を検証して
+/// いるが、旧クライアントや直接書き込みで範囲外が入っても表示が壊れないよう
+/// clamp する。Firestore の number は int 以外の num 実装で届く可能性があるため、
+/// 型変換の境界もここで閉じる。
+int _priorityFromFirestore(Object? value) {
+  if (value is! num) return defaultEventPriority;
+  return value.toInt().clamp(highestEventPriority, lowestEventPriority);
 }
 
 /// Firestore の `reminderOffsets` を `{uid: [分, ...]}` として読む（Issue #14）。

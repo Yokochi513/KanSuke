@@ -53,6 +53,11 @@ service cloud.firestore {
         // participantIds / recurrence 系は導入前のドキュメントには無いため任意。
         // 存在する場合のみ型を検証する（モデルのフォールバックと同じ扱い）。
         && (!('participantIds' in data) || data.participantIds is list)
+        // #176: 優先度は 1（最重要）〜10。導入前のドキュメントには無いため任意
+        // 扱いにし、存在する場合だけ範囲を検証する（モデルは欠落を既定値 5 として
+        // 読むため、レガシー予定の更新を拒否しない）。
+        && (!('priority' in data)
+            || (data.priority is int && data.priority >= 1 && data.priority <= 10))
         && (data.get('recurrenceFrequency', null) == null
             || data.recurrenceFrequency in ['weekly', 'monthly', 'yearly'])
         && (data.get('recurrenceCount', null) == null

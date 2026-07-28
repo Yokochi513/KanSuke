@@ -16,6 +16,13 @@ int compareEventsForDisplay(Event first, Event second, String? currentUid) {
   if (firstIsMine != secondIsMine) {
     return firstIsMine ? -1 : 1;
   }
+  // Issue #176: 優先度は 1 が最重要なので昇順。「自分の予定」の下に置くのは、
+  // #177 で満たした「自分の予定が『+N』に隠れない」を壊さないため。既定値
+  // （defaultEventPriority）同士では従来どおりの並びになる。
+  final priorityComparison = first.priority.compareTo(second.priority);
+  if (priorityComparison != 0) {
+    return priorityComparison;
+  }
   if (first.allDay != second.allDay) {
     return first.allDay ? -1 : 1;
   }

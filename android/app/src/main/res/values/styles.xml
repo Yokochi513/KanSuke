@@ -15,4 +15,116 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">@color/washi_base</item>
     </style>
+
+    <!-- Issue #127: 月表示ウィジェットの曜日見出し（7 列を等幅に割る）。 -->
+    <style name="KanSukeWidgetDayOfWeek">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/widget_text_subtle</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!--
+      Issue #127: 月表示のマスに積む予定の帯。
+
+      地色は参加者ごとに変わるため実行時に setBackgroundColor で塗る。角丸の
+      ドローアブルを実行時に着色する手段（RemoteViews.setColorStateList）は
+      API 31 以降にしか無いため、帯は角のない矩形にしている。
+    -->
+    <style name="KanSukeWidgetChip">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">1dp</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:paddingStart">2dp</item>
+        <item name="android:paddingEnd">2dp</item>
+        <item name="android:textSize">8sp</item>
+    </style>
+
+    <!--
+      Issue #127: ウィジェット一覧のプレビュー（kansuke_widget_preview）専用。
+
+      本体は RemoteViews から実行時に組み立てるため、レイアウトに書けるのは
+      見本だけ。本体（kansuke_widget_item / kansuke_widget_day_header）の寸法と
+      揃えること。
+    -->
+    <style name="KanSukeWidgetPreviewDayHeader">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">2dp</item>
+        <item name="android:textColor">@color/widget_accent</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="KanSukeWidgetPreviewItem">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">3dp</item>
+    </style>
+
+    <style name="KanSukeWidgetPreviewDot">
+        <item name="android:layout_width">8dp</item>
+        <item name="android:layout_height">8dp</item>
+        <item name="android:contentDescription">@null</item>
+        <item name="android:src">@drawable/kansuke_widget_dot</item>
+    </style>
+
+    <style name="KanSukeWidgetPreviewTime">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">6dp</item>
+        <item name="android:minWidth">42dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/widget_text_subtle</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="KanSukeWidgetPreviewTitle">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">6dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/widget_text</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- プレビューのマス（月表示）。本体 kansuke_month_widget_cell と揃える。 -->
+    <style name="KanSukeWidgetPreviewCell">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:background">@drawable/kansuke_widget_cell</item>
+        <item name="android:minHeight">46dp</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingStart">1dp</item>
+        <item name="android:paddingTop">1dp</item>
+        <item name="android:paddingEnd">1dp</item>
+        <item name="android:paddingBottom">2dp</item>
+    </style>
+
+    <!-- プレビューのマスの日付。 -->
+    <style name="KanSukeWidgetPreviewDay">
+        <item name="android:layout_width">16dp</item>
+        <item name="android:layout_height">14dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textSize">10sp</item>
+    </style>
+
+    <!-- プレビューの週（7 マスを等幅に割る）。 -->
+    <style name="KanSukeWidgetPreviewWeek">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+    </style>
 </resources>

@@ -1,0 +1,432 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Issue #127: 月表示ウィジェットのプレビュー（ウィジェット一覧に出す見本）。
+
+  一覧のプレビューは RemoteViewsService に繋がらないため、本体
+  （kansuke_month_widget）をそのまま出すとグリッドが空のまま描かれる。そこで
+  見た目だけを写した静的なレイアウトを別に用意する（`previewLayout`、API 31 以上）。
+  本体のレイアウト・スタイルを変えたら、こちらも合わせること。
+
+  年月は出さない。プレビューは実データに繋がらないため、書くと必ず嘘になる。
+  マスの中身は見本で、日付の並びは「1 日が日曜で 31 日ある月」を採っている。
+
+  このファイルは手で書くには長いので、chore として生成した。マスの内容だけを
+  変えたい場合は、下の並びをそのまま直してよい。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/kansuke_widget_background"
+    android:orientation="vertical"
+    android:padding="8dp"
+    tools:ignore="HardcodedText">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/kansuke_month_widget_label"
+            android:textColor="@color/widget_text"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:contentDescription="@null"
+            android:src="@mipmap/ic_launcher" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingBottom="2dp">
+
+        <TextView
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_sunday"
+            android:textColor="@color/widget_sunday" />
+
+        <TextView
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_monday" />
+
+        <TextView
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_tuesday" />
+
+        <TextView
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_wednesday" />
+
+        <TextView
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_thursday" />
+
+        <TextView
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_friday" />
+
+        <TextView
+            style="@style/KanSukeWidgetDayOfWeek"
+            android:text="@string/kansuke_widget_saturday"
+            android:textColor="@color/widget_saturday" />
+    </LinearLayout>
+
+    <LinearLayout style="@style/KanSukeWidgetPreviewWeek">
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="1"
+                android:textColor="@color/widget_sunday" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="2"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="3"
+                android:textColor="@color/widget_text" />
+
+            <TextView
+                style="@style/KanSukeWidgetChip"
+                android:background="@color/widget_preview_member_1"
+                android:text="会議"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="4"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="5"
+                android:textColor="@color/widget_text" />
+
+            <TextView
+                style="@style/KanSukeWidgetChip"
+                android:background="@color/widget_preview_member_2"
+                android:text="遠足"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="6"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="7"
+                android:textColor="@color/widget_saturday" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/KanSukeWidgetPreviewWeek">
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="8"
+                android:textColor="@color/widget_sunday" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="9"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="10"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="11"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="12"
+                android:textColor="@color/widget_text" />
+
+            <TextView
+                style="@style/KanSukeWidgetChip"
+                android:background="@color/widget_preview_member_3"
+                android:text="通院"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="13"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="14"
+                android:textColor="@color/widget_saturday" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/KanSukeWidgetPreviewWeek">
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="15"
+                android:textColor="@color/widget_sunday" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="16"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/KanSukeWidgetPreviewCell"
+            android:background="@drawable/kansuke_widget_cell_today">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:background="@drawable/kansuke_widget_day_today"
+                android:text="17"
+                android:textColor="@color/widget_background" />
+
+            <TextView
+                style="@style/KanSukeWidgetChip"
+                android:background="@color/widget_preview_member_1"
+                android:text="打合せ"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                style="@style/KanSukeWidgetChip"
+                android:background="@color/widget_preview_member_4"
+                android:text="塾"
+                android:textColor="#000000" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="18"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="19"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="20"
+                android:textColor="@color/widget_text" />
+
+            <TextView
+                style="@style/KanSukeWidgetChip"
+                android:background="@color/widget_preview_member_2"
+                android:text="旅行"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="21"
+                android:textColor="@color/widget_saturday" />
+
+            <TextView
+                style="@style/KanSukeWidgetChip"
+                android:background="@color/widget_preview_member_2"
+                android:text="旅行"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/KanSukeWidgetPreviewWeek">
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="22"
+                android:textColor="@color/widget_sunday" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="23"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="24"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="25"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="26"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="27"
+                android:textColor="@color/widget_text" />
+
+            <TextView
+                style="@style/KanSukeWidgetChip"
+                android:background="@color/widget_preview_member_4"
+                android:text="部活"
+                android:textColor="#000000" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="28"
+                android:textColor="@color/widget_saturday" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout style="@style/KanSukeWidgetPreviewWeek">
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="29"
+                android:textColor="@color/widget_sunday" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="30"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="31"
+                android:textColor="@color/widget_text" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="1"
+                android:textColor="@color/widget_outside" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="2"
+                android:textColor="@color/widget_outside" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="3"
+                android:textColor="@color/widget_outside" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KanSukeWidgetPreviewCell">
+
+            <TextView
+                style="@style/KanSukeWidgetPreviewDay"
+                android:text="4"
+                android:textColor="@color/widget_outside" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

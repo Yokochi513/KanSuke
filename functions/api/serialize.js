@@ -108,6 +108,9 @@ function serializeEvent(id, data) {
     allDay: data.allDay === true,
     type: data.type,
     memo: data.memo || "",
+    // #176: 優先度は 1（最重要）〜10。導入前のドキュメントにはキーが無いため
+    // 既定値 5 にフォールバックする（Event.fromMap と同じ）。
+    priority: typeof data.priority === "number" ? data.priority : 5,
     reminderOffsets: reminderOffsetsOf(data.reminderOffsets),
     recurrenceFrequency: data.recurrenceFrequency || null,
     recurrenceCount:

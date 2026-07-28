@@ -14,6 +14,7 @@ Event _event({
   List<String>? participants,
   EventType type = EventType.confirmed,
   String calendarId = testCalendarId,
+  int priority = defaultEventPriority,
 }) {
   return Event(
     id: id,
@@ -31,6 +32,7 @@ Event _event({
     updatedAt: start,
     deleted: false,
     calendarId: calendarId,
+    priority: priority,
   );
 }
 
@@ -235,5 +237,99 @@ void main() {
     ]);
 
     expect(groups, hasLength(2));
+  });
+
+  group('includesParticipant（Issue #177）', () {
+    test('先頭が他の人の予定でも、自分が参加していれば真', () {
+      // 夏休みを家族で束ねたケース。events は開始日順なので先頭は papa。
+      final group = EventGroup([
+        _event(
+          id: 'a',
+          title: '夏休み',
+          participants: const ['papa'],
+          start: DateTime(2026, 8, 1),
+          end: DateTime(2026, 8, 20),
+        ),
+        _event(
+          id: 'b',
+          title: '夏休み',
+          participants: const ['me'],
+          start: DateTime(2026, 8, 10),
+          end: DateTime(2026, 8, 15),
+        ),
+      ]);
+
+      expect(group.includesParticipant('me'), isTrue);
+      expect(group.includesParticipant('papa'), isTrue);
+      expect(group.includesParticipant('mama'), isFalse);
+    });
+
+    test('uid が null なら偽', () {
+      final group = EventGroup([
+        _event(
+          id: 'a',
+          title: '夏休み',
+          participants: const ['me'],
+          start: DateTime(2026, 8, 1),
+          end: DateTime(2026, 8, 2),
+        ),
+      ]);
+
+      expect(group.includesParticipant(null), isFalse);
+    });
+
+    test('participantIds が空なら creator にフォールバックしない', () {
+      final group = EventGroup([
+        _event(
+          id: 'a',
+          title: '夏休み',
+          creator: 'me',
+          participants: const [],
+          start: DateTime(2026, 8, 1),
+          end: DateTime(2026, 8, 2),
+        ),
+      ]);
+
+      expect(group.includesParticipant('me'), isFalse);
+    });
+  });
+
+  group('priority（Issue #176）', () {
+    test('束ねたグループは最も重要な 1 件の値を採る（先頭要素で判定しない）', () {
+      // events は開始日順。先頭（papa）は既定のままで、後ろの 1 件だけ重要度を
+      // 上げているケース。代表 1 件で判定すると「既定」と誤判定してしまう。
+      final group = EventGroup([
+        _event(
+          id: 'a',
+          title: '旅行',
+          participants: const ['papa'],
+          start: DateTime(2026, 8, 1),
+          end: DateTime(2026, 8, 20),
+        ),
+        _event(
+          id: 'b',
+          title: '旅行',
+          participants: const ['me'],
+          start: DateTime(2026, 8, 10),
+          end: DateTime(2026, 8, 15),
+          priority: 2,
+        ),
+      ]);
+
+      expect(group.priority, 2);
+    });
+
+    test('全件が既定なら既定値', () {
+      final group = EventGroup([
+        _event(
+          id: 'a',
+          title: '夏休み',
+          start: DateTime(2026, 8, 1),
+          end: DateTime(2026, 8, 20),
+        ),
+      ]);
+
+      expect(group.priority, defaultEventPriority);
+    });
   });
 }
