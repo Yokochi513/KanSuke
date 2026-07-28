@@ -178,8 +178,9 @@ class _DayPage extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   final event = orderedEvents[index];
                   return _EventTile(
-                    // #146: 繰り返し予定は同じ id で日ごとに現れるため、発生日まで
-                    // 含めた一意なキーにする（スワイプ削除の [Dismissible] 用）。
+                    // #146: 繰り返し予定は同じ id で日ごとに現れるため、発生日
+                    // まで含めた一意なキーにする（スワイプ削除の
+                    // [Dismissible] がキーの一意性を要求するため）。
                     key: ValueKey(
                       '${event.id}-${event.startAt.microsecondsSinceEpoch}',
                     ),
@@ -264,6 +265,13 @@ class _EventTile extends ConsumerWidget {
     final participantsLabel = _participantsLabel(event);
     final memoPreview = event.memo.trim();
     final calendarLabel = calendarName;
+    // #146: 日画面から直接削除できるのは「自分が参加者の予定」だけにする。
+    // 家庭内では全員が同等に読み書きできる（基本設計 §2.2）が、一覧のワンタップ
+    // 操作で他人の予定まで消せると事故になるため、一覧の導線はここで絞る
+    // （他人の予定を消したいときは従来どおり編集画面から行う）。
+    final currentUid = ref.watch(currentUidProvider);
+    final canDelete =
+        currentUid != null && event.memberIds.contains(currentUid);
     final tile = ListTile(
       leading: _MemberDots(colors: memberColors),
       title: _TitleLine(
@@ -303,18 +311,18 @@ class _EventTile extends ConsumerWidget {
           ],
         ],
       ),
-      trailing: event.isRecurring
-          // #146: 繰り返し予定は行から直接「この日だけ削除」できる導線を出す。
-          // 長押しだけだと気づけないため、末尾に「⋮」を常に見せる。
+      trailing: canDelete
+          // #146: 削除できる予定は行から直接消せる導線を出す。長押しやスワイプ
+          // だけだと気づけないため、末尾に「⋮」を常に見せる。
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 EventTypeBadge(event.type),
                 IconButton(
-                  tooltip: '繰り返し予定の削除',
+                  tooltip: _deleteTooltip,
                   icon: const Icon(Icons.more_vert),
                   visualDensity: VisualDensity.compact,
-                  onPressed: () => _openDeleteMenu(context, ref),
+                  onPressed: () => _startDelete(context, ref),
                 ),
               ],
             )
@@ -324,28 +332,101 @@ class _EventTile extends ConsumerWidget {
         AppRoutes.eventEdit,
         arguments: EventEditArgs.edit(event),
       ),
-      onLongPress: event.isRecurring
-          ? () => _openDeleteMenu(context, ref)
-          : null,
+      onLongPress: canDelete ? () => _startDelete(context, ref) : null,
     );
 
-    if (!event.isRecurring) return tile;
-    // #146: 左スワイプでも同じ削除メニューを開けるようにする（iPhone で使い慣れた
-    // 操作、NFR-1）。スワイプ自体では消さず必ず範囲を選ばせるため
-    // `confirmDismiss` は常に false を返し、行は元の位置へ戻す。削除が成功すれば
-    // Firestore のストリーム更新で一覧から消える（オフラインファースト）。
+    if (!canDelete) return tile;
+    // #146: 左スワイプでも同じ導線を開けるようにする（iPhone で使い慣れた操作、
+    // NFR-1）。スワイプ自体では消さず必ず確認を挟むため `confirmDismiss` は常に
+    // false を返し、行は元の位置へ戻す。削除が成功すれば Firestore のストリーム
+    // 更新で一覧から消える（オフラインファースト）。
     return Dismissible(
       key: ValueKey(
-        'recurring-delete-${event.id}-${event.startAt.microsecondsSinceEpoch}',
+        'delete-${event.id}-${event.startAt.microsecondsSinceEpoch}',
       ),
       direction: DismissDirection.endToStart,
       background: const _SwipeDeleteBackground(),
       confirmDismiss: (_) async {
-        await _openDeleteMenu(context, ref);
+        await _startDelete(context, ref);
         return false;
       },
       child: tile,
     );
+  }
+
+  /// 「⋮」のツールチップ。繰り返し予定は範囲を選ぶので言い分ける。
+  String get _deleteTooltip => event.isRecurring ? '繰り返し予定の削除' : '予定を削除';
+
+  /// 日画面からの削除を開始する（#146）。
+  ///
+  /// 繰り返し予定は削除範囲（この日だけ／以降すべて／すべて）を選ばせ、単発予定は
+  /// 確認だけ挟んでソフト削除する。
+  Future<void> _startDelete(BuildContext context, WidgetRef ref) {
+    return event.isRecurring
+        ? _openDeleteMenu(context, ref)
+        : _confirmDeleteSingle(context, ref);
+  }
+
+  /// 単発予定を日画面から削除する（#146 / FR-1）。
+  ///
+  /// 範囲の選択が無いぶん、確認ダイアログで「何を」消すのかを示す。日をまたぐ
+  /// 予定は表示中の日だけでなく予定全体が消えるため、期間も併せて示す。
+  Future<void> _confirmDeleteSingle(BuildContext context, WidgetRef ref) async {
+    // await をまたいで context を使わないよう、必要なものを先に読む。
+    final messenger = ScaffoldMessenger.of(context);
+    final uid = ref.read(currentUidProvider);
+    final repository = ref.read(eventRepositoryProvider);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('予定を削除しますか？'),
+        content: Text('「${event.title}」${_deleteTargetPeriodLabel()}を削除します。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    if (uid == null) {
+      messenger.showSnackBar(const SnackBar(content: Text('サインインが必要です')));
+      return;
+    }
+
+    try {
+      await repository.softDelete(event.id, updatedBy: uid);
+      messenger.showSnackBar(
+        SnackBar(content: Text('「${event.title}」を削除しました')),
+      );
+    } on Object catch (error, stackTrace) {
+      AppLogger.error(
+        'Failed to delete event ${event.id}',
+        tag: 'DayEventsScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      messenger.showSnackBar(
+        const SnackBar(content: Text('削除に失敗しました。通信環境を確認してください。')),
+      );
+    }
+  }
+
+  /// 削除確認に出す対象期間。日をまたぐ予定は「表示中の日だけが消える」と
+  /// 誤解されないよう、開始日〜終了日を示す。
+  String _deleteTargetPeriodLabel() {
+    final start = event.startAt.toLocal();
+    final end = event.endAt.toLocal();
+    final startLabel = _formatFullDateWithWeekday(start);
+    if (_isSameDate(start, end)) return startLabel;
+    return '$startLabel〜${_formatMonthDayWithWeekday(end)}';
   }
 
   /// 繰り返し予定の削除範囲メニューを開き、選ばれた範囲で削除する（#146 / FR-1）。

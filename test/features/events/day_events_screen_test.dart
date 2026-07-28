@@ -742,15 +742,6 @@ void main() {
       expect(find.text('繰り返し予定の削除'), findsOneWidget);
     });
 
-    testWidgets('繰り返しでない予定には削除導線を出さない', (tester) async {
-      final firestore = await _seed();
-      await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
-      await tester.pumpAndSettle();
-
-      expect(find.byTooltip('繰り返し予定の削除'), findsNothing);
-      expect(find.byType(Dismissible), findsNothing);
-    });
-
     testWidgets('メニューを開いてもタップでの編集画面遷移は妨げない', (tester) async {
       final (firestore, _) = await _seedWeeklyRecurring();
       final sink = <Object?>[];
@@ -762,6 +753,126 @@ void main() {
 
       expect(find.text('EDIT_SCREEN'), findsOneWidget);
       expect((sink.single as EventEditArgs).isCreate, isFalse);
+    });
+  });
+
+  group('自分が参加者の予定を日画面から削除する（Issue #146）', () {
+    testWidgets('単発予定も「⋮」から確認のうえ削除できる', (tester) async {
+      final firestore = await _seed();
+      await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('予定を削除'));
+      await tester.pumpAndSettle();
+
+      // 何を消すのかを確認ダイアログで示す。
+      expect(find.text('予定を削除しますか？'), findsOneWidget);
+      expect(find.text('「打ち合わせ」2026年7月5日（日）を削除します。'), findsOneWidget);
+
+      await tester.tap(find.text('削除'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('打ち合わせ'), findsNothing);
+      expect(find.text('予定はありません'), findsOneWidget);
+      expect(find.text('「打ち合わせ」を削除しました'), findsOneWidget);
+
+      final events = await firestore.collection('events').get();
+      expect(events.docs.single.data()['deleted'], isTrue);
+    });
+
+    testWidgets('単発予定も左スワイプ・長押しから削除できる', (tester) async {
+      final firestore = await _seed();
+      await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('打ち合わせ'));
+      await tester.pumpAndSettle();
+      expect(find.text('予定を削除しますか？'), findsOneWidget);
+      await tester.tap(find.text('キャンセル'));
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.text('打ち合わせ'), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('予定を削除しますか？'), findsOneWidget);
+      await tester.tap(find.text('削除'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('予定はありません'), findsOneWidget);
+    });
+
+    testWidgets('確認をキャンセルすると削除されない', (tester) async {
+      final firestore = await _seed();
+      await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('予定を削除'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('キャンセル'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('打ち合わせ'), findsOneWidget);
+      final events = await firestore.collection('events').get();
+      expect(events.docs.single.data()['deleted'], isFalse);
+    });
+
+    testWidgets('日をまたぐ予定は確認に期間全体を示す', (tester) async {
+      final firestore = await _seed(withEvent: false);
+      final start = DateTime(2026, 7, 5, 9);
+      final event = Event.create(
+        title: 'テスト週間',
+        creatorId: 'me',
+        participantIds: const ['me'],
+        startAt: start,
+        endAt: DateTime(2026, 7, 7, 10),
+        allDay: false,
+        type: EventType.confirmed,
+        memo: '',
+        reminderOffsets: const {},
+        updatedBy: 'me',
+        now: start,
+        calendarId: testCalendarId,
+      );
+      await firestore
+          .collection('events')
+          .doc(event.id)
+          .set(event.toFirestore(useServerTimestamp: false));
+
+      // 途中の日（7/6）から消しても、予定全体が消えることが分かる文言にする。
+      await tester.pumpWidget(
+        _wrap(firestore, editArgsSink: [], selectedDay: DateTime(2026, 7, 6)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('予定を削除'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('「テスト週間」2026年7月5日（日）〜7月7日（火）を削除します。'), findsOneWidget);
+    });
+
+    testWidgets('自分が参加者でない予定には削除導線を出さない', (tester) async {
+      final firestore = await _seed(
+        withParticipant: true,
+        participantIds: const ['other'],
+      );
+      await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+      await tester.pumpAndSettle();
+
+      expect(find.text('打ち合わせ'), findsOneWidget);
+      expect(find.byTooltip('予定を削除'), findsNothing);
+      expect(find.byTooltip('繰り返し予定の削除'), findsNothing);
+      expect(find.byType(Dismissible), findsNothing);
+    });
+
+    testWidgets('自分の予定にだけ削除導線が出る（他人の予定と混在しても）', (tester) async {
+      final firestore = await _seedCurrentUserPriority();
+      await tester.pumpWidget(_wrap(firestore, editArgsSink: []));
+      await tester.pumpAndSettle();
+
+      expect(find.text('自分の夜予定'), findsOneWidget);
+      expect(find.text('他人の朝予定'), findsOneWidget);
+      // 2 件並んでいても、削除できるのは自分が参加者の 1 件だけ。
+      expect(find.byTooltip('予定を削除'), findsOneWidget);
+      expect(find.byType(Dismissible), findsOneWidget);
     });
   });
 
