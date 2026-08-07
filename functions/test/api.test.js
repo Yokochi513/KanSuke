@@ -139,7 +139,7 @@ function seed() {
   });
 
   return fakeDb({
-    "users/papa": {name: "パパ", email: "papa@example.com", color: "#FF0000"},
+    "users/papa": {name: "パパ", color: "#FF0000"},
     "calendars/family": {
       name: "わが家",
       memberIds: ["papa", "mama"],
