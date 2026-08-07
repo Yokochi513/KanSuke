@@ -3,11 +3,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firestore_serialization.dart';
 
 /// 家族メンバー。識別色は FR-2 の予定表示に利用する。
+///
+/// Issue #183: メールアドレスは持たない。`users/{uid}` は uid を知っている
+/// 認証済みユーザーなら誰でも読めるため（NFR-4、列挙のみ禁止）、表示に不要な
+/// 個人情報を載せない方針にした。メールの正典は Firebase Auth 側にある。
 final class User {
   const User({
     required this.id,
     required this.name,
-    required this.email,
     required this.color,
     required this.createdAt,
     required this.updatedAt,
@@ -25,7 +28,6 @@ final class User {
     return User(
       id: id,
       name: data['name'] as String,
-      email: data['email'] as String,
       color: data['color'] as String,
       createdAt: dateTimeFromFirestore(data['createdAt'], 'createdAt'),
       // updatedAt は serverTimestamp() 書き込みのため、サーバー確定前は
@@ -41,7 +43,6 @@ final class User {
 
   final String id;
   final String name;
-  final String email;
   final String color;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -49,7 +50,6 @@ final class User {
   FirestoreData toFirestore({bool useServerTimestamp = true}) {
     return {
       'name': name,
-      'email': email,
       'color': color,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': updatedAtForFirestore(
@@ -62,7 +62,6 @@ final class User {
   User copyWith({
     String? id,
     String? name,
-    String? email,
     String? color,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -70,7 +69,6 @@ final class User {
     return User(
       id: id ?? this.id,
       name: name ?? this.name,
-      email: email ?? this.email,
       color: color ?? this.color,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

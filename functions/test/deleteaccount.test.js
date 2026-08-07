@@ -123,7 +123,7 @@ async function assertHttpsError(code, run) {
 // 1 台・本人のドキュメント、を持つ最小の退会前状態。
 function soloSeed() {
   return {
-    "users/me": {name: "ぱぱ", email: "me@example.com", color: "#1565C0"},
+    "users/me": {name: "ぱぱ", color: "#1565C0"},
     "users/me/devices/token-a": {platform: "ios"},
     "calendars/solo": {
       name: "ぱぱのカレンダー",

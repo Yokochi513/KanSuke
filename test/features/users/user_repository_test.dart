@@ -15,7 +15,6 @@ void main() {
   Future<void> seedUser(String uid, String name, String color) {
     return firestore.collection('users').doc(uid).set({
       'name': name,
-      'email': '$uid@example.com',
       'color': color,
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),

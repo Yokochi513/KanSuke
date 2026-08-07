@@ -6,7 +6,8 @@ const {buildInitialProfile, personalCalendarName} = require("./signup");
  * `beforeUserCreated` の本体（基本設計 §2.1）。
  *
  * サインアップを拒否せず、新規アカウントの初期データを作る:
- * - `users/{uid}`: ID プロバイダの表示名・メールと、初期の識別色（FR-2）。
+ * - `users/{uid}`: ID プロバイダ由来の表示名と、初期の識別色（FR-2）。
+ *   メールアドレスは保存しない（Issue #183、`buildInitialProfile` を参照）。
  * - `calendars/{uuid}`: 本人だけが参加する個人カレンダー（FR-8）。
  *   ドキュメント ID は UUID（アプリのカレンダー作成と同じ規約）。
  *   本人が作成者かつオーナー（`ownerId`、Issue #89）になる。
@@ -21,7 +22,7 @@ const {buildInitialProfile, personalCalendarName} = require("./signup");
  * @param {function(): *} serverTimestamp
  * @param {function(): string} newId
  * @return {Promise<{uid: string, calendarId: string,
- *   profile: {name: string, email: string, color: string}}>}
+ *   profile: {name: string, color: string}}>}
  */
 async function handleBeforeCreate(event, db, serverTimestamp, newId) {
   const data = (event && event.data) || {};

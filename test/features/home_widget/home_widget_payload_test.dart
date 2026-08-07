@@ -38,7 +38,6 @@ User _user(String id, String color) {
   return User(
     id: id,
     name: id,
-    email: '$id@example.com',
     color: color,
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
