@@ -1,0 +1,122 @@
+name: Upload IPA to TestFlight
+
+# Android と同じリリース契機。再実行時も pubspec.yaml のビルド番号を使用する。
+on:
+  push:
+    branches: [main]
+    paths:
+      - pubspec.yaml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upload-testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 署名鍵・Firebase 設定・API キーを復元
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          for name in IOS_DISTRIBUTION_CERTIFICATE_BASE64 IOS_PROVISIONING_PROFILE_BASE64 IOS_GOOGLE_SERVICE_INFO_PLIST APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID APP_STORE_CONNECT_API_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::GitHub Secret $name is required"
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/distribution.p12"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          printf '%s' "$IOS_GOOGLE_SERVICE_INFO_PLIST" > ios/Runner/GoogleService-Info.plist
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          printf '%s' "$APP_STORE_CONNECT_API_PRIVATE_KEY" > "$RUNNER_TEMP/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          keychain_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$keychain_password"
+          security create-keychain -p "$keychain_password" "$RUNNER_TEMP/ios-release.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/ios-release.keychain-db"
+          security unlock-keychain -p "$keychain_password" "$RUNNER_TEMP/ios-release.keychain-db"
+          security import "$RUNNER_TEMP/distribution.p12" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/ios-release.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$keychain_password" "$RUNNER_TEMP/ios-release.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/ios-release.keychain-db" "$HOME/Library/Keychains/login.keychain-db"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          python3 .github/scripts/prepare-ios-release.py
+
+      - name: Xcode の署名と Firebase リソースを設定
+        run: |
+          set -euo pipefail
+          ruby <<'RUBY'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('ios/Runner.xcodeproj')
+          runner = project.targets.find { |target| target.name == 'Runner' }
+          runner.build_configurations.each do |config|
+            next unless ['Release', 'Profile'].include?(config.name)
+            config.build_settings['CODE_SIGN_STYLE'] = 'Manual'
+            config.build_settings['DEVELOPMENT_TEAM'] = ENV.fetch('IOS_TEAM_ID')
+            config.build_settings['CODE_SIGN_IDENTITY'] = 'Apple Distribution'
+            config.build_settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = 'Apple Distribution'
+            config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = ENV.fetch('IOS_PROFILE_UUID')
+          end
+          group = project.main_group.find_subpath('Runner', false)
+          resource = group.files.find { |file| file.path == 'GoogleService-Info.plist' }
+          resource ||= group.new_file('GoogleService-Info.plist')
+          unless runner.resources_build_phase.files_references.include?(resource)
+            runner.resources_build_phase.add_file_reference(resource)
+          end
+          project.save
+          RUBY
+
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: flutter test
+      - name: 署名済み IPA をビルド
+        run: flutter build ipa --release --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: TestFlight へアップロード
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/private_keys
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ipa_files=(build/ios/ipa/*.ipa)
+          if [[ ${#ipa_files[@]} -ne 1 ]]; then
+            echo '::error::Expected exactly one IPA in build/ios/ipa'
+            exit 1
+          fi
+          xcrun altool --upload-app --type ios -f "${ipa_files[0]}" \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+
+      - name: 秘密ファイルを削除
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/ios-release.keychain-db" || true
+          if [[ -n "${IOS_PROFILE_UUID:-}" ]]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$IOS_PROFILE_UUID.mobileprovision"
+          fi
+          rm -f ios/Runner/GoogleService-Info.plist "$RUNNER_TEMP/distribution.p12" \
+            "$RUNNER_TEMP/profile.mobileprovision" "$RUNNER_TEMP/profile.plist" "$RUNNER_TEMP/ExportOptions.plist"
+          rm -f "$RUNNER_TEMP/private_keys/"*.p8
