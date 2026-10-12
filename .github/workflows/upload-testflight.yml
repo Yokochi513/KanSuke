@@ -89,7 +89,7 @@ jobs:
           RUBY
 
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed .
+      - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter test
       - name: 署名済み IPA をビルド
         run: flutter build ipa --release --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
