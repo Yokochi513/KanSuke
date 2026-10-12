@@ -30,6 +30,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: 既存の CocoaPods 構成を使用
+        run: flutter config --no-enable-swift-package-manager
+
       - name: 署名鍵・Firebase 設定・API キーを復元
         env:
           IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
@@ -89,6 +92,11 @@ jobs:
           RUBY
 
       - run: flutter pub get
+      - name: CocoaPods の依存関係を同期
+        working-directory: ios
+        run: |
+          pod install --repo-update
+          cmp Podfile.lock Pods/Manifest.lock
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter test
       - name: 署名済み IPA をビルド
