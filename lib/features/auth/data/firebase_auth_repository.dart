@@ -201,6 +201,50 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<void> signInWithEmailAndPassword(String email, String password) async {
+    try {
+      final result = await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      await _verifyUserDocument(result.user);
+    } on FirebaseException catch (error) {
+      if (const {
+        'invalid-credential',
+        'invalid-login-credentials',
+        'wrong-password',
+        'user-not-found',
+        'invalid-email',
+      }.contains(error.code)) {
+        throw const AuthInvalidCredentialsException();
+      }
+      throw _mapFirebaseException(error);
+    }
+  }
+
+  @override
+  Future<void> signUpWithEmailAndPassword(String email, String password) async {
+    try {
+      // FR-8 / 基本設計 §2.1: ユーザーと個人カレンダーは既存の
+      // beforeUserCreated Blocking Function が生成する。
+      final result = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      await _verifyUserDocument(result.user);
+    } on FirebaseException catch (error) {
+      final message = switch (error.code) {
+        'email-already-in-use' => 'このメールアドレスは既に登録されています。ログインしてください。',
+        'weak-password' => 'パスワードが安全性の条件を満たしていません。別のパスワードを設定してください。',
+        'invalid-email' => 'メールアドレスの形式を確認してください。',
+        'too-many-requests' => '試行回数が多すぎます。時間をおいて、もう一度お試しください。',
+        _ => 'アカウント作成に失敗しました。通信環境を確認して、もう一度お試しください。',
+      };
+      throw AuthSignUpException(message);
+    }
+  }
+
+  @override
   Future<void> reauthenticate() async {
     final user = _auth.currentUser;
     if (user == null) {
