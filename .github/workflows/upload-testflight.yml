@@ -25,6 +25,11 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: App Store Connect の SDK 要件に合わせて Xcode を選択
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
