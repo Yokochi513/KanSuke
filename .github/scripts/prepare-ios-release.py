@@ -54,20 +54,25 @@ def main():
     runner_entitlements["aps-environment"] = "production"
     write_plist(entitlement_path, runner_entitlements)
 
-    destination = Path.home() / "Library/MobileDevice/Provisioning Profiles"
-    destination.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(temporary / "profile.mobileprovision", destination / f"{profile_uuid}.mobileprovision")
+    destinations = [
+        Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles",
+        Path.home() / "Library/MobileDevice/Provisioning Profiles",
+    ]
+    for destination in destinations:
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(temporary / "profile.mobileprovision", destination / f"{profile_uuid}.mobileprovision")
     write_plist(temporary / "ExportOptions.plist", {
         "method": "app-store-connect",
         "signingStyle": "manual",
         "signingCertificate": "Apple Distribution",
         "teamID": team,
-        "provisioningProfiles": {bundle_id: profile_uuid},
+        "provisioningProfiles": {bundle_id: profile["Name"]},
         "manageAppVersionAndBuildNumber": False,
         "uploadSymbols": True,
     })
     with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as environment:
         environment.write(f"IOS_TEAM_ID={team}\nIOS_PROFILE_UUID={profile_uuid}\n")
+        environment.write(f"IOS_PROFILE_NAME={profile['Name']}\n")
 
 
 if __name__ == "__main__":

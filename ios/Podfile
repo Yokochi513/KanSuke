@@ -32,6 +32,10 @@ require File.expand_path(
 flutter_ios_podfile_setup
 
 target 'Runner' do
+  # Firebase の推奨構成に合わせ、Swift Pod を静的フレームワークとしてリンクする。
+  use_frameworks! :linkage => :static
+  # Firebase の Swift Pod が依存ライブラリを import できるようにする。
+  use_modular_headers!
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
   target 'RunnerTests' do
