@@ -571,6 +571,18 @@ class _FakeDeviceRegistrationService implements DeviceRegistrationService {
 }
 
 class _FakeAuthRepository implements AuthRepository {
+  @override
+  Future<void> signUpWithEmailAndPassword(
+    String email,
+    String password,
+  ) async {}
+
+  @override
+  Future<void> signInWithEmailAndPassword(
+    String email,
+    String password,
+  ) async {}
+
   _FakeAuthRepository({this.reauthError});
 
   /// 再認証で投げる例外（null なら成功）。

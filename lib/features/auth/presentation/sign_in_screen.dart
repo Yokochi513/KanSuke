@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/auth_state.dart';
+import '../../../app/washi_background.dart';
 import 'google_sign_in_button.dart';
+import 'email_sign_in_screen.dart';
 
 /// アプリアイコンを円形に切り抜いた紋章。サインイン画面の顔として置く。
 class _AppEmblem extends StatelessWidget {
@@ -95,6 +97,23 @@ class SignInScreen extends ConsumerWidget {
                     const SizedBox(height: 16),
                   ],
                   const GoogleSignInButton(),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: actionState.isLoading
+                        ? null
+                        : () {
+                            actions.clearError();
+                            Navigator.of(context).push<void>(
+                              MaterialPageRoute(
+                                builder: (_) => const WashiBackground(
+                                  child: EmailSignInScreen(),
+                                ),
+                              ),
+                            );
+                          },
+                    icon: const Icon(Icons.email_outlined),
+                    label: const Text('メールアドレスでログイン'),
+                  ),
                   if (ref.watch(appleSignInAvailableProvider)) ...[
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
