@@ -87,6 +87,14 @@ class AuthActionController extends Notifier<AuthActionState> {
     return _run(ref.read(authRepositoryProvider).signInWithApple);
   }
 
+  Future<void> signInWithEmailAndPassword(String email, String password) {
+    return _run(
+      () => ref
+          .read(authRepositoryProvider)
+          .signInWithEmailAndPassword(email, password),
+    );
+  }
+
   Future<void> signOut() {
     return _run(() async {
       // FR-5: この端末の FCM トークンを devices から外す。Security Rules は
@@ -97,6 +105,14 @@ class AuthActionController extends Notifier<AuthActionState> {
       }
       await ref.read(authRepositoryProvider).signOut();
     });
+  }
+
+  Future<void> signUpWithEmailAndPassword(String email, String password) {
+    return _run(
+      () => ref
+          .read(authRepositoryProvider)
+          .signUpWithEmailAndPassword(email, password),
+    );
   }
 
   Future<void> _unregisterDeviceBestEffort(String uid) async {
@@ -120,6 +136,7 @@ class AuthActionController extends Notifier<AuthActionState> {
   }
 
   Future<void> _run(Future<void> Function() action) async {
+    if (state.isLoading) return;
     state = const AuthActionState(isLoading: true);
     try {
       await action();
@@ -130,6 +147,10 @@ class AuthActionController extends Notifier<AuthActionState> {
       state = const AuthActionState(errorMessage: '利用権限がありません');
     } on AuthSetupFailedException {
       state = const AuthActionState(errorMessage: _setupFailedMessage);
+    } on AuthSignUpException catch (error) {
+      state = AuthActionState(errorMessage: error.message);
+    } on AuthInvalidCredentialsException {
+      state = const AuthActionState(errorMessage: 'メールアドレスまたはパスワードが正しくありません。');
     } on AuthException {
       state = const AuthActionState(
         errorMessage: 'サインインに失敗しました。通信環境を確認して、もう一度お試しください。',

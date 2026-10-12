@@ -37,6 +37,106 @@ void main() {
     expect(find.text('サインイン'), findsNothing);
   });
 
+  testWidgets('メールログインの入力チェックと認証後のカレンダー遷移', (tester) async {
+    final repository = FakeAuthRepository();
+    await tester.pumpWidget(await _testApp(repository));
+    await tester.pump();
+    await tester.tap(find.text('メールアドレスでログイン'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ログイン'));
+    await tester.pumpAndSettle();
+    expect(find.text('メールアドレスを入力してください。'), findsOneWidget);
+    expect(find.text('パスワードを入力してください。'), findsOneWidget);
+    expect(repository.emailSignInCount, 0);
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      ' family@example.com ',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), ' password ');
+    await tester.tap(find.text('ログイン'));
+    await tester.pumpAndSettle();
+    expect(repository.emailSignInCount, 1);
+    expect(repository.lastEmail, 'family@example.com');
+    expect(repository.lastPassword, ' password ');
+    expect(find.text(_personalCalendarName), findsOneWidget);
+  });
+
+  testWidgets('メールログインの認証エラーは入力画面に表示される', (tester) async {
+    final repository = FakeAuthRepository(
+      signInError: const AuthInvalidCredentialsException(),
+    );
+    await tester.pumpWidget(await _testApp(repository));
+    await tester.pump();
+    await tester.tap(find.text('メールアドレスでログイン'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'family@example.com',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'incorrect');
+    await tester.tap(find.text('ログイン'));
+    await tester.pumpAndSettle();
+    expect(find.text('メールアドレスまたはパスワードが正しくありません。'), findsWidgets);
+    expect(find.text('ログイン'), findsOneWidget);
+  });
+
+  testWidgets('新規登録は短いパスワードと確認不一致を拒否し登録後はカレンダーへ進む', (tester) async {
+    final repository = FakeAuthRepository();
+    await tester.pumpWidget(await _testApp(repository));
+    await tester.pump();
+    await tester.tap(find.text('メールアドレスでログイン'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('アカウントを作成'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      ' new@example.com ',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'short');
+    await tester.enterText(find.byType(TextFormField).at(2), 'other');
+    await tester.tap(find.text('登録する'));
+    await tester.pumpAndSettle();
+    expect(find.text('パスワードは6文字以上で入力してください。'), findsOneWidget);
+    expect(find.text('パスワードが一致しません。'), findsOneWidget);
+    expect(repository.emailSignUpCount, 0);
+    await tester.enterText(find.byType(TextFormField).at(1), ' password ');
+    await tester.enterText(find.byType(TextFormField).at(2), ' password ');
+    await tester.tap(find.text('登録する'));
+    await tester.pumpAndSettle();
+    expect(repository.emailSignUpCount, 1);
+    expect(repository.emailSignInCount, 0);
+    expect(repository.lastEmail, 'new@example.com');
+    expect(repository.lastPassword, ' password ');
+    expect(find.text(_personalCalendarName), findsOneWidget);
+    expect(find.text('登録する'), findsNothing);
+  });
+
+  testWidgets('登録失敗は新規登録画面に表示しログインへの切替でエラーを消す', (tester) async {
+    const message = 'このメールアドレスは既に登録されています。ログインしてください。';
+    final repository = FakeAuthRepository(
+      signInError: const AuthSignUpException(message),
+    );
+    await tester.pumpWidget(await _testApp(repository));
+    await tester.pump();
+    await tester.tap(find.text('メールアドレスでログイン'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('アカウントを作成'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), 'new@example.com');
+    await tester.enterText(find.byType(TextFormField).at(1), 'password');
+    await tester.enterText(find.byType(TextFormField).at(2), 'password');
+    await tester.tap(find.text('登録する'));
+    await tester.pumpAndSettle();
+    expect(find.text(message), findsWidgets);
+    expect(find.text('登録する'), findsOneWidget);
+    await tester.ensureVisible(find.text('既にアカウントをお持ちの方はログイン'));
+    await tester.tap(find.text('既にアカウントをお持ちの方はログイン'));
+    await tester.pumpAndSettle();
+    expect(find.text(message), findsNothing);
+    expect(find.text('ログイン'), findsOneWidget);
+    expect(find.byType(TextFormField), findsNWidgets(2));
+  });
+
   testWidgets('iOSではApple認証ボタンを表示して認証できる', (tester) async {
     final repository = FakeAuthRepository();
     await tester.pumpWidget(
@@ -176,6 +276,27 @@ class FakeAuthRepository implements AuthRepository {
   AuthSession? _session;
 
   int googleSignInCount = 0;
+  int emailSignInCount = 0;
+  int emailSignUpCount = 0;
+  String? lastEmail;
+  String? lastPassword;
+
+  @override
+  Future<void> signUpWithEmailAndPassword(String email, String password) async {
+    emailSignUpCount++;
+    lastEmail = email;
+    lastPassword = password;
+    await _signIn();
+  }
+
+  @override
+  Future<void> signInWithEmailAndPassword(String email, String password) async {
+    emailSignInCount++;
+    lastEmail = email;
+    lastPassword = password;
+    await _signIn();
+  }
+
   int appleSignInCount = 0;
   int signOutCount = 0;
 
