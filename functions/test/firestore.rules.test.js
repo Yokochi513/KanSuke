@@ -278,10 +278,18 @@ describe("Firestore Security Rules (NFR-4)", () => {
     await assertFails(getDoc(anonymousEvent));
   });
 
-  it("reminders は家族だけが読め、クライアントから書けない", async () => {
+  it("reminders はクライアントから読めも書けもしない（Issue #183）", async () => {
+    // 生成も配信も Admin SDK 経由（functions/reminders.js）で Rules を迂回するため、
+    // クライアントに読ませる必要が無い。
+    //
+    // 旧ルール `allow read: if isRegistered()` は resource.data を参照しない条件
+    // だったため、get だけでなく list も通っていた。reminders は ownerId を持つので
+    // 全件列挙は「全ユーザーの uid 一覧」を配ることに等しく、users の列挙禁止
+    // （上の「users は誰も列挙できない」）を uid 収集経由で迂回させてしまっていた。
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), "reminders/reminder-1"), {
         eventId: "event-1",
+        ownerId: "family-user",
       });
     });
 
@@ -294,9 +302,13 @@ describe("Firestore Security Rules (NFR-4)", () => {
         "reminders/reminder-1",
     );
 
-    await assertSucceeds(getDoc(familyReminder));
+    await assertFails(getDoc(familyReminder));
     await assertFails(getDoc(outsiderReminder));
     await assertFails(setDoc(familyReminder, {eventId: "event-2"}));
+
+    // 列挙も塞がっていること（旧ルールで通っていた経路）。
+    await assertFails(getDocs(collection(dbFor("family-user"), "reminders")));
+    await assertFails(getDocs(collection(dbFor("outsider"), "reminders")));
   });
 
   it("devices は本人だけが読み書きできる", async () => {

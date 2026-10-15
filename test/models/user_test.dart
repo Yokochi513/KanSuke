@@ -9,7 +9,6 @@ void main() {
     final user = User(
       id: 'user-1',
       name: '花子',
-      email: 'hanako@example.com',
       color: '#FF3366',
       createdAt: createdAt,
       updatedAt: updatedAt,
@@ -20,7 +19,6 @@ void main() {
 
     expect(restored.id, user.id);
     expect(restored.name, user.name);
-    expect(restored.email, user.email);
     expect(restored.color, user.color);
     expect(restored.createdAt, createdAt);
     expect(restored.updatedAt, updatedAt);
@@ -31,7 +29,6 @@ void main() {
     final user = User(
       id: 'user-1',
       name: '花子',
-      email: 'hanako@example.com',
       color: '#FF3366',
       createdAt: now,
       updatedAt: now,

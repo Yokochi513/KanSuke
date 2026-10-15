@@ -61,7 +61,6 @@ Future<FakeFirebaseFirestore> _firestoreWithTwoCalendars() async {
   ]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': color,
       'createdAt': now,
       'updatedAt': now,
@@ -74,7 +73,6 @@ Future<FakeFirebaseFirestore> _seed({required DateTime today}) async {
   final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
-    'email': 'me@example.com',
     'color': '#1565C0',
     'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
     'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -113,7 +111,6 @@ Future<FakeFirebaseFirestore> _seedManyOnOneDay({
   ]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': color,
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -155,7 +152,6 @@ Future<FakeFirebaseFirestore> _seedCurrentUserPriority({
   ]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': color,
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -199,7 +195,6 @@ Future<FakeFirebaseFirestore> _seedSharedEvent({
   ]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': color,
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -231,7 +226,6 @@ Future<FakeFirebaseFirestore> _seedPeriodEvent() async {
   final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
-    'email': 'me@example.com',
     'color': '#1565C0',
     'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
     'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -267,7 +261,6 @@ Future<FakeFirebaseFirestore> _seedLongEventAndOwnEvent() async {
   ]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': color,
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -319,7 +312,6 @@ Future<FakeFirebaseFirestore> _seedLongEventAndPrioritizedEvent() async {
   ]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': color,
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -373,7 +365,6 @@ Future<FakeFirebaseFirestore> _seedCrossWeekEvent() async {
   final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
-    'email': 'me@example.com',
     'color': '#1565C0',
     'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
     'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -402,7 +393,6 @@ Future<FakeFirebaseFirestore> _seedAdjacentMonthEvents() async {
   final firestore = await _firestoreWithCalendar();
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
-    'email': 'me@example.com',
     'color': '#1565C0',
     'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
     'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
@@ -454,7 +444,6 @@ Future<FakeFirebaseFirestore> _seedTitledEvents(
   ]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': color,
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),

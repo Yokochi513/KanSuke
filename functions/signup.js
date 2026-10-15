@@ -57,14 +57,20 @@ function pickColor(uid) {
 /**
  * `users/{uid}` の初期プロフィールを組み立てる。
  *
+ * Issue #183: メールアドレスは Firestore に保存しない。`users/{uid}` は
+ * 「同じカレンダーに同席したことのある相手なら uid を知っている限り読める」
+ * （`allow get: if isRegistered()`）ため、保存すると一度共有しただけの相手に
+ * メールが恒久的に渡ってしまう。正典は Firebase Auth 側であり、サーバーで
+ * 必要になったときは `admin.auth().getUser(uid)` で取得できる。
+ * ここでは表示名の導出（プロバイダ表示名が無いときのローカル部）にだけ使う。
+ *
  * @param {{uid: string, email?: string, displayName?: string}} user
- * @return {{name: string, email: string, color: string}}
+ * @return {{name: string, color: string}}
  */
 function buildInitialProfile(user) {
   const email = normalizeEmail(user.email);
   return {
     name: resolveName(user.displayName, email),
-    email,
     color: pickColor(user.uid),
   };
 }

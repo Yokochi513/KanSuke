@@ -42,7 +42,6 @@ Future<FakeFirebaseFirestore> _seedMembers(Calendar calendar) async {
   for (final (id, name) in const [('me', 'ぱぱ'), ('other', 'まま')]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': '#1565C0',
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),

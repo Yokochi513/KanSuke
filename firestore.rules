@@ -126,8 +126,17 @@ service cloud.firestore {
         && isWellFormedEvent(request.resource.data);
     }
 
+    // Issue #183: リマインド（FR-5）はクライアントから read も write も許可しない。
+    // 生成（`syncEventReminders`）も配信（`sendDueReminders`）も Admin SDK 経由で
+    // Rules を迂回するため、クライアントに読ませる必要が無い。
+    //
+    // 以前の `allow read: if isRegistered()` は `resource.data` を参照しない条件
+    // だったため get だけでなく list も通り、コレクション全件を列挙できた。
+    // reminders は `{eventId, ownerId, triggerAt, sent}`（`functions/reminders.js`）
+    // を持つので、これは全ユーザーの uid の一覧を配ることに等しく、users の
+    // 列挙禁止（NFR-4、Issue #89）を uid 収集経由で迂回させてしまっていた。
     match /reminders/{reminderId} {
-      allow read: if isRegistered();
+      allow read, write: if false;
     }
 
     // FR-7: リリース時に CI (Admin SDK) が書き込む最新バージョン情報。

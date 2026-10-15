@@ -54,7 +54,6 @@ Future<FakeFirebaseFirestore> _seedMembers() async {
   ]) {
     await firestore.collection('users').doc(id).set({
       'name': name,
-      'email': '$id@example.com',
       'color': color,
       'createdAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),
       'updatedAt': Timestamp.fromDate(DateTime.utc(2026, 1, 1)),

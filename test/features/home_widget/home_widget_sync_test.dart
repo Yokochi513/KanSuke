@@ -45,7 +45,6 @@ Future<FakeFirebaseFirestore> _seed({required DateTime start}) async {
   });
   await firestore.collection('users').doc('me').set({
     'name': 'ぱぱ',
-    'email': 'me@example.com',
     'color': '#1565C0',
     'createdAt': now,
     'updatedAt': now,

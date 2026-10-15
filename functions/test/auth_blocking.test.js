@@ -20,15 +20,25 @@ function fakeDb() {
 }
 
 describe("buildInitialProfile", function() {
-  it("表示名とメールを正規化し、識別色を割り当てる", function() {
+  it("表示名を正規化し、識別色を割り当てる", function() {
     const profile = buildInitialProfile({
       uid: "u1",
       email: "Mom@Example.com ",
       displayName: "ママ",
     });
     assert.strictEqual(profile.name, "ママ");
-    assert.strictEqual(profile.email, "mom@example.com");
     assert.ok(memberColors.includes(profile.color));
+  });
+
+  it("メールアドレスをプロフィールに保存しない（Issue #183）", function() {
+    const profile = buildInitialProfile({
+      uid: "u1",
+      email: "Mom@Example.com ",
+      displayName: "ママ",
+    });
+    // users/{uid} は uid を知っていれば誰でも get できるため、表示に不要な
+    // 個人情報を載せない。メールの正典は Firebase Auth 側。
+    assert.ok(!("email" in profile));
   });
 
   it("表示名が無ければメールのローカル部を名前にする", function() {
@@ -39,7 +49,6 @@ describe("buildInitialProfile", function() {
   it("表示名もメールも無ければ既定の名前にする", function() {
     const profile = buildInitialProfile({uid: "u1"});
     assert.strictEqual(profile.name, "メンバー");
-    assert.strictEqual(profile.email, "");
   });
 
   it("同じ uid には同じ識別色を割り当てる", function() {
@@ -63,7 +72,6 @@ describe("handleBeforeCreate", function() {
     );
     assert.deepStrictEqual(db.writes["users/u1"], {
       name: "ママ",
-      email: "mom@example.com",
       color: buildInitialProfile({uid: "u1"}).color,
       createdAt: "SERVER_TS",
       updatedAt: "SERVER_TS",
